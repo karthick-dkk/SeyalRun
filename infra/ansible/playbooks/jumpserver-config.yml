@@ -1,0 +1,122 @@
+---
+# Playbook: jumpserver-config.yml
+# Rotate JumpServer secrets and fix config settings.
+# Run BEFORE any real users or data are added.
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.ini playbooks/jumpserver-config.yml \
+#     --ask-vault-pass
+#
+# What it does:
+#   1. Generates new SECRET_KEY, DB_PASSWORD, REDIS_PASSWORD
+#   2. Updates /opt/jumpserver/config/config.txt
+#   3. Sets LANGUAGE_CODE=en, DOMAINS, SESSION_EXPIRE_AT_BROWSER_CLOSE=true
+#   4. Restricts config.txt permissions to root:root 600
+#   5. Restarts JumpServer
+
+- name: Harden and reconfigure JumpServer
+  hosts: jumpserver
+  become: true
+  gather_facts: false
+
+  vars:
+    jms_config: "{{ jumpserver_config }}"
+    jms_ctl: "{{ jumpserver_install_dir }}/jmsctl.sh"
+
+  tasks:
+    - name: Generate new SECRET_KEY (64 chars)
+      ansible.builtin.command:
+        cmd: python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+      register: new_secret_key
+      changed_when: false
+
+    - name: Generate new DB_PASSWORD
+      ansible.builtin.command:
+        cmd: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+      register: new_db_password
+      changed_when: false
+
+    - name: Generate new REDIS_PASSWORD
+      ansible.builtin.command:
+        cmd: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+      register: new_redis_password
+      changed_when: false
+
+    - name: Backup current config
+      ansible.builtin.copy:
+        src: "{{ jms_config }}"
+        dest: "{{ jms_config }}.bak-{{ ansible_date_time.epoch }}"
+        remote_src: true
+        mode: "0600"
+
+    - name: Update SECRET_KEY
+      ansible.builtin.lineinfile:
+        path: "{{ jms_config }}"
+        regexp: "^SECRET_KEY="
+        line: "SECRET_KEY={{ new_secret_key.stdout }}"
+
+    - name: Update DB_PASSWORD
+      ansible.builtin.lineinfile:
+        path: "{{ jms_config }}"
+        regexp: "^DB_PASSWORD="
+        line: "DB_PASSWORD={{ new_db_password.stdout }}"
+
+    - name: Update REDIS_PASSWORD
+      ansible.builtin.lineinfile:
+        path: "{{ jms_config }}"
+        regexp: "^REDIS_PASSWORD="
+        line: "REDIS_PASSWORD={{ new_redis_password.stdout }}"
+
+    - name: Set LANGUAGE_CODE to English
+      ansible.builtin.lineinfile:
+        path: "{{ jms_config }}"
+        regexp: "^LANGUAGE_CODE="
+        line: "LANGUAGE_CODE=en"
+
+    - name: Set DOMAINS to server IP
+      ansible.builtin.lineinfile:
+        path: "{{ jms_config }}"
+        regexp: "^DOMAINS="
+        line: "DOMAINS={{ jumpserver_ip }}"
+
+    - name: Enable session expiry on browser close
+      ansible.builtin.lineinfile:
+        path: "{{ jms_config }}"
+        regexp: "^SESSION_EXPIRE_AT_BROWSER_CLOSE="
+        line: "SESSION_EXPIRE_AT_BROWSER_CLOSE=true"
+
+    - name: Set LOG_LEVEL to WARNING
+      ansible.builtin.lineinfile:
+        path: "{{ jms_config }}"
+        regexp: "^LOG_LEVEL="
+        line: "LOG_LEVEL=WARNING"
+
+    - name: Restrict config.txt permissions (root:root 600)
+      ansible.builtin.file:
+        path: "{{ jms_config }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Restart JumpServer to apply new config
+      ansible.builtin.command:
+        cmd: "{{ jms_ctl }} restart"
+      changed_when: true
+
+    - name: Wait for JumpServer to be healthy (up to 2 minutes)
+      ansible.builtin.uri:
+        url: "http://{{ jumpserver_ip }}/api/v1/settings/public/"
+        status_code: [200, 401]
+      register: health_check
+      until: health_check.status in [200, 401]
+      retries: 24
+      delay: 5
+
+    - name: Display new credentials (save these!)
+      ansible.builtin.debug:
+        msg:
+          - "SECRET_KEY rotated successfully"
+          - "DB_PASSWORD: {{ new_db_password.stdout }}"
+          - "REDIS_PASSWORD: {{ new_redis_password.stdout }}"
+          - "Store these in your Ansible Vault immediately!"
+          - "Run: ansible-vault edit infra/ansible/group_vars/all/vault.yml"

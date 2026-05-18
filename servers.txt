@@ -1,0 +1,14 @@
+Server 1:(JumpServer+FreeIPA)
+ IP: 192.168.64.2
+ user: test
+ pass: test
+ sudo: yes
+Jumpserver UI:
+ user: admin
+ pass: test@123
+
+Server 2:(Zabbix server)
+  IP: 192.168.43.4
+ user: test
+ pass: test
+ sudo: yes

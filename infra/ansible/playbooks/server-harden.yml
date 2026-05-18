@@ -1,0 +1,120 @@
+---
+# Playbook: server-harden.yml
+# Applies baseline security hardening to all Pravesh lab servers
+# Run: ansible-playbook -i inventory/hosts.ini playbooks/server-harden.yml --ask-vault-pass
+
+- name: Harden all Pravesh lab servers
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Ensure SSH key auth only (disable password auth)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+        validate: "sshd -t -f %s"
+      loop:
+        - { regexp: "^#?PasswordAuthentication", line: "PasswordAuthentication no" }
+        - { regexp: "^#?PermitRootLogin", line: "PermitRootLogin no" }
+        - { regexp: "^#?MaxAuthTries", line: "MaxAuthTries 3" }
+        - { regexp: "^#?X11Forwarding", line: "X11Forwarding no" }
+        - { regexp: "^#?AllowAgentForwarding", line: "AllowAgentForwarding no" }
+        - { regexp: "^#?LoginGraceTime", line: "LoginGraceTime 30" }
+      notify: Restart sshd
+
+    - name: Ensure SSH public key is installed for current user
+      ansible.posix.authorized_key:
+        user: "{{ ansible_user }}"
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+      ignore_errors: true
+
+    - name: Ensure UFW is installed
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+        update_cache: true
+
+    - name: Configure UFW defaults
+      community.general.ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: incoming, policy: deny }
+        - { direction: outgoing, policy: allow }
+
+    - name: Allow SSH (port 22)
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: Allow HTTP (JumpServer web UI)
+      community.general.ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+      when: "'jumpserver' in group_names"
+
+    - name: Allow HTTPS (future TLS)
+      community.general.ufw:
+        rule: allow
+        port: "443"
+        proto: tcp
+      when: "'jumpserver' in group_names"
+
+    - name: Allow JumpServer SSH proxy (koko)
+      community.general.ufw:
+        rule: allow
+        port: "2222"
+        proto: tcp
+      when: "'jumpserver' in group_names"
+
+    - name: Allow FreeIPA ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop:
+        - { port: "389", proto: tcp }    # LDAP
+        - { port: "636", proto: tcp }    # LDAPS
+        - { port: "88", proto: tcp }     # Kerberos
+        - { port: "88", proto: udp }
+        - { port: "464", proto: tcp }    # kpasswd
+        - { port: "464", proto: udp }
+      when: "'freeipa' in group_names"
+
+    - name: Enable UFW
+      community.general.ufw:
+        state: enabled
+
+    - name: Ensure automatic security updates are enabled
+      ansible.builtin.apt:
+        name:
+          - unattended-upgrades
+          - apt-listchanges
+        state: present
+
+    - name: Configure unattended upgrades for security only
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+          };
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::Mail "root";
+          Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+          Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
+          Unattended-Upgrade::Automatic-Reboot "false";
+        mode: "0644"
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted

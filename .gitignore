@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+
+# Secrets — never commit these
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.env.local
+*.env.production
+infra/ansible/group_vars/all/vault.yml
+infra/terraform/environments/*/terraform.tfvars
+.vault_pass
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terraformrc
+
+# Docker
+*.tar
+
+# IDE
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
