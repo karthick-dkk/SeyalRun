@@ -11,8 +11,8 @@ freeipa_hostname: ipa.lab.pravesh.local
 jumpserver_ip: 192.168.64.2
 jumpserver_url: "http://192.168.64.2"
 
-zabbix_server_ip: 192.168.43.4
-zabbix_url: "http://192.168.43.4"
+zabbix_server_ip: 192.168.64.8
+zabbix_url: "http://192.168.64.8"
 
 # JumpServer Docker install path
 jumpserver_install_dir: /opt/jumpserver-installer-v4.10.16
