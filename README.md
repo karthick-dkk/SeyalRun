@@ -8,6 +8,8 @@
 [![Vue](https://img.shields.io/badge/Vue-3.4-green)](https://vuejs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688)](https://fastapi.tiangolo.com)
 
+<img width="2934" height="1668" alt="image" src="https://github.com/user-attachments/assets/f8538330-3e43-4087-a353-8a31e5ed66bc" />
+
 ---
 
 ## What is SeyalRun?
