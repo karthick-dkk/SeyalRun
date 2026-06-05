@@ -196,12 +196,13 @@ curl http://192.168.64.2:3000/api/v1/modules | python3 -c \
 ## Usage
 
 ### SSH Terminal
-<img width="2934" height="1668" alt="image" src="https://github.com/user-attachments/assets/bf005fa2-a452-4c47-90c1-a6867b954436" />
-
 
 1. **Assets** → Click **⊙ SSH** on any host
 2. Select a JumpServer account or enter credentials
 3. **⊙ Open Terminal** → opens in a new browser window
+
+<img width="2934" height="1668" alt="devops_karthidkk123 medium com 2026-06-05 at 1 48 18 PM" src="https://github.com/user-attachments/assets/93f14715-49e2-44a2-8929-3c5944a715fd" />
+
 
 **Multi-session keyboard shortcuts:**
 
