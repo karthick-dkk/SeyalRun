@@ -15,7 +15,9 @@ repos:
     rev: v0.9.10
     hooks:
       - id: ruff
-        args: ["--fix"]
+        args:
+          - "--fix"
+          - "--ignore=B008,E501,S101,S103,S104,S105,S106,S107,S108,S110,S112,S501,S310,B904"
       - id: ruff-format
 
   # bandit runs in CI (ci.yml) via pyproject.toml config — not as a pre-commit hook

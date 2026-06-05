@@ -8,7 +8,7 @@ from collections.abc import Callable
 
 import structlog
 from fastapi import Request, Response
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .metrics import REQUEST_COUNT, REQUEST_LATENCY
 

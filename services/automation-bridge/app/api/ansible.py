@@ -145,6 +145,110 @@ async def get_job_status(
     return JobStatusResponse(**data)
 
 
+@router.post(
+    "/ansible-inline",
+    response_model=JobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={429: {"model": ErrorResponse}},
+)
+async def run_ansible_inline(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    semaphore: Annotated[asyncio.Semaphore, Depends(get_semaphore)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+    yaml_content: str = "",
+    inventory_selector: str = "all",
+    extra_vars: dict | None = None,
+    triggered_by: str = "playbook-studio",
+    timeout_seconds: int = 600,
+) -> JobResponse:
+    """Execute inline YAML content from Playbook Studio (bypasses approved_playbooks whitelist)."""
+    body = await request.json()
+    yaml_content = body.get("yaml_content", "")
+    inventory_selector = body.get("inventory_selector", "all")
+    extra_vars = body.get("extra_vars", {})
+    triggered_by = body.get("triggered_by", "playbook-studio")
+
+    if not yaml_content.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="yaml_content is required",
+        )
+
+    if semaphore.locked() and semaphore._value == 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Max concurrent jobs ({settings.max_concurrent_jobs}) reached. Try later.",
+        )
+
+    job_id = uuid.uuid4()
+    now = datetime.now(UTC).isoformat()
+
+    # Write YAML to temp file in studio dir
+    import os
+
+    studio_dir = f"{settings.playbooks_dir}/studio"
+    os.makedirs(studio_dir, exist_ok=True)
+    yaml_path = f"{studio_dir}/{job_id}.yml"
+    with open(yaml_path, "w") as f:
+        f.write(yaml_content)
+
+    job_data = {
+        "job_id": str(job_id),
+        "status": JobStatus.PENDING,
+        "playbook": f"studio/{job_id}.yml",
+        "triggered_by": triggered_by,
+        "started_at": now,
+        "finished_at": None,
+        "exit_code": None,
+        "output_lines": [],
+    }
+    await redis.setex(f"job:{job_id}", settings.job_ttl_seconds, json.dumps(job_data))
+
+    log.info("ansible_inline_job_accepted", job_id=str(job_id), triggered_by=triggered_by)
+
+    from ..models import AnsibleRunRequest
+
+    inline_request = AnsibleRunRequest(
+        playbook=f"studio/{job_id}.yml",
+        inventory_selector=inventory_selector,
+        extra_vars=extra_vars or {},
+        triggered_by=triggered_by,
+    )
+
+    asyncio.create_task(
+        _execute_inline_job(job_id, inline_request, yaml_path, settings, semaphore, redis),
+    )
+
+    return JobResponse(
+        job_id=job_id,
+        status=JobStatus.PENDING,
+        playbook=f"studio/{job_id}.yml",
+        triggered_by=triggered_by,
+        message="Inline job accepted. Poll GET /ansible/jobs/{job_id} for status.",
+    )
+
+
+async def _execute_inline_job(
+    job_id: uuid.UUID,
+    request_body: AnsibleRunRequest,
+    yaml_path: str,
+    settings: Settings,
+    semaphore: asyncio.Semaphore,
+    redis: aioredis.Redis,
+) -> None:
+    """Background task for inline jobs: run playbook, clean up temp file."""
+    import os
+
+    try:
+        await _execute_job(job_id, request_body, settings, semaphore, redis)
+    finally:
+        try:
+            os.unlink(yaml_path)
+        except OSError:
+            pass
+
+
 async def _execute_job(
     job_id: uuid.UUID,
     request_body: AnsibleRunRequest,

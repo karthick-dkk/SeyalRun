@@ -94,7 +94,7 @@ services:
       MYSQL_USER: zabbix
       MYSQL_PASSWORD: ${ZABBIX_DB_PASSWORD}
       PHP_TZ: Asia/Kolkata
-      ZBX_SERVER_NAME: "Pravesh Monitoring"
+      ZBX_SERVER_NAME: "SeyalRun Monitoring"
     ports:
       - "80:8080"        # Map host 80 to container 8080 (nginx-unprivileged)
     volumes:

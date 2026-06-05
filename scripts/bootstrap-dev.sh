@@ -2,7 +2,7 @@
 # bootstrap-dev.sh — Set up local development environment
 set -euo pipefail
 
-echo "=== Pravesh Dev Bootstrap ==="
+echo "=== SeyalRun Dev Bootstrap ==="
 
 # Check prerequisites
 command -v python3 >/dev/null || { echo "ERROR: python3 not found"; exit 1; }

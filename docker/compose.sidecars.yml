@@ -1,5 +1,5 @@
 ---
-# Pravesh Sidecar Services — Docker Compose
+# SeyalRun Sidecar Services — Docker Compose
 # Deploy: docker compose -f compose.sidecars.yml up -d
 # Platform: linux/arm64 (Server 1 is aarch64)
 
@@ -22,13 +22,13 @@ x-sidecar-common: &sidecar-common
 services:
   automation-bridge:
     <<: *sidecar-common
-    image: pravesh/automation-bridge:latest
+    image: seyalrun/automation-bridge:latest
     container_name: ab_service
     platform: linux/arm64
     ports:
       - "127.0.0.1:8001:8001"    # Only localhost — accessed via Nginx
     volumes:
-      - /playbooks:/playbooks:ro  # Read-only playbook mount
+      - /playbooks:/playbooks:rw  # rw: playbook-studio writes studio/{uuid}.yml
       - ab_jobs:/tmp/ab-jobs      # ansible-runner job artifacts
     environment:
       AB_LOG_LEVEL: "WARNING"
@@ -46,7 +46,7 @@ services:
 
   zbx-sync:
     <<: *sidecar-common
-    image: pravesh/zbx-sync:latest
+    image: seyalrun/zbx-sync:latest
     container_name: zbx_sync
     platform: linux/arm64
     ports:
@@ -69,7 +69,7 @@ services:
 
   launch-token:
     <<: *sidecar-common
-    image: pravesh/launch-token:latest
+    image: seyalrun/launch-token:latest
     container_name: launch_token
     platform: linux/arm64
     ports:
@@ -91,7 +91,7 @@ services:
 
   webhook-receiver:
     <<: *sidecar-common
-    image: pravesh/webhook-receiver:latest
+    image: seyalrun/webhook-receiver:latest
     container_name: webhook_recv
     platform: linux/arm64
     ports:

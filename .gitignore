@@ -1,60 +1,53 @@
-# Claude Code local settings (personal overrides, not committed)
-.claude/settings.local.json
+# ── Sensitive / secrets ───────────────────────────────────────
+.env
+.env.*
+*.env
+servers.txt
+**/credentials.json
+**/.access_key
+**/*.key
+**/*.pem
+**/*.crt
+**/*.p12
+**/secret*
 
-# Python
+# ── Python ────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
+.Python
 .venv/
 venv/
-.env
+env/
 *.egg-info/
-dist/
 build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-htmlcov/
-.coverage
-coverage.xml
 
-# Node
+# ── Node / Vue ────────────────────────────────────────────────
 node_modules/
-dist/
-.vite/
-*.local
+services/pravesh-console/dist/
+services/pravesh-console/.vite/
+*.tsbuildinfo
 
-# Secrets — never commit these
-*.pem
-*.key
-*.p12
-*.pfx
-*.crt
-*.env.local
-*.env.production
-infra/ansible/group_vars/all/vault.yml
-infra/terraform/environments/*/terraform.tfvars
-.vault_pass
+# ── Docker volumes / runtime ──────────────────────────────────
+data/
+jumpserver/
+grafana/data/
+*.sock
 
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.backup
-*.tfplan
-.terraformrc
-
-# Docker
-*.tar
-
-# IDE
+# ── Editor ────────────────────────────────────────────────────
+.DS_Store
 .idea/
 .vscode/settings.json
 *.swp
 *.swo
+Thumbs.db
 
-# macOS
-.DS_Store
-
-# Logs
+# ── Logs ──────────────────────────────────────────────────────
 *.log
 logs/
+servers.txt
+.claude/
+*.local.json

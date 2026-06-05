@@ -1,0 +1,89 @@
+---
+# Playbook Studio + SeyalRun Console — Visual Ansible Builder + SPA UI
+# Usage: docker compose -f docker/compose.studio.yml up -d
+# Requires: jms_net (created by main JumpServer compose)
+
+services:
+  playbook-studio:
+    image: seyalrun/playbook-studio:latest
+    container_name: ps_service
+    platform: linux/arm64
+    build:
+      context: ../services/playbook-studio
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8005:8005"
+    environment:
+      PS_DATABASE_URL: "postgresql+asyncpg://pravesh:${POSTGRES_PASSWORD}@192.168.250.1:5432/playbook_studio"
+      PS_REDIS_URL: "redis://:${REDIS_PASSWORD}@192.168.250.1:6379/5"
+      PS_JUMPSERVER_API_URL: "http://192.168.64.2"
+      PS_AUTOMATION_BRIDGE_URL: "http://ab_service:8001"
+      PS_SMTP_HOST: "${SMTP_HOST:-localhost}"
+      PS_SMTP_PORT: "${SMTP_PORT:-587}"
+      PS_SMTP_USERNAME: "${SMTP_USERNAME:-}"
+      PS_SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      PS_SMTP_FROM_ADDRESS: "${SMTP_FROM:-alerts@seyalrun.local}"
+      PS_SMTP_USE_TLS: "${SMTP_USE_TLS:-false}"
+      PS_SMTP_START_TLS: "${SMTP_START_TLS:-false}"
+      PS_CORS_ORIGINS: '["http://192.168.64.2:3000","http://localhost:3000"]'
+      PS_LOG_LEVEL: "INFO"
+      PS_ENVIRONMENT: "production"
+    volumes:
+      - /playbooks:/playbooks
+    networks:
+      - jms_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      - ps_postgres_init
+
+  seyalrun-console:
+    image: pravesh/seyalrun-console:latest
+    container_name: console_ui
+    platform: linux/arm64
+    build:
+      context: ../services/seyalrun-console
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "192.168.64.2:3000:3000"
+    environment:
+      VITE_API_BASE_URL: "/api"
+    networks:
+      - jms_net
+    depends_on:
+      - playbook-studio
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  ps_postgres_init:
+    image: postgres:16-alpine
+    container_name: ps_postgres_init
+    platform: linux/arm64
+    restart: "no"
+    environment:
+      PGPASSWORD: "${POSTGRES_ADMIN_PASSWORD:-postgres}"
+    command: >
+      sh -c "
+        psql -h 192.168.250.1 -U postgres -tc \"SELECT 1 FROM pg_database WHERE datname='playbook_studio'\" | grep -q 1 ||
+        psql -h 192.168.250.1 -U postgres -c \"CREATE DATABASE playbook_studio;\"
+        psql -h 192.168.250.1 -U postgres -tc \"SELECT 1 FROM pg_roles WHERE rolname='pravesh'\" | grep -q 1 ||
+        psql -h 192.168.250.1 -U postgres -c \"CREATE USER pravesh WITH PASSWORD '${POSTGRES_PASSWORD}';\"
+        psql -h 192.168.250.1 -U postgres -c \"GRANT ALL PRIVILEGES ON DATABASE playbook_studio TO pravesh;\"
+        psql -h 192.168.250.1 -U postgres -d playbook_studio -c \"GRANT ALL ON SCHEMA public TO pravesh;\"
+      "
+    networks:
+      - jms_net
+
+networks:
+  jms_net:
+    external: true

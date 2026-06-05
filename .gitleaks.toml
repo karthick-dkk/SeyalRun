@@ -1,0 +1,6 @@
+[allowlist]
+description = "Allowlist for known safe patterns in this repository"
+paths = [
+    '''^\.secrets\.baseline$''',
+    '''^\.gitleaks\.toml$''',
+]
