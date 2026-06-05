@@ -229,7 +229,7 @@ curl http://192.168.64.2:3000/api/v1/modules | python3 -c \
 3. Configure parameters via form → live YAML preview
 4. Save → Execute
 
-<img width="2934" height="1668" alt="devops_karthidkk123 medium com 2026-06-05 at 1 48 18 PM" src="https://github.com/user-attachments/assets/b1d7390a-103b-4803-8c93-fa23727e2cf4" />
+<img width="2934" height="1668" alt="devops_karthidkk123 medium com 2026-06-05 at 1 50 01 PM" src="https://github.com/user-attachments/assets/dcafbb6f-59a7-4f19-b187-3e38ad6fd8ed" />
 
 
 ### Session Recording & Replay
@@ -237,6 +237,7 @@ curl http://192.168.64.2:3000/api/v1/modules | python3 -c \
 - All SSH sessions recorded automatically
 - **Sessions** page → click **▶ Replay**
 - Speed control: 0.5× to 10×
+<img width="2934" height="1668" alt="devops_karthidkk123 medium com 2026-06-05 at 1 51 35 PM" src="https://github.com/user-attachments/assets/869a6492-9938-4c21-8e9f-050982b277c6" />
 
 ---
 
