@@ -13,7 +13,7 @@
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Email: karthidkk123@gmail.com
+Email: karthickdkk@outlook.com
 
 Include:
 - Description of the vulnerability
