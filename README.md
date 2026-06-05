@@ -229,6 +229,9 @@ curl http://192.168.64.2:3000/api/v1/modules | python3 -c \
 3. Configure parameters via form → live YAML preview
 4. Save → Execute
 
+<img width="2934" height="1668" alt="devops_karthidkk123 medium com 2026-06-05 at 1 48 18 PM" src="https://github.com/user-attachments/assets/b1d7390a-103b-4803-8c93-fa23727e2cf4" />
+
+
 ### Session Recording & Replay
 
 - All SSH sessions recorded automatically
