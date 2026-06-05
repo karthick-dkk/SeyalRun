@@ -29,10 +29,10 @@ SeyalRun is a self-hosted DevOps operations console that adds a modern UI layer 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                            Browser                                       │
+│                            Browser                                      │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │          SeyalRun Console  (Vue 3 SPA)  — port 3000             │    │
-│  │   Dashboard │ Assets │ Terminal │ Playbooks │ Templates │ Jobs   │    │
+│  │   Dashboard │ Assets │ Terminal │ Playbooks │ Templates │ Jobs  │    │
 │  └────────────────────────┬────────────────────────────────────────┘    │
 └───────────────────────────┼─────────────────────────────────────────────┘
                             │ HTTP/WebSocket
