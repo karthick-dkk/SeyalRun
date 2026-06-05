@@ -8,7 +8,7 @@
 [![Vue](https://img.shields.io/badge/Vue-3.4-green)](https://vuejs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688)](https://fastapi.tiangolo.com)
 
-<img width="2934" height="1668" alt="image" src="https://github.com/user-attachments/assets/f8538330-3e43-4087-a353-8a31e5ed66bc" />
+<img width="2934" height="1668" alt="image" src="https://github.com/user-attachments/assets/da1d58aa-1606-4c71-80e8-cbaeed4ad6d6" />
 
 ---
 
@@ -196,6 +196,8 @@ curl http://192.168.64.2:3000/api/v1/modules | python3 -c \
 ## Usage
 
 ### SSH Terminal
+<img width="2934" height="1668" alt="image" src="https://github.com/user-attachments/assets/bf005fa2-a452-4c47-90c1-a6867b954436" />
+
 
 1. **Assets** → Click **⊙ SSH** on any host
 2. Select a JumpServer account or enter credentials
