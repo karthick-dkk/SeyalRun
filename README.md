@@ -1,4 +1,4 @@
-# SeyalRun — Open Source PAM & DevOps Automation Console
+# SeyalRun_JS — Open Source PAM & DevOps Automation Console
 
 > **Privileged Access Management + Visual Ansible Automation + Web SSH Terminal**
 > Built on top of JumpServer — zero modifications to upstream projects.
