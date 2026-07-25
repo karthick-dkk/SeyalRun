@@ -448,6 +448,11 @@
                 <option value="">— Select Project —</option>
                 <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <input v-model="newProjectName" class="input" placeholder="New project name…" style="font-size:12px" @keyup.enter.prevent="createProject" />
+                <button class="btn btn-sm" :disabled="!newProjectName.trim() || creatingProject" @click="createProject">{{ creatingProject ? '…' : '+ Add' }}</button>
+              </div>
+              <div v-if="projectError" class="err">{{ projectError }}</div>
             </div>
           </div>
           <div class="form-group">
@@ -665,6 +670,11 @@
               <option value="">— Select Project —</option>
               <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <input v-model="newProjectName" class="input" placeholder="New project name…" style="font-size:12px" @keyup.enter.prevent="createProject" />
+              <button class="btn btn-sm" :disabled="!newProjectName.trim() || creatingProject" @click="createProject">{{ creatingProject ? '…' : '+ Add' }}</button>
+            </div>
+            <div v-if="projectError" class="err">{{ projectError }}</div>
           </div>
 
           <div class="form-group" style="margin-top:8px">
@@ -804,6 +814,27 @@ const serviceLoading   = ref(false)
 // ── Data ───────────────────────────────────────────────────────────────────
 const autoTab      = ref<'playbooks' | 'templates' | 'schedules' | 'runs'>('playbooks')
 const projects     = ref<any[]>([])
+const newProjectName = ref('')
+const creatingProject = ref(false)
+const projectError    = ref('')
+async function createProject() {
+  const name = newProjectName.value.trim()
+  if (!name) return
+  creatingProject.value = true; projectError.value = ''
+  try {
+    const res = await api.post('/projects', { name })
+    projects.value.push(res.data)
+    // Only one of these dialogs is open at a time — set project_id on whichever
+    // triggered this (both share the same quick-add input/button).
+    if (editDlg.visible) editDlg.form.project_id = res.data.id
+    if (chainDlg.visible) chainDlg.form.project_id = res.data.id
+    newProjectName.value = ''
+  } catch (e: any) {
+    projectError.value = e?.response?.data?.detail || 'Failed to create project'
+  } finally {
+    creatingProject.value = false
+  }
+}
 const allTemplates = ref<any[]>([])
 const schedules    = ref<any[]>([])
 const runs         = ref<any[]>([])
