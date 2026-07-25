@@ -63,6 +63,13 @@
             <label class="fp-label">App Public URL <span class="hint">used to build one-click links in approval emails</span></label>
             <input v-model="platformForm.app_public_url" class="fp-input" placeholder="https://seyalrun.example.com" />
           </div>
+          <div class="fp-field" style="margin-top:4px">
+            <label class="fp-label">Skip approval for <span class="hint">these roles' own access-grant requests go active immediately, no second approver needed</span></label>
+            <div style="display:flex;gap:16px;margin-top:2px">
+              <label class="toggle-row"><input type="checkbox" v-model="exemptRoleAdmin" /> Admin</label>
+              <label class="toggle-row"><input type="checkbox" v-model="exemptRoleSuperadmin" /> Superadmin</label>
+            </div>
+          </div>
           <div v-if="platformMsg" class="save-msg" :class="platformErr ? 'err' : 'ok'">{{ platformMsg }}</div>
           <div style="margin-top:12px">
             <button class="btn btn-primary" :disabled="platformSaving" @click="savePlatform">{{ platformSaving ? 'Saving…' : 'Save' }}</button>
@@ -133,11 +140,29 @@ const integrationErr = ref(false)
 const platformForm = reactive({
   rate_limit_requests: 600, rate_limit_window_seconds: 60,
   session_idle_minutes: 30, session_absolute_hours: 8, log_level: 'INFO',
-  app_public_url: '',
+  app_public_url: '', authorization_approval_exempt_roles: ['superadmin'] as string[],
 })
 const platformSaving = ref(false)
 const platformMsg = ref('')
 const platformErr = ref(false)
+
+// Bridges the backend's role-name array to two checkboxes — only "admin" and
+// "superadmin" are meaningful here (create/update authorization is
+// admin-gated, so no other role can ever reach it). Top-level computed refs
+// (not nested in an object) so Vue's template ref-unwrapping applies to
+// v-model, matching moduleTrustedIpsText's pattern above.
+function exemptRoleToggle(role: string) {
+  return computed({
+    get: () => platformForm.authorization_approval_exempt_roles.includes(role),
+    set: (checked: boolean) => {
+      const roles = platformForm.authorization_approval_exempt_roles
+      if (checked && !roles.includes(role)) roles.push(role)
+      else if (!checked) platformForm.authorization_approval_exempt_roles = roles.filter(r => r !== role)
+    },
+  })
+}
+const exemptRoleAdmin = exemptRoleToggle('admin')
+const exemptRoleSuperadmin = exemptRoleToggle('superadmin')
 
 const moduleForm = reactive({ enabled: false, trusted_ips: [] as string[], elevated_rate_limit: 5000 })
 const moduleTrustedIpsText = computed({

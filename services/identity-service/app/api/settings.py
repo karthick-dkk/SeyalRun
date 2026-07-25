@@ -10,7 +10,7 @@ in api/internal.py (never to the browser).
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..audit import log_action
@@ -107,6 +107,17 @@ class PlatformSettingsIn(BaseModel):
     # safe default exists across deployments, and an empty value degrades
     # gracefully to a console-only instruction rather than a broken link.
     app_public_url: str = ""
+    # Which roles' authorization create/edit requests are EXEMPT from the
+    # segregation-of-duties approval workflow (see
+    # api/authorizations.py::_apply_and_require_reapproval) — a request from a
+    # role in this list goes straight to active, no second approver needed.
+    # Only create_authorization/update_authorization are reachable by admin or
+    # superadmin at all (require_admin gate) — so today the only two possible
+    # values here are "admin" and "superadmin". Defaults to superadmin only:
+    # an admin's own request still needs a second approver; a superadmin's
+    # (already the highest-trust role, and the one who controls this very
+    # setting) does not. A superadmin can widen this to include "admin" too.
+    authorization_approval_exempt_roles: list[str] = Field(default_factory=lambda: ["superadmin"])
 
 
 class ZabbixModuleSettingsIn(BaseModel):
@@ -149,6 +160,8 @@ async def put_platform(
     actor_id: str | None = Header(default=None, alias="X-User-Id"),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
 ):
+    from libs.rbaccore import BUILTIN_ROLE_PERMS
+
     # Bounded so a fat-fingered value can't lock everyone (including the editor)
     # out of the API or expire every session instantly.
     new = {
@@ -160,6 +173,13 @@ async def put_platform(
         "authorization_default_ttl_days": max(1, min(payload.authorization_default_ttl_days, 3650)),
         "log_level": payload.log_level.upper() if payload.log_level.upper() in
             ("DEBUG", "INFO", "WARNING", "ERROR") else "INFO",
+        "app_public_url": payload.app_public_url.strip(),
+        # Drop anything that isn't a real role name — a typo here must never
+        # silently do nothing (it just never matches an actor_role at check
+        # time) nor silently grant an unintended exemption.
+        "authorization_approval_exempt_roles": [
+            r for r in payload.authorization_approval_exempt_roles if r in BUILTIN_ROLE_PERMS
+        ],
     }
     await _put_value(session, PLATFORM_KEY, new, actor_id, actor_name)
     return new

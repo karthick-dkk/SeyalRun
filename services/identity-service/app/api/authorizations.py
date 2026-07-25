@@ -135,10 +135,15 @@ async def _send_approval_request_emails(session: AsyncSession, authz: ZAAuthoriz
         logger.exception("approval email dispatch failed", extra={"authz_id": authz.id})
 
 
-async def _default_ttl_days(session: AsyncSession) -> int:
+async def _platform_approval_settings(session: AsyncSession) -> tuple[int, list[str]]:
+    """(default_ttl_days, approval_exempt_roles) — one platform-settings fetch for
+    both, since every _apply_and_require_reapproval call needs both."""
     from .settings import _get_value, _PLATFORM_DEFAULTS, PLATFORM_KEY
     platform = {**_PLATFORM_DEFAULTS, **(await _get_value(session, PLATFORM_KEY))}
-    return int(platform.get("authorization_default_ttl_days", 90))
+    return (
+        int(platform.get("authorization_default_ttl_days", 90)),
+        list(platform.get("authorization_approval_exempt_roles") or []),
+    )
 
 
 @router.get("", response_model=list[AuthorizationOut])
@@ -279,19 +284,34 @@ def _merge(arr: list[str], scalar: str | None) -> list[str]:
 
 
 def _apply_and_require_reapproval(
-    authz: ZAAuthorization, payload: AuthorizationCreate, default_ttl_days: int, actor_id: str | None,
+    authz: ZAAuthorization, payload: AuthorizationCreate, default_ttl_days: int,
+    actor_id: str | None, actor_role: str | None, approval_exempt_roles: list[str],
 ) -> None:
     """Fold legacy scalars + arrays into the many-to-many arrays (keeping the legacy
     scalar columns populated — first element — for back-compat readers), and reset
     the approval lifecycle in the SAME function rather than a separate one a caller
     could forget to invoke. PCI DSS Phase B segregation of duties: every create/edit
-    is inert until a DIFFERENT admin/superadmin approves it (see approve_authorization)
-    — "enabled" is the one flag every resolver already checks, so this reset is the
-    sole enforcement point; nothing downstream needed to change. Deliberately NOT
-    split into two functions (field-apply + approval-reset) — a prior version was,
-    and every call site happened to call both in sequence, but nothing enforced that
-    coupling; a future call site (bulk import, internal sync) could have called just
-    the field-apply half and silently reactivated a grant with no re-approval."""
+    from a NON-exempt role is inert until a DIFFERENT admin/superadmin approves it
+    (see approve_authorization) — "enabled" is the one flag every resolver already
+    checks, so this reset is the sole enforcement point; nothing downstream needed
+    to change. Deliberately NOT split into two functions (field-apply +
+    approval-reset) — a prior version was, and every call site happened to call
+    both in sequence, but nothing enforced that coupling; a future call site (bulk
+    import, internal sync) could have called just the field-apply half and
+    silently reactivated a grant with no re-approval.
+
+    approval_exempt_roles (superadmin-configurable, see api/settings.py) lets a
+    deployment decide which roles' own requests skip the approval step entirely.
+    Only admin/superadmin can reach this endpoint at all (require_admin gate on
+    create/update below), so the only two meaningful values here are "admin" and
+    "superadmin" — defaults to superadmin only, so an admin's own request still
+    needs a second admin/superadmin to approve it, while superadmin's does not.
+    actor_role is read from X-User-Real-Role, not the (possibly write-vouched)
+    X-User-Role — api-gateway's downstream_role() vouches any authorized
+    non-GET write up to "admin" regardless of the caller's true role (support
+    has full CRUD on the authorizations segment), so checking the vouched
+    header here would let a support account's request ride along with an
+    "admin"-exempt policy the superadmin never intended to cover support."""
     users = _merge(payload.user_ids, payload.user_id)
     ugroups = _merge(payload.user_group_ids, payload.user_group_id)
     hosts = _merge(payload.host_ids, payload.host_id)
@@ -318,11 +338,18 @@ def _apply_and_require_reapproval(
     # access gap auditors flag — default one in rather than leaving it open-ended.
     authz.date_expired = payload.date_expired or (datetime.now(timezone.utc) + timedelta(days=default_ttl_days))
 
-    authz.status = "pending_approval"
-    authz.enabled = False
-    authz.requested_by = actor_id
-    authz.approved_by = None
-    authz.approved_at = None
+    if actor_role in approval_exempt_roles:
+        authz.status = "active"
+        authz.enabled = True
+        authz.requested_by = actor_id
+        authz.approved_by = actor_id
+        authz.approved_at = datetime.now(timezone.utc)
+    else:
+        authz.status = "pending_approval"
+        authz.enabled = False
+        authz.requested_by = actor_id
+        authz.approved_by = None
+        authz.approved_at = None
 
 
 @router.post("", response_model=AuthorizationOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
@@ -331,22 +358,26 @@ async def create_authorization(
     session: AsyncSession = Depends(get_session),
     actor_id: str | None = Header(default=None, alias="X-User-Id"),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
+    actor_role: str | None = Header(default=None, alias="X-User-Real-Role"),
 ):
     # Fail closed: a missing actor_id must never leave requested_by empty — that
     # would silently defeat the self-approval check below (empty == empty).
     if not actor_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user identity required")
+    default_ttl_days, approval_exempt_roles = await _platform_approval_settings(session)
     authz = ZAAuthorization()
-    _apply_and_require_reapproval(authz, payload, await _default_ttl_days(session), actor_id)
+    _apply_and_require_reapproval(authz, payload, default_ttl_days, actor_id, actor_role, approval_exempt_roles)
     session.add(authz)
     await session.commit()
     await session.refresh(authz)
 
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="authorization.create",
-        resource_type="authorization", resource_id=authz.id, details={"name": authz.name},
+        resource_type="authorization", resource_id=authz.id,
+        details={"name": authz.name, "auto_approved": authz.status == "active"},
     )
-    await _send_approval_request_emails(session, authz)
+    if authz.status == "pending_approval":
+        await _send_approval_request_emails(session, authz)
     return authz
 
 
@@ -357,6 +388,7 @@ async def update_authorization(
     session: AsyncSession = Depends(get_session),
     actor_id: str | None = Header(default=None, alias="X-User-Id"),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
+    actor_role: str | None = Header(default=None, alias="X-User-Real-Role"),
 ):
     if not actor_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user identity required")
@@ -367,7 +399,8 @@ async def update_authorization(
 
     # Any edit re-opens approval — otherwise a trivially-approved grant could be
     # silently widened afterward with no second reviewer ever seeing the real change.
-    _apply_and_require_reapproval(authz, payload, await _default_ttl_days(session), actor_id)
+    default_ttl_days, approval_exempt_roles = await _platform_approval_settings(session)
+    _apply_and_require_reapproval(authz, payload, default_ttl_days, actor_id, actor_role, approval_exempt_roles)
 
     await session.commit()
     await session.refresh(authz)
@@ -375,8 +408,10 @@ async def update_authorization(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="authorization.update",
         resource_type="authorization", resource_id=authz.id,
+        details={"auto_approved": authz.status == "active"},
     )
-    await _send_approval_request_emails(session, authz)
+    if authz.status == "pending_approval":
+        await _send_approval_request_emails(session, authz)
     return authz
 
 
