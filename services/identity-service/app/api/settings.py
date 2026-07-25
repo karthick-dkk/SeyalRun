@@ -160,8 +160,6 @@ async def put_platform(
     actor_id: str | None = Header(default=None, alias="X-User-Id"),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
 ):
-    from libs.rbaccore import BUILTIN_ROLE_PERMS
-
     # Bounded so a fat-fingered value can't lock everyone (including the editor)
     # out of the API or expire every session instantly.
     new = {
@@ -174,11 +172,16 @@ async def put_platform(
         "log_level": payload.log_level.upper() if payload.log_level.upper() in
             ("DEBUG", "INFO", "WARNING", "ERROR") else "INFO",
         "app_public_url": payload.app_public_url.strip(),
-        # Drop anything that isn't a real role name — a typo here must never
-        # silently do nothing (it just never matches an actor_role at check
-        # time) nor silently grant an unintended exemption.
+        # Allowlisted to exactly the two roles that can ever reach
+        # create_authorization/update_authorization (both require_admin-gated) —
+        # NOT the full BUILTIN_ROLE_PERMS set. "support" already holds full CRUD
+        # on the authorizations segment (see authorizations.py's vouching-defense
+        # comment); accepting "support"/"user" here today would be a dormant
+        # no-op, but would silently turn into a real segregation-of-duties bypass
+        # the moment anyone ever widens who can call those endpoints — narrower
+        # than "any real role name" on purpose, not just deduped against a typo.
         "authorization_approval_exempt_roles": [
-            r for r in payload.authorization_approval_exempt_roles if r in BUILTIN_ROLE_PERMS
+            r for r in payload.authorization_approval_exempt_roles if r in ("admin", "superadmin")
         ],
     }
     await _put_value(session, PLATFORM_KEY, new, actor_id, actor_name)
