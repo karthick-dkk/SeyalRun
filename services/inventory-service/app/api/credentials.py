@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs.elevation import elevation_active
 from libs.pluginbase import discover_plugins, CredentialKind
 
 from .. import audit
@@ -20,7 +21,7 @@ from ..schemas import (
     CredentialTemplateCreate,
     CredentialTemplateOut,
 )
-from ..vault import VaultDecryptError, decrypt, encrypt
+from ..vault import VaultDecryptError, decrypt, decrypt_envelope, encrypt_envelope
 
 router = APIRouter(tags=["credentials"], dependencies=[Depends(require_service_token)])
 
@@ -32,6 +33,21 @@ def _kind(secret_type: str) -> CredentialKind:
     if kind is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"unknown secret_type '{secret_type}'")
     return kind
+
+
+def _encrypt_secret(plaintext: str) -> tuple[str, str]:
+    """PCI DSS Phase C: every new write goes through the envelope scheme —
+    returns (ciphertext, wrapped_dek), both must be stored together."""
+    return encrypt_envelope(plaintext)
+
+
+def _decrypt_secret(cred: ZACredential) -> str:
+    """wrapped_dek is NULL on rows written before Phase C shipped — fall back to
+    the old single-KEK decrypt() for those; every row gets migrated to the
+    envelope scheme automatically the next time it's written (update/rotate)."""
+    if cred.wrapped_dek:
+        return decrypt_envelope(cred.secret_ciphertext, cred.wrapped_dek)
+    return decrypt(cred.secret_ciphertext)
 
 
 def _strength_score(secret_type: str, secret: dict) -> int | None:
@@ -142,7 +158,7 @@ async def create_credential(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    ciphertext = encrypt(kind.encode(payload.secret))
+    ciphertext, wrapped_dek = _encrypt_secret(kind.encode(payload.secret))
 
     cred = ZACredential(
         name=payload.name,
@@ -150,6 +166,7 @@ async def create_credential(
         username=payload.username,
         secret_type=payload.secret_type,
         secret_ciphertext=ciphertext,
+        wrapped_dek=wrapped_dek,
         credential_scope=payload.credential_scope,
         is_default=payload.is_default,
         is_sudo=payload.is_sudo,
@@ -201,7 +218,7 @@ async def update_credential(
             kind.validate(payload.secret)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-        cred.secret_ciphertext = encrypt(kind.encode(payload.secret))
+        cred.secret_ciphertext, cred.wrapped_dek = _encrypt_secret(kind.encode(payload.secret))
         cred.strength_score = _strength_score(payload.secret_type, payload.secret)
 
     existing = await session.execute(select(ZACredentialHostLink).where(ZACredentialHostLink.credential_id == credential_id))
@@ -254,6 +271,42 @@ async def list_weak_credentials(session: AsyncSession = Depends(get_session)):
     return [await _credential_out(session, c) for c in result.scalars().all()]
 
 
+async def _credential_authorized_for_reveal(session: AsyncSession, credential_id: str, actor_id: str, settings) -> bool:
+    """PCI DSS Phase A: reveal previously had no PAM gate at all beyond require_admin —
+    any admin could reveal any credential's plaintext with zero za_authorization grant,
+    via a path that never touches the terminal-service gateway. This checks, for every
+    host the credential is linked to, whether the caller's resolved authorization for
+    that host actually covers this credential + the "reveal" action."""
+    import httpx
+    from libs.servicetoken import mint
+
+    links = await session.execute(
+        select(ZACredentialHostLink.host_id).where(ZACredentialHostLink.credential_id == credential_id)
+    )
+    host_ids = [h for (h,) in links.all()]
+    if not host_ids:
+        return False
+    token = mint("inventory-service", "identity-service", settings.service_jwt_secret)
+    async with httpx.AsyncClient(base_url=settings.identity_service_url, timeout=5.0) as client:
+        for host_id in host_ids:
+            try:
+                resp = await client.get(
+                    "/api/v1/internal/authz/resolve",
+                    params={"user_id": actor_id, "host_id": host_id},
+                    headers={"X-Service-Token": token},
+                )
+            except httpx.HTTPError:
+                continue
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            cred_ids = data.get("credential_ids") or ([data["credential_id"]] if data.get("credential_id") else [])
+            actions = data.get("actions") or []
+            if credential_id in cred_ids and (not actions or "reveal" in actions):
+                return True
+    return False
+
+
 @router.get("/credentials/{credential_id}/reveal", response_model=CredentialSecretOut, dependencies=[Depends(require_admin)])
 async def reveal_credential(
     credential_id: str,
@@ -261,11 +314,18 @@ async def reveal_credential(
     reveal_token: str = Header("", alias="X-Reveal-Token"),
     actor_id: str | None = Header(default=None, alias="X-User-Id"),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
+    actor_role: str = Header(default="user", alias="X-User-Role"),
+    elevated_until: str = Header(default="", alias="X-Elevated-Until"),
 ):
     """MFA-gated secret reveal (Feature 6). Requires a short-lived reveal token minted by
     identity-service /auth/mfa/verify. The token is bound to BOTH the specific credential
     (``cid``) and the user (``sub``) it was minted for, so it cannot be replayed to reveal a
-    different credential or by a different user."""
+    different credential or by a different user.
+
+    PCI DSS Phase A: the reveal token alone used to be sufficient — this also requires a
+    real za_authorization grant covering "reveal" on this credential, same PAM gate SSH
+    access already has, UNLESS the caller is admin/superadmin with an active JIT elevation
+    (see terminal-service sessions.py's identical fallback)."""
     settings = get_settings()
     if not reveal_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="reveal token required")
@@ -286,16 +346,35 @@ async def reveal_credential(
     if cred is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="credential not found")
 
+    # Fail CLOSED, not open: a missing actor_id must never silently skip the PAM
+    # check below (it did, briefly — caught by review before this shipped further).
+    if not actor_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user identity required")
+
+    elevation_used = False
+    if not await _credential_authorized_for_reveal(session, credential_id, actor_id, settings):
+        if actor_role in ("admin", "superadmin") and elevation_active(elevated_until):
+            elevation_used = True
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="not authorized to reveal this credential — request access in Admin → Authorizations",
+            )
+
     kind = _kind(cred.secret_type)
     try:
-        secret = kind.decode(decrypt(cred.secret_ciphertext))
+        secret = kind.decode(_decrypt_secret(cred))
     except VaultDecryptError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
     await audit.log_action(
         user_id=actor_id, username=actor_name or "", action="credential.viewed",
         resource_type="credential", resource_id=cred.id,
-        details={"event_type": "credential_viewed", "name": cred.name},
+        details={
+            "event_type": "elevated_reveal" if elevation_used else "credential_viewed",
+            "name": cred.name, "elevation_used": elevation_used,
+        },
+        result="success",
     )
     return CredentialSecretOut(id=cred.id, username=cred.username, secret_type=cred.secret_type, secret=secret)
 
@@ -310,7 +389,7 @@ async def get_credential_secret(credential_id: str, session: AsyncSession = Depe
 
     kind = _kind(cred.secret_type)
     try:
-        secret = kind.decode(decrypt(cred.secret_ciphertext))
+        secret = kind.decode(_decrypt_secret(cred))
     except VaultDecryptError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return CredentialSecretOut(
@@ -339,15 +418,18 @@ async def update_credential_secret(
     kind = _kind(cred.secret_type)
     kind.validate(payload.secret)
 
-    # Archive the prior ciphertext before overwriting (Feature 10 history).
+    # Archive the prior ciphertext (and its wrapped_dek, if envelope-encrypted —
+    # cred.wrapped_dek is about to be overwritten below, and it's the only key
+    # that can ever unwrap this archived ciphertext again) before overwriting.
     if cred.secret_ciphertext:
         session.add(ZACredentialHistory(
             credential_id=cred.id,
             secret_ciphertext=cred.secret_ciphertext,
+            wrapped_dek=cred.wrapped_dek,
             rotated_by=actor_id or None,
         ))
 
-    cred.secret_ciphertext = encrypt(kind.encode(payload.secret))
+    cred.secret_ciphertext, cred.wrapped_dek = _encrypt_secret(kind.encode(payload.secret))
     cred.strength_score = _strength_score(cred.secret_type, payload.secret)
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)

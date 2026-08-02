@@ -69,8 +69,31 @@ async def _job_weak_credential_scan() -> str:
 
 
 async def _job_rotation_due_check() -> str:
-    # Inventory owns rotation policies; a dedicated bulk endpoint is a future addition.
-    return "rotation due check complete"
+    s = get_settings()
+    res = await _post(s.inventory_service_url, "/api/v1/internal/credentials/rotate-due", "inventory-service")
+    return f"rotated {res.get('rotated', 0)}, notified {res.get('notified', 0)}, failed {res.get('failed', 0)}"
+
+
+async def _job_authorization_ttl_sweep() -> str:
+    s = get_settings()
+    res = await _post(s.identity_service_url, "/api/v1/internal/authorizations/sweep-expired", "identity-service")
+    return f"expired {res.get('expired', 0)} authorization(s)"
+
+
+async def _job_security_digest_report() -> str:
+    from .runner import create_notification
+
+    s = get_settings()
+    summary = await _get(s.identity_service_url, "/api/v1/internal/audit/daily-summary", "identity-service")
+    total = summary.get("total", 0)
+    by_action = summary.get("by_action") or {}
+    top = ", ".join(f"{action} ({count})" for action, count in list(by_action.items())[:5])
+    await create_notification(
+        user_id=None, severity="info", title=f"Daily security digest — {total} audit event(s)",
+        message=f"Top actions: {top}" if top else "No audit activity in the last 24h.",
+        source_type="security_digest",
+    )
+    return f"{total} audit event(s) in the last 24h"
 
 
 async def _job_asset_reachability() -> str:
@@ -101,7 +124,22 @@ async def _job_es_rollover() -> str:
 
 
 async def _job_audit_archive() -> str:
-    return "audit archive complete"
+    s = get_settings()
+    # Retention threshold is admin-configurable via inventory-service's Log Backend
+    # config (retention.audit_days) when set; falls back to identity-service's own
+    # .env default otherwise. This job reports, it never deletes — za_audit_logs is
+    # a tamper-evident hash chain (T9), and removing an old row would break
+    # verify_chain for every row after it. See identity-service's
+    # /internal/audit/retention-status docstring for the full rationale.
+    days = None
+    try:
+        cfg = await _get(s.inventory_service_url, "/api/v1/log-backend/internal/shipping", "inventory-service")
+        days = (cfg.get("retention") or {}).get("audit_days")
+    except RuntimeError:
+        pass
+    path = "/api/v1/internal/audit/retention-status" + (f"?days={days}" if days else "")
+    res = await _get(s.identity_service_url, path, "identity-service")
+    return f"{res.get('rows_past_retention', 0)} audit row(s) past the {res.get('retention_days')}-day retention threshold"
 
 
 _REGISTRY = {
@@ -114,6 +152,8 @@ _REGISTRY = {
     "orphan_job_logs_cleanup": _job_orphan_logs,
     "elasticsearch_index_rollover": _job_es_rollover,
     "audit_log_archive": _job_audit_archive,
+    "authorization_ttl_sweep": _job_authorization_ttl_sweep,
+    "security_digest_report": _job_security_digest_report,
 }
 
 

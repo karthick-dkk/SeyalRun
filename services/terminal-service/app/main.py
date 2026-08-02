@@ -26,6 +26,13 @@ logger = logging.getLogger(__name__)
 # the WS handler awaits it.
 _terminate_events: dict[str, asyncio.Event] = {}
 
+# Live session viewer (PCI DSS Phase D): session_id → list of spectator
+# WebSockets, tee'd a copy of the primary session's output (see
+# ws/terminal.py::TeeWebSocket). In-process only — horizontal scaling of this
+# service would need Redis pub/sub instead, since a spectator connecting to a
+# different instance than the primary session wouldn't see this dict.
+_spectators: dict[str, list[WebSocket]] = {}
+
 
 async def _reap_pending_loop() -> None:
     """Mark sessions that were created but never had a WS connect (stuck 'pending')
@@ -79,8 +86,15 @@ app.include_router(internal_router, prefix="/api/v1")
 
 @app.websocket("/ws/ssh/{session_id}")
 async def ws_ssh_terminal(websocket: WebSocket, session_id: str):
-    from .ws.terminal import handle_terminal
-    await handle_terminal(websocket, session_id, _terminate_events)
+    from .ws.terminal import handle_terminal, TeeWebSocket
+    tee = TeeWebSocket(websocket, session_id, _spectators)
+    await handle_terminal(tee, session_id, _terminate_events)
+
+
+@app.websocket("/ws/ssh/{session_id}/spectate")
+async def ws_ssh_spectate(websocket: WebSocket, session_id: str):
+    from .ws.spectate import handle_spectate
+    await handle_spectate(websocket, session_id, _spectators)
 
 
 @app.get("/health")

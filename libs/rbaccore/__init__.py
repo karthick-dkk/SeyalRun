@@ -65,6 +65,7 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
         "perms": {
             **_grant(_INVENTORY + _ZONES + _AUTOMATION + _SELF),
             "authorizations": list(ALL_METHODS),
+            "access-reviews": list(ALL_METHODS),  # PCI DSS Phase C — can revoke access, admin-only (not support)
             "audit": ["GET"],
             "users": ["GET", "PUT"],   # edit existing users; cannot create (POST)
             "roles": ["GET"],          # view only; cannot create/edit role definitions
@@ -151,3 +152,11 @@ def bypasses_authz(roles: list[str]) -> bool:
     ONLY superadmin/admin (break-glass). support/user are default-deny on
     resource actions even when their role grants the capability."""
     return any(r in _AUTHZ_BYPASS for r in (roles or []))
+
+
+def authz_bypass_role_names() -> frozenset[str]:
+    """The role-name set bypasses_authz checks against, for callers that need
+    to filter/query by role name directly (e.g. a bulk DB query resolving
+    which users hold a bypass role) rather than evaluate one user's roles at a
+    time — keeps the single definition of "bypass role" in this module."""
+    return _AUTHZ_BYPASS

@@ -45,6 +45,7 @@ async def verify_audit_chain(session: AsyncSession = Depends(get_session)):
             "payload": audit_payload(
                 r.user_id, r.username, r.action, r.resource_type,
                 r.resource_id, r.details, r.ip_address, r.created_at,
+                session_id=r.session_id, result=r.result,
             ),
         }
         for r in rows

@@ -24,12 +24,28 @@ _HOP_BY_HOP = {
     "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
 }
 
+# Every trust/identity header this gateway itself sets on the way out. Stripped
+# from the CLIENT's inbound headers unconditionally (not just overwritten) —
+# proxy() below only assigns some of these conditionally (X-Elevated-Until,
+# X-User-Scopes, X-Kiosk-Host-Id are only set when the resolved identity
+# actually carries that value), so without this strip a caller could plant a
+# forged value that survives untouched whenever the condition is false (e.g. a
+# non-elevated admin forging X-Elevated-Until to bypass the JIT-elevation
+# gate, or a session-cookie caller forging X-User-Scopes to pass a scoped-PAT
+# check). Downstream services must only ever trust these coming from
+# api-gateway, never from the original client.
+_IDENTITY_HEADERS = {
+    "x-service-token", "x-user-id", "x-user-role", "x-user-real-role",
+    "x-user-name", "x-kiosk-host-id", "x-user-scopes", "x-elevated-until",
+}
+
 # First path segment after /api/v1/ -> (settings attr for upstream base URL, service-token audience)
 SERVICE_ROUTES: dict[str, tuple[str, str]] = {
     "auth": ("identity_service_url", "identity-service"),
     "users": ("identity_service_url", "identity-service"),
     "roles": ("identity_service_url", "identity-service"),
     "authorizations": ("identity_service_url", "identity-service"),
+    "access-reviews": ("identity_service_url", "identity-service"),
     "command-groups": ("identity_service_url", "identity-service"),
     "command-filters": ("identity_service_url", "identity-service"),
     "login-acls": ("identity_service_url", "identity-service"),
@@ -61,7 +77,10 @@ from .http import client as _client  # shared pooled client (closed by app lifes
 
 
 def _filtered_headers(headers) -> dict:
-    return {key: value for key, value in headers.items() if key.lower() not in _HOP_BY_HOP}
+    return {
+        key: value for key, value in headers.items()
+        if key.lower() not in _HOP_BY_HOP and key.lower() not in _IDENTITY_HEADERS
+    }
 
 
 async def proxy(request: Request, path: str, identity: dict) -> Response:
@@ -85,6 +104,19 @@ async def proxy(request: Request, path: str, identity: dict) -> Response:
     headers["X-User-Name"] = identity.get("username", "")
     if identity.get("kiosk_host_id"):
         headers["X-Kiosk-Host-Id"] = identity["kiosk_host_id"]
+    # PCI DSS Phase C — a Personal Access Token's scopes (see identity-service's
+    # api/tokens.py), forwarded so a downstream endpoint can require a specific
+    # scope (e.g. "deprovision") beyond the caller's ordinary role capability.
+    # Absent entirely for a session-cookie caller (identity.get("scopes") is only
+    # ever populated for PAT-based auth — see api-gateway/app/security.py::verify_pat).
+    if identity.get("scopes"):
+        headers["X-User-Scopes"] = ",".join(identity["scopes"])
+    # PCI DSS Phase A JIT elevation — unix timestamp the elevated window expires at,
+    # or absent entirely if the user has none active. Downstream services (terminal-
+    # service, inventory-service) treat this as the sole source of truth; it is never
+    # accepted from the inbound request (identity dict is resolved server-side only).
+    if identity.get("elevated_until"):
+        headers["X-Elevated-Until"] = str(identity["elevated_until"])
 
     body = await request.body()
     url = f"{base_url}/api/v1/{path}"

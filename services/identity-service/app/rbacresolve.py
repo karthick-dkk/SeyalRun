@@ -12,7 +12,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.rbaccore import merge_roles
+from libs.rbaccore import authz_bypass_role_names, merge_roles
 
 from .models import ZAGroupRole, ZARole, ZAUserGroupMember, ZAUserRole
 
@@ -40,3 +40,24 @@ async def effective_roles(session: AsyncSession, user_id: str) -> list[str]:
         ).all()
     ]
     return merge_roles(direct, group_roles)
+
+
+async def users_with_bypass_role(session: AsyncSession) -> set[str]:
+    """Bulk equivalent of calling bypasses_authz(await effective_roles(session,
+    uid)) for every user — two queries total instead of 1+2N, for callers that
+    need "which of these users hold admin/superadmin" rather than one user's
+    full role list (e.g. resolving who's eligible to approve an authorization
+    request, services/identity-service/app/api/authorizations.py)."""
+    bypass_roles = authz_bypass_role_names()
+    direct = await session.execute(
+        select(ZAUserRole.user_id)
+        .join(ZARole, ZARole.id == ZAUserRole.role_id)
+        .where(ZARole.name.in_(bypass_roles))
+    )
+    via_group = await session.execute(
+        select(ZAUserGroupMember.user_id)
+        .join(ZAGroupRole, ZAGroupRole.group_id == ZAUserGroupMember.group_id)
+        .join(ZARole, ZARole.id == ZAGroupRole.role_id)
+        .where(ZARole.name.in_(bypass_roles))
+    )
+    return {uid for (uid,) in direct.all()} | {uid for (uid,) in via_group.all()}

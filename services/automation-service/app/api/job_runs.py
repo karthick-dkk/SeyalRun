@@ -305,6 +305,7 @@ def _out(r: ZAJobRun, tmpl: ZAJobTemplate | None = None) -> dict:
         "approver_role": tmpl.approver_role if tmpl else None,
         "parent_run_id": r.parent_run_id,
         "host_results": getattr(r, "host_results", None) or {},
+        "diff_summary": getattr(r, "diff_summary", None) or {},
         "started_at": r.started_at.isoformat() if r.started_at else None,
         "ended_at": r.ended_at.isoformat() if r.ended_at else None,
     }

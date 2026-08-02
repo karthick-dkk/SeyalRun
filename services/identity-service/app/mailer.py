@@ -41,6 +41,16 @@ def _decrypt_or_blank(v: str) -> str:
 
 async def send_mail(session: AsyncSession, to: str, subject: str, body: str) -> None:
     cfg = await get_mail_settings(session)
+    await send_mail_with_settings(cfg, to, subject, body)
+
+
+async def send_mail_with_settings(cfg: ZAMailSettings, to: str, subject: str, body: str) -> None:
+    """Same as send_mail, but takes an already-resolved ZAMailSettings instead of
+    an AsyncSession — for callers sending to several recipients that want to
+    resolve settings once (one query) and then fire the actual sends
+    concurrently via asyncio.gather. A SQLAlchemy AsyncSession is not safe to
+    touch from concurrent coroutines, so those callers can't just wrap
+    send_mail() itself in gather()."""
     if not cfg.enabled or not cfg.provider:
         raise MailError("mail delivery is not configured")
     if cfg.provider == "smtp":

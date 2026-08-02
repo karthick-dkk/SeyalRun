@@ -44,6 +44,12 @@ class UserOut(BaseModel):
     totp_enabled: bool = False
     mfa_method: str | None = None  # "totp" | "email" | None
     allowed_ips: list[str] = Field(default_factory=list)  # CIDR list; empty = unrestricted
+    # PCI DSS Phase C — service account registry: a separate object TYPE from
+    # human users (tagged, reviewable on schedule), not a role or a naming
+    # convention. account_type is the human-readable label; is_service_account
+    # is what code actually branches on.
+    is_service_account: bool = False
+    account_type: str = "human"  # "human" | "service"
     ip_restriction_enabled: bool = False  # explicit opt-in toggle, v1.3
     single_session_enabled: bool = False  # opt-in per user (or via group), v1.3
     must_change_password: bool = False
@@ -86,6 +92,7 @@ class UserCreate(BaseModel):
     password: str
     role_id: str | None = None
     role_ids: list[str] = []       # v1.1 multi-role assignment
+    is_service_account: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -98,6 +105,7 @@ class UserUpdate(BaseModel):
     allowed_ips: list[str] | None = None  # CIDR list; None = unchanged, [] = clear
     ip_restriction_enabled: bool | None = None
     single_session_enabled: bool | None = None
+    is_service_account: bool | None = None
 
 
 class RoleOut(BaseModel):
@@ -179,7 +187,6 @@ class AuthorizationCreate(BaseModel):
     actions: list[str] = Field(default_factory=lambda: ["ssh"])
     date_start: datetime | None = None
     date_expired: datetime | None = None
-    enabled: bool = True
 
 
 class AuthorizationOut(AuthorizationCreate):
@@ -187,6 +194,19 @@ class AuthorizationOut(AuthorizationCreate):
 
     id: str
     created_at: datetime
+    # Server-controlled — never accepted as client input (see AuthorizationCreate).
+    # enabled in particular used to be a create/update input field; PCI DSS Phase B
+    # made it exclusively approval-lifecycle-controlled (_require_approval/approve/
+    # reject in api/authorizations.py). Moved here rather than left on
+    # AuthorizationCreate, where _apply() silently ignored it — an old caller that
+    # still sends `enabled` in a create/update body now gets the same (documented,
+    # consistent-with-every-other-unknown-field) drop as any other unrecognized
+    # field, rather than a field that looks meaningful but silently does nothing.
+    enabled: bool = True
+    status: str = "pending_approval"
+    requested_by: str | None = None
+    approved_by: str | None = None
+    approved_at: datetime | None = None
 
 
 class CommandGroupCreate(BaseModel):
@@ -289,3 +309,38 @@ class AuditLogOut(BaseModel):
     details: dict
     ip_address: str
     created_at: datetime
+
+
+class AccessReviewCampaignCreate(BaseModel):
+    name: str
+    due_date: datetime | None = None
+
+
+class AccessReviewItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    campaign_id: str
+    authorization_id: str
+    authorization_name: str
+    decision: str
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+
+
+class AccessReviewCampaignOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    due_date: datetime | None = None
+    created_by: str | None = None
+    status: str
+    created_at: datetime
+    completed_at: datetime | None = None
+    total_items: int = 0
+    pending_items: int = 0
+
+
+class AccessReviewDecision(BaseModel):
+    decision: str  # "keep" | "revoke"

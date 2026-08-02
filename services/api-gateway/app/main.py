@@ -106,7 +106,13 @@ app.add_middleware(
 # Endpoints reachable without a session JWT or PAT. auth/zbx-sso-init is the Zabbix
 # module's own entry point (HMAC-authenticated inside identity-service, not by a
 # SeyalRun session) — it must be reachable before any SeyalRun login exists.
-_PUBLIC_PATHS = {"auth/login", "auth/sso-exchange", "auth/zbx-sso-init"}
+_PUBLIC_PATHS = {
+    "auth/login", "auth/sso-exchange", "auth/zbx-sso-init",
+    # Email-based authorization approval — the click itself carries no session;
+    # the single-use token in the query string is the only credential (see
+    # identity-service/app/api/authorizations.py::authorization_email_action).
+    "authorizations/email-action",
+}
 
 _metrics = ServiceMetrics()
 app.middleware("http")(_metrics.middleware)

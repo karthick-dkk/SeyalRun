@@ -39,6 +39,45 @@ logger = logging.getLogger(__name__)
 _warned_no_hostkey = False
 
 
+class TeeWebSocket:
+    """Wraps the primary session WebSocket so every send_text call also fans out
+    to any connected spectators (PCI DSS Phase D: live session viewer) — no
+    changes needed to this file's many existing output-send call sites, main.py
+    just passes this wrapper into handle_terminal() instead of the raw socket.
+    Only "output" frames are teed; pings/errors/confirm-prompts are this
+    session's own control channel, not something a spectator should see."""
+
+    def __init__(self, primary, session_id: str, spectators: dict[str, list]):
+        self._primary = primary
+        self._session_id = session_id
+        self._spectators = spectators
+
+    async def send_text(self, data: str) -> None:
+        await self._primary.send_text(data)
+        subs = self._spectators.get(self._session_id)
+        if not subs:
+            return
+        try:
+            frame = json.loads(data)
+        except (TypeError, ValueError):
+            return
+        if not (isinstance(frame, dict) and frame.get("type") == "output"):
+            return
+
+        async def _send(ws) -> None:
+            try:
+                await ws.send_text(data)
+            except Exception:
+                pass
+
+        # Concurrent, not sequential — a slow/stalled spectator's send must not
+        # delay delivery to every other spectator watching the same session.
+        await asyncio.gather(*(_send(spectator) for spectator in list(subs)))
+
+    def __getattr__(self, name):
+        return getattr(self._primary, name)
+
+
 def _known_hosts():
     """known_hosts path (strict verification) if SSH_KNOWN_HOSTS_PATH is set, else
     None (accept any key) with a one-time warning. See automation _ssh_exec._known_hosts."""

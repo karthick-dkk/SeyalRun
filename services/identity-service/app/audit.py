@@ -47,9 +47,14 @@ async def _chain_lock(session: AsyncSession, db_engine: str):
         yield
 
 
-def audit_payload(user_id, username, action, resource_type, resource_id, details, ip_address, created_at) -> dict:
-    """The exact field set bound into the hash (must match /audit/verify)."""
-    return {
+def audit_payload(user_id, username, action, resource_type, resource_id, details, ip_address, created_at,
+                   session_id=None, result=None) -> dict:
+    """The exact field set bound into the hash (must match /audit/verify). session_id/
+    result are newer fields (PCI DSS Phase A) — omitted keys never existed on rows
+    written before this change, so .get()-style defaults elsewhere must not assume
+    presence; the hash itself is unaffected for those older rows since it was
+    computed once, at write time, over whatever fields existed then."""
+    payload = {
         "user_id": user_id or "",
         "username": username or "",
         "action": action,
@@ -62,6 +67,11 @@ def audit_payload(user_id, username, action, resource_type, resource_id, details
         # verify would falsely fail on MySQL after the stored value is truncated.
         "created_at": created_at.astimezone(timezone.utc).replace(microsecond=0).isoformat(),
     }
+    if session_id is not None:
+        payload["session_id"] = session_id
+    if result is not None:
+        payload["result"] = result
+    return payload
 
 
 async def log_action(
@@ -74,10 +84,13 @@ async def log_action(
     resource_id: str = "",
     details: dict | None = None,
     ip_address: str = "",
+    session_id: str | None = None,
+    result: str | None = None,
 ) -> None:
     db_engine = get_settings().db_engine
     created = datetime.now(timezone.utc)
-    payload = audit_payload(user_id, username, action, resource_type, resource_id, details, ip_address, created)
+    payload = audit_payload(user_id, username, action, resource_type, resource_id, details, ip_address, created,
+                            session_id=session_id, result=result)
 
     async with _chain_lock(session, db_engine):
         last = (

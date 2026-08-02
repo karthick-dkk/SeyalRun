@@ -90,27 +90,23 @@ class _RotateIn(pydantic.BaseModel):
     template_id: str | None = None
 
 
-@router.post("/credentials/{credential_id}/rotate", dependencies=[Depends(require_admin)])
-async def rotate_now(
-    credential_id: str,
-    payload: _RotateIn,
-    session: AsyncSession = Depends(get_session),
-    actor_id: str | None = Header(default=None, alias="X-User-Id"),
-):
-    """Trigger a rotate_secret job via automation-service. The executor pushes a new secret to the
-    target hosts and calls back PUT /internal/credentials/{id}/secret, which archives history."""
-    cred = await session.get(ZACredential, credential_id)
-    if cred is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="credential not found")
+class _DispatchError(Exception):
+    def __init__(self, status_code: int, detail: str):
+        self.status_code = status_code
+        self.detail = detail
 
-    settings = get_settings()
+
+async def _dispatch_rotation(session: AsyncSession, credential_id: str, triggered_by: str, template_id: str | None, settings) -> str:
+    """Shared by the manual rotate-now endpoint and the automatic rotate-due sweep
+    (PCI DSS Phase B). Dispatches a rotate_secret job via automation-service; the
+    executor pushes a new secret to the target hosts and calls back
+    PUT /internal/credentials/{id}/secret, which archives history."""
     host_rows = await session.execute(
         select(ZACredentialHostLink.host_id).where(ZACredentialHostLink.credential_id == credential_id)
     )
     host_ids = [h for (h,) in host_rows.all()]
 
     token = mint("inventory-service", "automation-service", settings.service_jwt_secret)
-    template_id = payload.template_id
     async with httpx.AsyncClient(base_url=settings.automation_service_url, timeout=10) as client:
         if not template_id:
             try:
@@ -122,30 +118,97 @@ async def rotate_now(
             except httpx.HTTPError:
                 pass
         if not template_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No rotate_secret job template configured in Automation",
-            )
+            raise _DispatchError(status.HTTP_400_BAD_REQUEST, "No rotate_secret job template configured in Automation")
         try:
             run = await client.post(
                 "/internal/job-runs",
                 headers={"X-Service-Token": token},
                 json={
                     "job_template_id": template_id,
-                    "triggered_by": f"user:{actor_id or 'admin'}",
+                    "triggered_by": triggered_by,
                     "params": {"subject_credential_id": credential_id},
                     "target_host_ids": host_ids,
                 },
             )
         except httpx.HTTPError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"automation unreachable: {exc}") from exc
+            raise _DispatchError(status.HTTP_502_BAD_GATEWAY, f"automation unreachable: {exc}") from exc
 
     if run.status_code not in (200, 202):
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"automation dispatch failed ({run.status_code})")
+        raise _DispatchError(status.HTTP_502_BAD_GATEWAY, f"automation dispatch failed ({run.status_code})")
 
     policy = await _get_policy(session, credential_id)
     if policy is not None:
         policy.next_rotation_due = datetime.now(timezone.utc) + timedelta(days=policy.rotation_days)
         await session.commit()
 
-    return {"run_id": run.json().get("run_id"), "dispatched": True}
+    return run.json().get("run_id")
+
+
+@router.post("/credentials/{credential_id}/rotate", dependencies=[Depends(require_admin)])
+async def rotate_now(
+    credential_id: str,
+    payload: _RotateIn,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+):
+    cred = await session.get(ZACredential, credential_id)
+    if cred is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="credential not found")
+    try:
+        run_id = await _dispatch_rotation(session, credential_id, f"user:{actor_id or 'admin'}", payload.template_id, get_settings())
+    except _DispatchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {"run_id": run_id, "dispatched": True}
+
+
+async def _notify_rotation_due(cred: ZACredential, settings) -> None:
+    """rotation_mode == 'manual': the checklist item ("rotation-due dates are
+    decorative") only requires this to actually fire something, not auto-execute a
+    credential change unattended — a real, visible alert instead of a silent no-op."""
+    token = mint("inventory-service", "automation-service", settings.service_jwt_secret)
+    async with httpx.AsyncClient(base_url=settings.automation_service_url, timeout=10) as client:
+        try:
+            await client.post(
+                "/api/v1/internal/notifications",
+                headers={"X-Service-Token": token},
+                json={
+                    "severity": "medium",
+                    "title": f"Credential rotation due: {cred.name or cred.username}",
+                    "message": "This credential's rotation policy is set to manual — rotate it in Admin → Credentials.",
+                    "source_type": "credential_rotation_due",
+                    "source_id": cred.id,
+                },
+            )
+        except httpx.HTTPError:
+            pass
+
+
+@router.post("/internal/credentials/rotate-due")
+async def rotate_due_credentials(session: AsyncSession = Depends(get_session)):
+    """PCI DSS Phase B — called by automation-service's housekeeping loop
+    (password_rotation_due_check). auto-mode policies past due get rotated for
+    real; manual-mode ones fire a visible notification instead of doing nothing."""
+    now = datetime.now(timezone.utc)
+    result = await session.execute(
+        select(ZARotationPolicy, ZACredential)
+        .join(ZACredential, ZACredential.id == ZARotationPolicy.credential_id)
+        .where(
+            ZARotationPolicy.enabled.is_(True),
+            ZARotationPolicy.next_rotation_due.isnot(None),
+            ZARotationPolicy.next_rotation_due <= now,
+        )
+    )
+    rows = result.all()
+    settings = get_settings()
+    rotated, notified, failed = 0, 0, 0
+    for policy, cred in rows:
+        if policy.rotation_mode == "auto":
+            try:
+                await _dispatch_rotation(session, cred.id, "system:rotation_due_sweep", None, settings)
+                rotated += 1
+            except _DispatchError:
+                failed += 1
+        else:
+            await _notify_rotation_due(cred, settings)
+            notified += 1
+    return {"rotated": rotated, "notified": notified, "failed": failed}

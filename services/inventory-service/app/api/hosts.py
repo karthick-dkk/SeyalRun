@@ -36,6 +36,7 @@ async def _host_out(session: AsyncSession, host: ZAHost) -> HostOut:
         last_ping_at=host.last_ping_at,
         created_at=host.created_at,
         group_ids=group_ids,
+        is_production=host.is_production,
     )
 
 
@@ -67,6 +68,7 @@ async def create_host(
         enabled=payload.enabled,
         zone_id=payload.zone_id,
         zabbix_hostid=payload.zabbix_hostid,
+        is_production=payload.is_production,
     )
     session.add(host)
     await session.flush()
@@ -114,7 +116,20 @@ async def get_host_internal(host_id: str, session: AsyncSession = Depends(get_se
         "os_type": host.os_type,
         "enabled": host.enabled,
         "zone_id": host.zone_id,
+        "is_production": host.is_production,
     }
+
+
+@router.post("/internal/hosts/check-production")
+async def check_hosts_production(host_ids: list[str], session: AsyncSession = Depends(get_session)):
+    """Bulk production-flag lookup for job-run gating (PCI DSS Phase D —
+    automation-service forces approval when any target host is production)."""
+    if not host_ids:
+        return {"production_host_ids": []}
+    result = await session.execute(
+        select(ZAHost.id).where(ZAHost.id.in_(host_ids), ZAHost.is_production.is_(True))
+    )
+    return {"production_host_ids": [hid for (hid,) in result.all()]}
 
 
 @router.post("/hosts/{host_id}/test")
@@ -166,6 +181,7 @@ async def update_host(
     host.os_type = payload.os_type
     host.enabled = payload.enabled
     host.zone_id = payload.zone_id
+    host.is_production = payload.is_production
     # zabbix_hostid is sync-managed, not an Assets form field — the edit UI never
     # sends it, so payload.zabbix_hostid defaults to None. Overwriting unconditionally
     # would silently unlink the host from Zabbix on every unrelated edit (rename,

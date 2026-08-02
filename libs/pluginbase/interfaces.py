@@ -52,6 +52,27 @@ class CredentialKind(ABC):
         """Inverse of :meth:`encode`."""
 
 
+class KeyProvider(ABC):
+    """Wraps/unwraps a per-credential Data Encryption Key (DEK) with a Key
+    Encryption Key (KEK) the provider itself owns — PCI DSS Phase C key
+    hierarchy. The default ``EnvKeyProvider`` derives its KEK from
+    ZA_VAULT_PASSWORD/ZA_VAULT_SALT (same as today), just one layer removed
+    from the actual credential ciphertext; a future HSM/cloud-KMS provider is
+    a drop-in registered the same way (``app/plugins/kms/<name>.py``),
+    without touching callers.
+    """
+
+    name: str
+
+    @abstractmethod
+    def wrap_dek(self, dek: bytes) -> str:
+        """Return an opaque, storable string wrapping ``dek``."""
+
+    @abstractmethod
+    def unwrap_dek(self, wrapped: str) -> bytes:
+        """Inverse of :meth:`wrap_dek`."""
+
+
 class CommandFilterMatcher(ABC):
     """Matches a terminal command string against a command-group pattern set.
 

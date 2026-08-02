@@ -20,6 +20,12 @@ SESSION_PREFIX = "session:"
 # SESSION_PREFIX; api-gateway's logout handler (main.py) clears this too, so
 # the two must agree on the exact string.
 USER_SESSION_PREFIX = "user_session:"
+# PCI DSS Phase A — time-boxed admin/superadmin JIT elevation (Azure-PIM/sudo-timeout
+# style). Per-USER, not per-session: an admin re-proving MFA via /auth/elevate/verify
+# unlocks SSH-connect/credential-reveal (for actions with no explicit ZAAuthorization
+# grant) across every open tab for that account, for a bounded window. api-gateway
+# reads this key directly (security.py) and forwards it downstream as X-Elevated-Until.
+ELEVATED_PREFIX = "elevated:"
 
 
 def _key(session_id: str) -> str:
@@ -28,6 +34,17 @@ def _key(session_id: str) -> str:
 
 def _user_key(user_id: str) -> str:
     return f"{USER_SESSION_PREFIX}{user_id}"
+
+
+def _elevated_key(user_id: str) -> str:
+    return f"{ELEVATED_PREFIX}{user_id}"
+
+
+async def elevate(client: redis.Redis, user_id: str, minutes: int, reason: str = "") -> int:
+    """Grant this user a time-boxed elevated window; returns the unix expiry."""
+    until = int(time.time()) + minutes * 60
+    await client.set(_elevated_key(user_id), json.dumps({"until": until, "reason": reason}), ex=minutes * 60)
+    return until
 
 
 async def create_session(

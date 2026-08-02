@@ -73,6 +73,11 @@ class ZAHost(Base):
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_ping_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # PCI DSS Phase D — production-host gating: automation-service forces any job
+    # run targeting a production host through the approval flow (Phase B's
+    # ZAJobTemplate.requires_approval path), regardless of the template's own
+    # setting. See services/automation-service/app/api/job_templates.py::run_template.
+    is_production: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     zone: Mapped[ZAZone | None] = relationship("ZAZone", back_populates="hosts")
@@ -119,6 +124,11 @@ class ZACredential(Base):
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     secret_type: Mapped[str] = mapped_column(String(20), default="password")  # password|ssh_key|vault_path
     secret_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    # PCI DSS Phase C key hierarchy: the per-row DEK that encrypted secret_ciphertext,
+    # wrapped by the active KeyProvider (see app/vault.py). NULL on rows written before
+    # this shipped — decrypt() falls back to the old single-KEK scheme for those; every
+    # new write (create/update/rotate) populates it going forward.
+    wrapped_dek: Mapped[str | None] = mapped_column(Text, nullable=True)
     credential_scope: Mapped[str] = mapped_column(String(20), default="host")  # host|template
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     is_sudo: Mapped[bool] = mapped_column(Boolean, default=False)  # privilege escalation for account ops
@@ -157,6 +167,13 @@ class ZACredentialHistory(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uid)
     credential_id: Mapped[str] = mapped_column(String(36), ForeignKey("za_credentials.id", ondelete="CASCADE"), nullable=False)
     secret_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    # Must be archived alongside secret_ciphertext whenever the row it's copied
+    # from used envelope encryption (ZACredential.wrapped_dek set) — otherwise
+    # the live row's wrapped_dek gets overwritten on the same rotation that
+    # creates this history row, and the archived ciphertext becomes permanently
+    # undecryptable (no DEK anywhere can unwrap it again). Null for rows copied
+    # from a pre-Phase-C credential still on the legacy single-KEK scheme.
+    wrapped_dek: Mapped[str | None] = mapped_column(Text, nullable=True)
     rotated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     rotated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
@@ -181,6 +198,13 @@ class ZALogBackendConfig(Base):
     # Content routing: log category -> list of backends ("local"|"elasticsearch"|"s3").
     # Categories: app, command, audit, recording. Admin-managed in the Log Backend UI.
     routing: Mapped[dict] = mapped_column(JSON, default=dict)
+    # PCI DSS Phase B (10.5.1): per-category retention, admin-editable alongside
+    # routing instead of a hardcoded .env global. Shape: {"audit_days": 180}.
+    # Extensible per category without a new migration each time (mirrors routing's
+    # own JSON-doc convention). Currently only "audit_days" is read (housekeeping.py's
+    # audit_log_archive job); absent/empty falls back to identity-service's own
+    # AUDIT_LOG_RETENTION_DAYS .env default.
+    retention: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

@@ -5,7 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs.servicetoken import mint
+
 from ..audit import log_action
+from ..config import get_settings
 from ..database import get_session
 from ..deps import require_admin, require_service_token, require_superadmin
 from ..models import ZAGroupIpRestriction, ZAGroupNotifyConfig, ZAGroupRole, ZARole, ZAUser, ZAUserGroup, ZAUserGroupMember, ZAUserRole
@@ -294,6 +297,8 @@ async def _user_out(session: AsyncSession, user: ZAUser) -> UserOut:
         allowed_ips=user.allowed_ips or [],
         ip_restriction_enabled=user.ip_restriction_enabled,
         single_session_enabled=user.single_session_enabled,
+        is_service_account=user.is_service_account,
+        account_type=user.account_type,
         created_at=user.created_at,
     )
 
@@ -403,6 +408,8 @@ async def create_user(
         email=payload.email,
         role_id=payload.role_id or (role_ids[0] if role_ids else None),
         password_hash=hash_password(payload.password),
+        is_service_account=payload.is_service_account,
+        account_type="service" if payload.is_service_account else "human",
     )
     session.add(user)
     await session.flush()
@@ -457,6 +464,9 @@ async def update_user(
         user.ip_restriction_enabled = payload.ip_restriction_enabled
     if payload.single_session_enabled is not None:
         user.single_session_enabled = payload.single_session_enabled
+    if payload.is_service_account is not None:
+        user.is_service_account = payload.is_service_account
+        user.account_type = "service" if payload.is_service_account else "human"
 
     # Guard before commit: a role change or deactivation must not zero the superadmins.
     await session.flush()
@@ -514,6 +524,59 @@ async def delete_user(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="user.delete",
         resource_type="user", resource_id=user_id, details={"username": username},
+    )
+
+
+@router.post("/users/{user_id}/deprovision", status_code=status.HTTP_204_NO_CONTENT)
+async def deprovision_user(
+    user_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+    actor_scopes: str = Header(default="", alias="X-User-Scopes"),
+):
+    """PCI DSS Phase C — deprovisioning webhook (checklist item: "external trigger
+    (HR system, ticketing) -> immediate account disable, target <=24h SLA"). Gated
+    on the caller's PAT carrying the "deprovision" scope specifically (not just
+    require_admin) — an HR/ticketing integration authenticates with a dedicated
+    token scoped to nothing but this action, auditable and revocable independently
+    of any admin's own session. (The underlying account a scoped PAT is issued
+    against must still hold a role with "users" write capability at the
+    api-gateway RBAC layer — same as any PAT — this check narrows what that one
+    token can actually do once a request reaches here.)"""
+    if "deprovision" not in [s.strip() for s in actor_scopes.split(",") if s.strip()]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="token missing required 'deprovision' scope")
+
+    result = await session.execute(select(ZAUser).where(ZAUser.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    user.is_active = False
+    await session.flush()
+    await _guard_last_superadmin(session)
+    await session.commit()
+
+    # Kill every active session immediately — best-effort, must never fail the
+    # deprovision action itself if terminal-service is briefly unreachable (the
+    # account is already disabled either way; a stray live session would still
+    # be blocked from any NEW authorized action, just not forcibly disconnected).
+    settings = get_settings()
+    try:
+        tok = mint("identity-service", "terminal-service", settings.service_jwt_secret)
+        async with httpx.AsyncClient(base_url=settings.terminal_service_url, timeout=5.0) as client:
+            await client.post(
+                "/api/v1/internal/ssh/sessions/terminate-by-user",
+                params={"target_user_id": user_id},
+                headers={"X-Service-Token": tok},
+            )
+    except httpx.HTTPError:
+        pass
+
+    await log_action(
+        session, user_id=actor_id or "external", username=actor_name or "deprovisioning-webhook",
+        action="user.deprovision", resource_type="user", resource_id=user_id,
+        details={"username": user.username}, result="success",
     )
 
 

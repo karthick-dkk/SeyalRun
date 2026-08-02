@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     za_vault_password: str = ""
     za_vault_salt: str = ""
 
+    # PCI DSS Phase C — which KeyProvider plugin wraps each credential's per-row
+    # DEK (see app/vault.py::encrypt_envelope, app/plugins/kms/). "env" is the
+    # only built-in provider today; a future HSM/cloud-KMS plugin registers
+    # under its own name and this just needs to point at it.
+    kms_provider: str = "env"
+
     # Reveal token (Feature 6) — signed by identity-service with the shared JWT secret.
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"

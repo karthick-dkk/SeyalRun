@@ -40,13 +40,6 @@
                       <label class="eg-label">Rule Name <span class="eg-opt">(auto-filled)</span></label>
                       <input v-model="form.name" class="input" placeholder="e.g. dev-team → web-servers" ref="nameInputRef" />
                     </div>
-                    <div class="eg-field" style="min-width:140px">
-                      <label class="eg-label">Status</label>
-                      <select v-model="form.enabled" class="input">
-                        <option :value="true">Enabled</option>
-                        <option :value="false">Disabled</option>
-                      </select>
-                    </div>
                   </div>
                   <div class="eg-row eg-row--cols4">
                     <div class="eg-section">
@@ -112,11 +105,15 @@
                           </div>
                         </div>
                         <div class="eg-field"><label class="eg-label">Valid From</label><input v-model="form.date_start" type="datetime-local" class="input" /></div>
-                        <div class="eg-field"><label class="eg-label">Until</label><input v-model="form.date_expired" type="datetime-local" class="input" /></div>
+                        <div class="eg-field"><label class="eg-label">Until <span class="eg-opt">(defaults if left blank)</span></label><input v-model="form.date_expired" type="datetime-local" class="input" /></div>
                       </div>
                     </div>
                   </div>
                   <div v-if="formError" class="eg-error">{{ formError }}</div>
+                  <div class="eg-bulk-note">
+                    <span class="bulk-dot"></span>
+                    Grants require a second admin's approval before they take effect — this one will be <strong>Pending Approval</strong> until approved.
+                  </div>
                   <div v-if="form.principalIds.length > 1 || form.targetIds.length > 1" class="eg-bulk-note">
                     <span class="bulk-dot"></span>
                     One rule — grants <strong>{{ form.principalIds.length }}</strong> {{ principalType==='user' ? 'user(s)' : 'group(s)' }}
@@ -173,11 +170,23 @@
                 <div v-if="!a.date_start && !a.date_expired">Always</div>
               </td>
               <td>
-                <span v-if="a.enabled" class="badge badge-green">Enabled</span>
-                <span v-else class="badge badge-gray">Disabled</span>
+                <span v-if="a.status === 'active'" class="badge badge-green">Active</span>
+                <span v-else-if="a.status === 'pending_approval'" class="badge badge-yellow">Pending Approval</span>
+                <span v-else-if="a.status === 'rejected'" class="badge badge-gray">Rejected</span>
+                <span v-else-if="a.status === 'expired'" class="badge badge-gray">Expired</span>
+                <span v-else class="badge badge-gray">{{ a.status || (a.enabled ? 'Active' : 'Disabled') }}</span>
               </td>
               <td>
                 <div style="display:flex;gap:8px;justify-content:flex-end">
+                  <template v-if="a.status === 'pending_approval'">
+                    <button
+                      class="btn-pill btn-pill-outline" style="color:var(--accent2);border-color:var(--accent2)"
+                      :disabled="!!expandedId || a.requested_by === auth.user?.id"
+                      :title="a.requested_by === auth.user?.id ? 'You requested this — a different admin must approve it' : ''"
+                      @click="approve(a)"
+                    >✓ Approve</button>
+                    <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" :disabled="!!expandedId" @click="reject(a)">✕ Reject</button>
+                  </template>
                   <button class="btn-pill btn-pill-outline" :disabled="!!expandedId" @click="openEdit(a)">✎ Edit</button>
                   <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" :disabled="!!expandedId" @click="remove(a)">✕</button>
                 </div>
@@ -197,13 +206,6 @@
                       <div class="eg-field eg-field--wide">
                         <label class="eg-label">Rule Name</label>
                         <input v-model="form.name" class="input" ref="nameInputRef" />
-                      </div>
-                      <div class="eg-field" style="min-width:140px">
-                        <label class="eg-label">Status</label>
-                        <select v-model="form.enabled" class="input">
-                          <option :value="true">Enabled</option>
-                          <option :value="false">Disabled</option>
-                        </select>
                       </div>
                     </div>
                     <div class="eg-row eg-row--cols4">
@@ -270,11 +272,15 @@
                             </div>
                           </div>
                           <div class="eg-field"><label class="eg-label">Valid From</label><input v-model="form.date_start" type="datetime-local" class="input" /></div>
-                          <div class="eg-field"><label class="eg-label">Until</label><input v-model="form.date_expired" type="datetime-local" class="input" /></div>
+                          <div class="eg-field"><label class="eg-label">Until <span class="eg-opt">(defaults if left blank)</span></label><input v-model="form.date_expired" type="datetime-local" class="input" /></div>
                         </div>
                       </div>
                     </div>
                     <div v-if="formError" class="eg-error">{{ formError }}</div>
+                    <div class="eg-bulk-note">
+                      <span class="bulk-dot"></span>
+                      Saving reopens this grant for approval — it goes back to <strong>Pending Approval</strong> until a different admin approves the change.
+                    </div>
                   </div>
                   <div class="expand-footer">
                     <span class="eg-hint">Enter to save · Esc to cancel</span>
@@ -299,8 +305,10 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import api from '@/api/client'
 import { useConfirm } from '@/composables/useConfirm'
+import { useAuthStore } from '@/stores/auth'
 
 const { confirm } = useConfirm()
+const auth = useAuthStore()
 const availableActions = ['ssh', 'sftp', 'upload', 'download']
 
 const authorizations = ref<any[]>([])
@@ -517,6 +525,17 @@ async function remove(a: any) {
   if (!await confirm(`Delete authorization "${a.name}"?`, { title: 'Delete Authorization', danger: true, confirmLabel: 'Delete' })) return
   try { await api.delete(`/authorizations/${a.id}`); load() }
   catch (e: any) { alert(e?.response?.data?.detail || 'Failed to delete authorization') }
+}
+
+async function approve(a: any) {
+  try { await api.post(`/authorizations/${a.id}/approve`); load() }
+  catch (e: any) { alert(e?.response?.data?.detail || 'Failed to approve authorization') }
+}
+
+async function reject(a: any) {
+  if (!await confirm(`Reject authorization "${a.name}"? It will stay disabled.`, { title: 'Reject Authorization', danger: true, confirmLabel: 'Reject' })) return
+  try { await api.post(`/authorizations/${a.id}/reject`); load() }
+  catch (e: any) { alert(e?.response?.data?.detail || 'Failed to reject authorization') }
 }
 
 onMounted(load)

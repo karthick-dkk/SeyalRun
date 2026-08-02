@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     # (see auth.py::_resolve_kiosk_host); never used for anything user-facing.
     inventory_service_url: str = "http://inventory-service:8102"
 
+    # PCI DSS Phase B — security-event alerts (login spikes, etc.) fire through
+    # automation-service's notification pipeline (see app/_alerts.py) rather than
+    # identity-service growing its own in-app notification/email plumbing.
+    automation_service_url: str = "http://automation-service:8105"
+
+    # PCI DSS Phase C — deprovisioning webhook kills every active session for the
+    # deactivated user immediately (see api/users.py::deprovision_user).
+    terminal_service_url: str = "http://terminal-service:8103"
+
     frontend_origin: str = ""
 
     audit_log_retention_days: int = 180
@@ -64,6 +73,9 @@ class Settings(BaseSettings):
     login_max_failures: int = 5
     login_lockout_seconds: int = 900
     login_attempt_window_seconds: int = 900
+    # PCI DSS Phase B — distinct accounts failing from one IP within the same
+    # window before a login-spike security alert fires (see _lockout.py).
+    login_spike_threshold: int = 3
 
 
 @lru_cache

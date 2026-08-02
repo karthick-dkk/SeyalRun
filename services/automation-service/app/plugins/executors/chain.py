@@ -23,6 +23,7 @@ class ChainExecutor(ActionExecutor):
 
     async def execute(self, request: RunRequest, publish_line: Callable) -> RunResult:
         from app._params import template_code_params
+        from app._production_gate import any_production_hosts
         from app.database import SessionLocal
         from app.models import ZAJobRun, ZAJobTemplate
         from app import runner as _runner
@@ -32,6 +33,33 @@ class ChainExecutor(ActionExecutor):
         parent_run_id = request.params.get("_run_id")
         if not steps:
             return RunResult(ok=False, output="chain has no steps configured", exit_code=1)
+
+        # PCI DSS Phase D — production is gated on every other dispatch path
+        # (manual run, cron schedule, Zabbix webhook); a chain step is awaited
+        # synchronously as part of one continuous run, so it can't cleanly land
+        # in pending_approval and resume later without a real suspend/resume
+        # mechanism this executor doesn't have. Conservative fix instead: refuse
+        # the WHOLE chain up front if ANY step targets a production host, rather
+        # than silently running some/all steps unapproved. The human must run
+        # that step individually (through run_template's own approval gate) or
+        # remove the production host from the chain.
+        async with SessionLocal() as session:
+            step_templates = {
+                step.get("template_id"): await session.get(ZAJobTemplate, step.get("template_id"))
+                for step in steps
+            }
+        all_step_host_ids = [
+            hid
+            for tmpl in step_templates.values() if tmpl is not None
+            for hid in (tmpl.target_host_ids or [])
+        ]
+        if await any_production_hosts(all_step_host_ids):
+            await publish_line(
+                "[error] this chain has a step targeting a production-tagged host — "
+                "chains cannot run against production; run that step individually "
+                "so it goes through the normal approval flow"
+            )
+            return RunResult(ok=False, output="chain targets a production host — blocked", exit_code=1)
 
         # Built lazily (not at module import time) — this package is still being
         # discovered the first time app.state.executors is built, and this file

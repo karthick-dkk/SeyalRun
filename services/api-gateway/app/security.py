@@ -22,6 +22,10 @@ SESSION_PREFIX = "session:"
 # Mirrors identity-service/app/sessions.py's USER_SESSION_PREFIX exactly (same
 # Redis instance) — main.py's logout handler clears this pointer too.
 USER_SESSION_PREFIX = "user_session:"
+# Mirrors identity-service/app/sessions.py's ELEVATED_PREFIX exactly (same Redis
+# instance) — PCI DSS Phase A admin/superadmin JIT elevation, set via
+# POST /auth/elevate/verify.
+ELEVATED_PREFIX = "elevated:"
 
 # httpOnly cross-tab bootstrap cookie — set ONLY on a direct (non-iframe)
 # /auth/login or /auth/change-password response, holding the SAME opaque
@@ -78,12 +82,28 @@ async def _live_roles(user_id: str, fallback: list[str]) -> list[str]:
     return fallback
 
 
+async def _elevated_until(user_id: str) -> int:
+    """0 if the user has no active elevated window (never set, expired-and-evicted
+    by Redis TTL, or the store is briefly unreachable — fails closed, not open)."""
+    try:
+        raw = await redis_client.get(f"{ELEVATED_PREFIX}{user_id}")
+    except redis.RedisError:
+        return 0
+    if not raw:
+        return 0
+    try:
+        return int(json.loads(raw).get("until", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 async def _with_live_roles(identity: dict) -> dict:
     """Replace the JWT's (possibly stale) roles with the user's current roles."""
     roles = await _live_roles(identity["user_id"], identity.get("roles") or [])
     identity["roles"] = roles
     if roles:
         identity["role"] = roles[0]
+    identity["elevated_until"] = await _elevated_until(identity["user_id"])
     return identity
 
 

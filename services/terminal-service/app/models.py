@@ -28,6 +28,14 @@ class ZASSHSession(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # PCI DSS Phase A — set when this session was created via the admin/superadmin
+    # JIT elevation fallback (no ZAAuthorization grant existed for this host) rather
+    # than an ordinary PAM-authorized connect. reviewed_at/reviewed_by let an admin
+    # sign off after the fact — this IS the break-glass review trail, not a separate
+    # subsystem.
+    elevation_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     commands: Mapped[list["ZASessionCommand"]] = relationship(
         "ZASessionCommand", back_populates="session", lazy="select"

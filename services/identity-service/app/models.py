@@ -80,6 +80,13 @@ class ZAUser(Base):
     # all its members (za_user_groups.policies.single_session_enabled), most-restrictive-
     # wins: enforced if EITHER this OR any of the user's groups has it on.
     single_session_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # PCI DSS Phase C — service account registry: a real object-type flag (not a
+    # naming convention or role) so service accounts can be scoped/reviewed/
+    # offboarded separately from human users. account_type is the human-readable
+    # label; is_service_account is what code branches on (kept both — mirrors
+    # mfa_method/totp_enabled's "flag + label" pairing above).
+    is_service_account: Mapped[bool] = mapped_column(Boolean, default=False)
+    account_type: Mapped[str] = mapped_column(String(20), default="human")  # human|service
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -181,6 +188,38 @@ class ZAAuthorization(Base):
     date_expired: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # PCI DSS Phase B — segregation of duties: a grant is inert (enabled forced False)
+    # from creation/edit until a DIFFERENT admin/superadmin approves it (self-approval
+    # blocked in the API layer). status mirrors ZAJobTemplate.requires_approval's
+    # request/approve shape one model over. "enabled" stays the sole enforcement flag
+    # every resolver already checks — approval just controls when it flips True.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending_approval")
+    requested_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ZAAuthorizationApprovalToken(Base):
+    """Single-use, per-recipient magic-link tokens for approving/rejecting a
+    pending ZAAuthorization by email, without requiring the approver to log in
+    first. Only the sha256 hash of the raw token is stored (same discipline as
+    ZAApiToken) — the raw value exists only in the emailed URL and the moment
+    it's presented back to GET /authorizations/email-action. One row per
+    (authorization, eligible approver, action) — approver_user_id is fixed at
+    send time, so a click can only ever record that specific admin/superadmin
+    as the approver (never an anonymous "email" actor), preserving both the
+    audit trail and the self-approval block."""
+
+    __tablename__ = "za_authz_approval_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uid)
+    authorization_id: Mapped[str] = mapped_column(String(36), ForeignKey("za_authorizations.id", ondelete="CASCADE"), nullable=False)
+    approver_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("za_users.id", ondelete="CASCADE"), nullable=False)
+    action: Mapped[str] = mapped_column(String(10), nullable=False)  # "approve" | "reject"
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ZACommandGroup(Base):
@@ -266,6 +305,13 @@ class ZAAuditLog(Base):
     seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     entry_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # PCI DSS Phase A structured-schema gap: PCI 10.2 wants user_id/event_type/
+    # timestamp/source_ip/target_resource/result/session_id. All but the last two
+    # already existed (username/action/created_at/ip_address/resource_type+id).
+    # Nullable, not backfilled — each row's hash is fixed at write time, so old
+    # rows simply carry these as None and the chain still verifies (see audit.py).
+    session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    result: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class ZALoginAttempt(Base):
@@ -311,6 +357,46 @@ class ZAMailSettings(Base):
     graph_sender_upn: Mapped[str] = mapped_column(String(320), default="")
 
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ZAAccessReviewCampaign(Base):
+    """PCI DSS Phase C (7.2.4 periodic access review) — MVP: a labeled snapshot
+    of every currently-active ZAAuthorization at creation time, walked to
+    keep/revoke by an admin. Not a full GRC module — no role/group scope
+    filtering, no multi-reviewer workflow — just enough to satisfy "reviewed
+    on a schedule, with a record of who decided what."""
+
+    __tablename__ = "za_access_review_campaigns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uid)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")  # open|completed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    items: Mapped[list["ZAAccessReviewItem"]] = relationship(
+        "ZAAccessReviewItem", back_populates="campaign", lazy="select"
+    )
+
+
+class ZAAccessReviewItem(Base):
+    __tablename__ = "za_access_review_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uid)
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("za_access_review_campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    authorization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    # Snapshot at campaign-creation time, so the item still reads sensibly even if the
+    # underlying authorization is later edited/revoked/deleted out from under it.
+    authorization_name: Mapped[str] = mapped_column(String(200), default="")
+    decision: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")  # pending|keep|revoke
+    reviewed_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    campaign: Mapped[ZAAccessReviewCampaign] = relationship("ZAAccessReviewCampaign", back_populates="items")
 
 
 class ZASetting(Base):

@@ -55,6 +55,7 @@ class HostCreate(BaseModel):
     zone_id: str | None = None
     zabbix_hostid: str | None = None
     group_ids: list[str] = Field(default_factory=list)
+    is_production: bool = False
 
 
 class HostOut(BaseModel):
@@ -73,6 +74,7 @@ class HostOut(BaseModel):
     last_ping_at: datetime | None = None
     created_at: datetime
     group_ids: list[str] = Field(default_factory=list)
+    is_production: bool = False
 
 
 class CredentialTemplateCreate(BaseModel):

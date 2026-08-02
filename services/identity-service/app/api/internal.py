@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import ipaddress
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..audit import log_action
+from ..config import get_settings
 from ..database import get_session
 from ..deps import require_service_token
 from ..models import (
     ZAApiToken,
+    ZAAuditLog,
     ZAAuthorization,
     ZACommandFilter,
     ZACommandGroup,
@@ -74,6 +76,8 @@ class AuditEntry(BaseModel):
     resource_id: str = ""
     details: dict = {}
     ip_address: str = ""
+    session_id: str | None = None
+    result: str | None = None
 
 
 class DispatchAlertRequest(BaseModel):
@@ -117,8 +121,78 @@ async def write_audit(entry: AuditEntry, session: AsyncSession = Depends(get_ses
         resource_id=entry.resource_id,
         details=entry.details,
         ip_address=entry.ip_address,
+        session_id=entry.session_id,
+        result=entry.result,
     )
     return {"ok": True}
+
+
+@router.get("/audit/retention-status")
+async def audit_retention_status(days: int | None = Query(default=None), session: AsyncSession = Depends(get_session)):
+    """PCI DSS Phase B (10.5.1) — called by automation-service's housekeeping loop
+    (audit_log_archive). Reports how many za_audit_logs rows are older than the
+    configured retention threshold.
+
+    Deliberately does NOT delete or move rows: this table is a tamper-evident hash
+    chain (T9) where every row's entry_hash is derived from its predecessor back to
+    GENESIS — removing an old row breaks verify_chain for every row after it, which
+    would be a worse regression than the "retention isn't configurable" gap this
+    closes. Real hot/cold tiering (copy-not-move to S3/ES, chain intact) is future
+    work; this makes the threshold configurable and visible instead of a silent
+    hardcoded .env global with no visibility into whether it's actually honored."""
+    retention_days = days if days is not None else get_settings().audit_log_retention_days
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    count = (
+        await session.execute(select(func.count()).select_from(ZAAuditLog).where(ZAAuditLog.created_at < cutoff))
+    ).scalar_one()
+    return {"retention_days": retention_days, "rows_past_retention": count}
+
+
+@router.get("/audit/daily-summary")
+async def audit_daily_summary(session: AsyncSession = Depends(get_session)):
+    """PCI DSS Phase B — 'built-in daily summary report generator' item. Called by
+    automation-service's housekeeping loop (security_digest_report), which turns
+    this into a broadcast notification — feeds the "daily log review" requirement
+    even for a deployment with no full SIEM."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    result = await session.execute(
+        select(ZAAuditLog.action, func.count())
+        .where(ZAAuditLog.created_at >= cutoff)
+        .group_by(ZAAuditLog.action)
+        .order_by(func.count().desc())
+    )
+    by_action = {action: count for action, count in result.all()}
+    return {"since": cutoff.isoformat(), "total": sum(by_action.values()), "by_action": by_action}
+
+
+@router.post("/authorizations/sweep-expired")
+async def sweep_expired_authorizations(session: AsyncSession = Depends(get_session)):
+    """PCI DSS Phase B (7.2.4) — called by automation-service's housekeeping loop
+    (authorization_ttl_sweep). Flips enabled=False on any authorization past its
+    date_expired that's still marked enabled; "enabled" is the sole flag every
+    resolver (authz_resolve, authz_host_ids) checks, so this is the entire
+    enforcement point — no downstream change needed."""
+    now = datetime.now(timezone.utc)
+    result = await session.execute(
+        select(ZAAuthorization).where(
+            ZAAuthorization.enabled.is_(True),
+            ZAAuthorization.date_expired.isnot(None),
+            ZAAuthorization.date_expired < now,
+        )
+    )
+    rows = result.scalars().all()
+    for authz in rows:
+        authz.enabled = False
+        authz.status = "expired"
+    if rows:
+        await session.commit()
+    for authz in rows:
+        await log_action(
+            session, user_id=None, username="system", action="authorization.auto_expired",
+            resource_type="authorization", resource_id=authz.id,
+            details={"name": authz.name, "date_expired": authz.date_expired.isoformat()},
+        )
+    return {"expired": len(rows)}
 
 
 @router.get("/authz/host-ids")

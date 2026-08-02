@@ -10,7 +10,7 @@ in api/internal.py (never to the browser).
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..audit import log_action
@@ -95,6 +95,29 @@ class PlatformSettingsIn(BaseModel):
     session_idle_minutes: int = 30
     session_absolute_hours: int = 8
     log_level: str = "INFO"
+    # PCI DSS Phase A JIT elevation window (see app/sessions.py::elevate) — how long
+    # an admin/superadmin's re-proved-MFA elevation lasts before it must be renewed.
+    elevated_session_minutes: int = 30
+    # PCI DSS Phase B (7.2.4) — default expiry applied to an authorization when the
+    # creator doesn't set one explicitly (see api/authorizations.py::_apply).
+    authorization_default_ttl_days: int = 90
+    # Base URL (scheme + host, no trailing slash) used to build clickable links in
+    # outbound email, e.g. one-click authorization approval (see
+    # api/authorizations.py::_send_approval_request_emails). Empty by default — no
+    # safe default exists across deployments, and an empty value degrades
+    # gracefully to a console-only instruction rather than a broken link.
+    app_public_url: str = ""
+    # Which roles' authorization create/edit requests are EXEMPT from the
+    # segregation-of-duties approval workflow (see
+    # api/authorizations.py::_apply_and_require_reapproval) — a request from a
+    # role in this list goes straight to active, no second approver needed.
+    # Only create_authorization/update_authorization are reachable by admin or
+    # superadmin at all (require_admin gate) — so today the only two possible
+    # values here are "admin" and "superadmin". Defaults to superadmin only:
+    # an admin's own request still needs a second approver; a superadmin's
+    # (already the highest-trust role, and the one who controls this very
+    # setting) does not. A superadmin can widen this to include "admin" too.
+    authorization_approval_exempt_roles: list[str] = Field(default_factory=lambda: ["superadmin"])
 
 
 class ZabbixModuleSettingsIn(BaseModel):
@@ -144,8 +167,22 @@ async def put_platform(
         "rate_limit_window_seconds": max(1, min(payload.rate_limit_window_seconds, 3600)),
         "session_idle_minutes": max(1, min(payload.session_idle_minutes, 1440)),
         "session_absolute_hours": max(1, min(payload.session_absolute_hours, 168)),
+        "elevated_session_minutes": max(5, min(payload.elevated_session_minutes, 240)),
+        "authorization_default_ttl_days": max(1, min(payload.authorization_default_ttl_days, 3650)),
         "log_level": payload.log_level.upper() if payload.log_level.upper() in
             ("DEBUG", "INFO", "WARNING", "ERROR") else "INFO",
+        "app_public_url": payload.app_public_url.strip(),
+        # Allowlisted to exactly the two roles that can ever reach
+        # create_authorization/update_authorization (both require_admin-gated) —
+        # NOT the full BUILTIN_ROLE_PERMS set. "support" already holds full CRUD
+        # on the authorizations segment (see authorizations.py's vouching-defense
+        # comment); accepting "support"/"user" here today would be a dormant
+        # no-op, but would silently turn into a real segregation-of-duties bypass
+        # the moment anyone ever widens who can call those endpoints — narrower
+        # than "any real role name" on purpose, not just deduped against a typo.
+        "authorization_approval_exempt_roles": [
+            r for r in payload.authorization_approval_exempt_roles if r in ("admin", "superadmin")
+        ],
     }
     await _put_value(session, PLATFORM_KEY, new, actor_id, actor_name)
     return new

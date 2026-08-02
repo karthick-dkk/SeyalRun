@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app._params import ParamNotAllowedError, filter_caller_params, template_code_params
+from app._production_gate import any_production_hosts as _any_production_hosts
 from app.database import get_session
 from app.deps import require_service_token, get_user_id, get_user_role
 from app.models import ZAJobRun, ZAJobTemplate
@@ -318,6 +319,8 @@ async def run_template(
         if tmpl.action_type in ("ansible_playbook", "bash_script"):
             eff_credential_id = tmpl.credential_id
 
+    force_approval = await _any_production_hosts(target_host_ids)
+
     run_id = str(uuid.uuid4())
     stored_params = {
         **params,
@@ -344,14 +347,16 @@ async def run_template(
         # A template with requires_approval gets a real ZAJobRun row (visible in
         # history/notifications) but no dispatch — the run only starts once an
         # approver-role user calls POST /job-runs/{id}/approve (see job_runs.py).
-        status="pending_approval" if tmpl.requires_approval else "pending",
+        # force_approval (any target host tagged is_production) overrides the
+        # template's own setting the same way — production is always gated.
+        status="pending_approval" if (tmpl.requires_approval or force_approval) else "pending",
         params=stored_params,
         output_lines=[],
     )
     session.add(run)
     await session.commit()
 
-    if tmpl.requires_approval:
+    if tmpl.requires_approval or force_approval:
         return {"run_id": run_id, "status": "pending_approval"}
 
     executors = getattr(request.app.state, "executors", {})

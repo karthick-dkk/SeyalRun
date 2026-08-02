@@ -50,6 +50,7 @@ def _public(cfg: ZALogBackendConfig) -> dict:
         "s3_secret_access_key": _mask(cfg.s3_secret_access_key),
         "s3_endpoint_url": cfg.s3_endpoint_url,
         "routing": cfg.routing or {},
+        "retention": cfg.retention or {},
         "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
     }
 
@@ -66,6 +67,7 @@ def _decrypted(cfg: ZALogBackendConfig) -> dict:
         "s3_bucket": cfg.s3_bucket, "s3_region": cfg.s3_region,
         "s3_access_key_id": cfg.s3_access_key_id, "s3_secret_access_key": d(cfg.s3_secret_access_key),
         "s3_endpoint_url": cfg.s3_endpoint_url, "routing": cfg.routing or {},
+        "retention": cfg.retention or {},
     }
 
 
@@ -81,6 +83,7 @@ class LogBackendIn(BaseModel):
     s3_secret_access_key: str | None = None
     s3_endpoint_url: str = ""
     routing: dict = {}
+    retention: dict = {}
 
 
 @router.get("", dependencies=[Depends(require_admin)])
@@ -101,6 +104,7 @@ async def put_config(payload: LogBackendIn, session: AsyncSession = Depends(get_
     cfg.s3_access_key_id = payload.s3_access_key_id
     cfg.s3_endpoint_url = payload.s3_endpoint_url
     cfg.routing = payload.routing or {}
+    cfg.retention = payload.retention or {}
     # Secrets: only overwrite when a non-masked value is supplied.
     if payload.es_api_key is not None and payload.es_api_key != "••••••••":
         cfg.es_api_key = encrypt(payload.es_api_key) if payload.es_api_key else ""

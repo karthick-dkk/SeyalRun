@@ -55,6 +55,9 @@ class BashScriptExecutor(ActionExecutor):
         # confirmed live: a binding run with no host produced "sudo: command not
         # found" because it ran here, not on any real target.
         if run_local:
+            if bool(request.params.get("_dry_run")):
+                await publish_line("[dry-run] would run locally: bash -s -- " + request.params.get("script_args", ""))
+                return RunResult(ok=True, output="", exit_code=0)
             return await self._run_local(script, request.params.get("script_args", ""), publish_line)
 
         if not request.target_host_ids:
@@ -184,6 +187,10 @@ class BashScriptExecutor(ActionExecutor):
             # text so it never gets echoed into the captured output.
             remote_cmd = f"sudo -S -p '' -- {remote_cmd}"
             stdin_data = f"{sudo_pw}\n{script}"
+        if bool(request.params.get("_dry_run")):
+            await publish_line(f"[host:{addr}] [dry-run] would run: {remote_cmd}{' (sudo)' if use_sudo else ''}")
+            return True, ""
+
         await publish_line(f"[host:{addr}] connecting...{' (sudo)' if use_sudo else ''}")
         exit_code, stdout, stderr = await _ssh_run(
             host=addr,

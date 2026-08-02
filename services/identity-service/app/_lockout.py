@@ -63,6 +63,24 @@ async def record_failure(session: AsyncSession, key: str, *, max_failures: int,
     await session.commit()
 
 
+async def distinct_username_failures(session: AsyncSession, ip: str, window_seconds: int) -> int:
+    """Count of distinct username|ip rows with a recent failure from this IP — the
+    signature of credential-stuffing/password-spraying (many usernames, one
+    source), distinct from ordinary lockout (one username, repeated failures).
+    PCI DSS Phase B — used to fire a login-spike security alert."""
+    from sqlalchemy import func, select
+
+    from .models import ZALoginAttempt
+
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+    result = await session.execute(
+        select(func.count()).select_from(ZALoginAttempt).where(
+            ZALoginAttempt.key.like(f"%|{ip}"), ZALoginAttempt.updated_at >= cutoff,
+        )
+    )
+    return result.scalar_one()
+
+
 async def clear(session: AsyncSession, key: str) -> None:
     """Clear lockout state after a successful login."""
     from .models import ZALoginAttempt

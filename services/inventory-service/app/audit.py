@@ -22,6 +22,8 @@ async def log_action(
     resource_id: str = "",
     details: dict | None = None,
     ip_address: str = "",
+    session_id: str | None = None,
+    result: str | None = None,
 ) -> None:
     settings = get_settings()
     token = mint("inventory-service", "identity-service", settings.service_jwt_secret)
@@ -33,6 +35,8 @@ async def log_action(
         "resource_id": resource_id,
         "details": details or {},
         "ip_address": ip_address,
+        "session_id": session_id,
+        "result": result,
     }
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:

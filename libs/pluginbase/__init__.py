@@ -4,6 +4,7 @@ from .interfaces import (
     CommandFilterMatcher,
     CredentialKind,
     IdentityProvider,
+    KeyProvider,
     RunRequest,
     RunResult,
     TriggerSource,
@@ -16,6 +17,7 @@ __all__ = [
     "CommandFilterMatcher",
     "ActionExecutor",
     "TriggerSource",
+    "KeyProvider",
     "RunRequest",
     "RunResult",
 ]

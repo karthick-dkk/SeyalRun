@@ -102,6 +102,10 @@ class ZAJobRun(Base):
     output_lines: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     host_results: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # PCI DSS Phase D — change-control: parsed --check --diff output for ansible_playbook
+    # dry runs, per host, e.g. {"host-id": {"changed_files": [...], "diff_text": "..."}}.
+    # Null for non-dry-run/non-ansible jobs.
+    diff_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Set only for a step run dispatched by a "chain" template's own executor — null for
     # every normal, directly-triggered run.
     parent_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
