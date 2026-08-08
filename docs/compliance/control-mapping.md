@@ -79,6 +79,7 @@ Status: **Implemented** / **Partial** / **Gap**.
 | Dependency + misconfig scanning | Implemented | Trivy, fails on fixable HIGH/CRITICAL; weekly schedule |
 | SBOM | Implemented | CycloneDX via Trivy, uploaded per run |
 | Security invariant test suite | Implemented | 151 tests, no DB/Redis required, run on every push |
+| Staging validation | Implemented | Controls exercised on a live stack, not just unit-tested: credential fail-closed (200/503/200), audit UPDATE/DELETE rejected by trigger, recording tamper detected. See `staging-validation.md` |
 | Container hardening | Implemented | `read_only: true`, tmpfs, non-root users, healthchecks — `docker-compose.yml` |
 | Network exposure | Implemented | Only edge-proxy publishes ports |
 

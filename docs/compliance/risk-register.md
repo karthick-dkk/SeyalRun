@@ -28,9 +28,32 @@ host-level or container-level attacker, not a remote one.
 
 **Remediation.** Issue per-service certificates from a small internal CA created
 at install time in `docker-init/`, and have each service terminate TLS itself.
-A full service mesh is disproportionate for a Compose-first product. Until then
-this must be declared in scope documentation as an accepted risk with the
-compensating controls above.
+A full service mesh is disproportionate for a Compose-first product.
+
+**Measured scope** (counted, not estimated) — this is why it is a project rather
+than a patch, and why it must land as one atomic change: a half-converted mesh
+is mixed http/https and simply does not run.
+
+| Surface | Count | Change |
+|---|---|---|
+| `http://` upstreams in `services/*/app/config.py` | 25 | → `https://` |
+| `httpx.AsyncClient(...)` constructions | 52 | pass the internal CA bundle as `verify` |
+| Dockerfile `CMD` uvicorn invocations | 10 | add `--ssl-keyfile` / `--ssl-certfile` |
+| compose healthchecks using `urllib.request` over http | 10 | → https against the CA |
+| edge-proxy `proxy_pass` directives | 4 | → https upstreams |
+
+Plus: CA generation in `docker-init/`, per-service cert issuance keyed by the
+compose service name (which is the DNS name the certs must match), volume mounts
+for key/cert/CA, and a rotation path for the CA itself.
+
+Recommended sequencing: generate the CA and certs first and mount them while
+everything still speaks http (inert, no behaviour change), then flip one
+service's listener plus its callers and healthcheck together, verify on staging,
+and repeat. That keeps every step reversible instead of one large cutover.
+
+Until this lands, R-1 remains **open and accepted**, with the compensating
+controls above (single published port, signed `X-Service-Token` on every
+internal endpoint, `db_sslmode=require`) recorded as the mitigation.
 
 ## R-2 — Session end is not audited — CLOSED
 
