@@ -182,6 +182,12 @@ services:
     # unquoted host source) to allow the embedded dashboard to iframe this app. Never "*".
     environment:
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
+      # Upstream scheme and verification, substituted into the nginx template.
+      # They must always be defined: envsubst replaces an unset variable with an
+      # empty string, which would produce "://upstream" and fail to start.
+      # docker-compose.internal-tls.yml flips these to https / on.
+      INTERNAL_PROTO: ${INTERNAL_PROTO:-http}
+      INTERNAL_PROXY_SSL_VERIFY: ${INTERNAL_PROXY_SSL_VERIFY:-off}
     networks: [seyalrun_net]
     # NOT read_only: the nginx entrypoint renders the CSP template into
     # /etc/nginx/conf.d at boot (envsubst), which needs a writable conf.d owned by

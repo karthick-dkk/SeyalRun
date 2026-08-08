@@ -1,0 +1,154 @@
+---
+# Internal transport encryption — risk register R-1.
+#
+#   ops/gen-internal-tls.sh
+#   INTERNAL_TLS_DIR=$(pwd)/tls/internal docker compose \
+#     -f docker-compose.yml -f docker-compose.internal-tls.yml up -d
+#
+# An overlay rather than a change to docker-compose.yml so it is opt-in and
+# reversible: without it the stack behaves exactly as before, and a deployment
+# can adopt this without a flag-day cutover.
+#
+# No application code changes are needed for this, which is why it is a compose
+# overlay at all:
+#   * uvicorn reads UVICORN_SSL_KEYFILE / UVICORN_SSL_CERTFILE from the
+#     environment, so every service serves HTTPS without touching a Dockerfile.
+#   * httpx honours SSL_CERT_FILE, so all 52 client call sites trust the internal
+#     CA without being edited. The bundle carries the public roots too, so
+#     outbound calls to S3 / Elasticsearch / webhooks keep validating normally.
+#   * Peer URLs move to https:// here; each service reads them from the
+#     environment, overriding its config.py default.
+#
+# This is one-way TLS. Client authentication is already carried by the signed
+# X-Service-Token on every internal endpoint; what was missing was
+# confidentiality on the wire.
+
+services:
+
+  identity-service:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      INVENTORY_SERVICE_URL: https://inventory-service:8102
+      AUTOMATION_SERVICE_URL: https://automation-service:8105
+      TERMINAL_SERVICE_URL: https://terminal-service:8103
+    volumes:
+      - ${INTERNAL_TLS_DIR}/identity-service.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/identity-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8101/health')"]
+
+  inventory-service:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      IDENTITY_SERVICE_URL: https://identity-service:8101
+      AUTOMATION_SERVICE_URL: https://automation-service:8105
+    volumes:
+      - ${INTERNAL_TLS_DIR}/inventory-service.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/inventory-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8102/health')"]
+
+  terminal-service:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      IDENTITY_SERVICE_URL: https://identity-service:8101
+      INVENTORY_SERVICE_URL: https://inventory-service:8102
+      RECORDING_SERVICE_URL: https://recording-service:8104
+    volumes:
+      - ${INTERNAL_TLS_DIR}/terminal-service.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/terminal-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8103/health')"]
+
+  recording-service:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      IDENTITY_SERVICE_URL: https://identity-service:8101
+      TERMINAL_SERVICE_URL: https://terminal-service:8103
+      INVENTORY_SERVICE_URL: https://inventory-service:8102
+    volumes:
+      - ${INTERNAL_TLS_DIR}/recording-service.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/recording-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8104/health')"]
+
+  api-gateway:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      IDENTITY_SERVICE_URL: https://identity-service:8101
+      INVENTORY_SERVICE_URL: https://inventory-service:8102
+      TERMINAL_SERVICE_URL: https://terminal-service:8103
+      RECORDING_SERVICE_URL: https://recording-service:8104
+      AUTOMATION_SERVICE_URL: https://automation-service:8105
+      ZABBIX_INTEGRATION_SERVICE_URL: https://zabbix-integration-service:8106
+      METRICS_SERVICE_URL: https://metrics-service:8107
+    volumes:
+      - ${INTERNAL_TLS_DIR}/api-gateway.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/api-gateway-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8000/health')"]
+
+  automation-service:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      IDENTITY_SERVICE_URL: https://identity-service:8101
+      INVENTORY_SERVICE_URL: https://inventory-service:8102
+      RECORDING_SERVICE_URL: https://recording-service:8104
+    volumes:
+      - ${INTERNAL_TLS_DIR}/automation-service.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/automation-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8105/health')"]
+
+  zabbix-integration-service:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      AUTOMATION_SERVICE_URL: https://automation-service:8105
+      INVENTORY_SERVICE_URL: https://inventory-service:8102
+      IDENTITY_SERVICE_URL: https://identity-service:8101
+    volumes:
+      - ${INTERNAL_TLS_DIR}/zabbix-integration-service.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/zabbix-integration-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8106/health')"]
+
+  metrics-service:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      IDENTITY_SERVICE_URL: https://identity-service:8101
+    volumes:
+      - ${INTERNAL_TLS_DIR}/metrics-service.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/metrics-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8107/health')"]
+
+  edge-proxy:
+    environment:
+      INTERNAL_PROTO: https
+      INTERNAL_PROXY_SSL_VERIFY: "on"
+    volumes:
+      - ${INTERNAL_TLS_DIR}/ca.pem:/etc/nginx/ssl/internal-ca.pem:ro

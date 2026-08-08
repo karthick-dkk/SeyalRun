@@ -12,6 +12,19 @@ RUN apk update && apk upgrade --no-cache
 # leaving nginx's own $-vars intact, then writes /etc/nginx/conf.d/default.conf.
 COPY services/edge-proxy/templates/default.conf.template /etc/nginx/templates/default.conf.template
 
+# Placeholder for the internal CA. nginx parses proxy_ssl_trusted_certificate at
+# config load and refuses to start if the file is missing or unparseable, so the
+# path must always resolve to a valid certificate — even in the default
+# deployment, where upstream verification is off and this file is never used.
+# docker-compose.internal-tls.yml mounts the real CA over it.
+RUN apk add --no-cache openssl \
+    && mkdir -p /etc/nginx/ssl \
+    && openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+         -keyout /tmp/placeholder-key.pem -out /etc/nginx/ssl/internal-ca.pem \
+         -subj "/CN=SeyalRun placeholder - internal TLS not enabled" 2>/dev/null \
+    && rm -f /tmp/placeholder-key.pem \
+    && chmod 644 /etc/nginx/ssl/internal-ca.pem
+
 # Already the base image's own default — declared explicitly for Trivy's
 # Dockerfile linter (DS-0002), same as services/frontend/Dockerfile.
 USER nginx

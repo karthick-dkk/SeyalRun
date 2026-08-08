@@ -38,11 +38,21 @@ server {
     ssl_certificate_key /etc/nginx/ssl/key.pem;
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
+    # Upstream TLS (docker-compose.internal-tls.yml). Inert while INTERNAL_PROTO
+    # is http. proxy_ssl_name is set per-location to the upstream's service name,
+    # which is what its certificate is issued for.
+    proxy_ssl_trusted_certificate /etc/nginx/ssl/internal-ca.pem;
+    proxy_ssl_verify              ${INTERNAL_PROXY_SSL_VERIFY};
+    proxy_ssl_verify_depth        2;
+    proxy_ssl_server_name         on;
+    proxy_ssl_protocols           TLSv1.2 TLSv1.3;
+
     ssl_session_cache   shared:SSL:10m;
 
     location /api/ {
         set $upstream_api api-gateway:8000;
-        proxy_pass         http://$upstream_api;
+        proxy_ssl_name     api-gateway;
+        proxy_pass         ${INTERNAL_PROTO}://$upstream_api;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
@@ -53,8 +63,9 @@ server {
 
     location /webhook/ {
         set $upstream_zint zabbix-integration-service:8106;
+        proxy_ssl_name     zabbix-integration-service;
         rewrite            ^/webhook/(.*)$ /api/v1/webhook/$1 break;
-        proxy_pass         http://$upstream_zint;
+        proxy_pass         ${INTERNAL_PROTO}://$upstream_zint;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
@@ -65,7 +76,8 @@ server {
 
     location /ws/ {
         set $upstream_api api-gateway:8000;
-        proxy_pass         http://$upstream_api;
+        proxy_ssl_name     api-gateway;
+        proxy_pass         ${INTERNAL_PROTO}://$upstream_api;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade           $http_upgrade;
         proxy_set_header   Connection        "upgrade";
