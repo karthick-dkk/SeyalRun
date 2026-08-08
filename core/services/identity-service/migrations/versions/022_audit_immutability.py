@@ -39,10 +39,14 @@ down_revision = "021"
 branch_labels = None
 depends_on = None
 
+# A single % is plpgsql's placeholder for the TG_OP argument. Doubling it makes
+# plpgsql read a literal percent, leaving zero placeholders for one argument and
+# failing with "too many parameters specified for RAISE" — asyncpg binds with $1,
+# so there is no driver-level %-interpolation to escape against here.
 PG_FN = """
 CREATE OR REPLACE FUNCTION za_audit_logs_append_only() RETURNS trigger AS $$
 BEGIN
-    RAISE EXCEPTION 'za_audit_logs is append-only (%% attempted)', TG_OP
+    RAISE EXCEPTION 'za_audit_logs is append-only (% attempted)', TG_OP
         USING HINT = 'Audit rows are hash-chained; editing or deleting one breaks verify_chain().';
 END;
 $$ LANGUAGE plpgsql;
