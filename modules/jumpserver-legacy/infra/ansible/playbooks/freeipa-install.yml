@@ -1,0 +1,142 @@
+---
+# Playbook: freeipa-install.yml
+# Installs FreeIPA server in Docker on Server 1 (ARM64 / aarch64)
+#
+# Prerequisites:
+#   - Docker is installed (already present on Server 1)
+#   - vault.yml contains vault_ipa_admin_password and vault_ipa_dm_password
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.ini playbooks/freeipa-install.yml \
+#     --ask-vault-pass --limit freeipa
+
+- name: Install FreeIPA server in Docker (ARM64-compatible)
+  hosts: freeipa
+  become: true
+  gather_facts: true
+
+  vars:
+    freeipa_container_name: freeipa
+    freeipa_image: "freeipa/freeipa-server:fedora-41"
+    freeipa_data_dir: /data/freeipa
+    freeipa_domain: "{{ lab_domain }}"
+    freeipa_realm: "{{ lab_realm }}"
+    freeipa_hostname: "{{ freeipa_hostname }}"
+
+  tasks:
+    - name: Verify ARM64 architecture
+      ansible.builtin.assert:
+        that: ansible_architecture == "aarch64"
+        fail_msg: "This playbook targets ARM64. Current arch: {{ ansible_architecture }}"
+        success_msg: "ARM64 confirmed (aarch64)"
+
+    - name: Create FreeIPA data directory
+      ansible.builtin.file:
+        path: "{{ freeipa_data_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Add FreeIPA hostname to /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ freeipa_server_ip }} {{ freeipa_hostname }} ipa"
+        state: present
+
+    - name: Pull FreeIPA Docker image (ARM64 variant)
+      community.docker.docker_image:
+        name: "{{ freeipa_image }}"
+        source: pull
+
+    - name: Stop existing FreeIPA container if running
+      community.docker.docker_container:
+        name: "{{ freeipa_container_name }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Start FreeIPA container
+      community.docker.docker_container:
+        name: "{{ freeipa_container_name }}"
+        image: "{{ freeipa_image }}"
+        hostname: "{{ freeipa_hostname }}"
+        restart_policy: unless-stopped
+        state: started
+        env:
+          IPA_SERVER_INSTALL_OPTS: >-
+            --domain={{ freeipa_domain }}
+            --realm={{ freeipa_realm }}
+            --ds-password={{ vault_ipa_dm_password }}
+            --admin-password={{ vault_ipa_admin_password }}
+            --mkhomedir
+            --no-ntp
+            --unattended
+        volumes:
+          - "{{ freeipa_data_dir }}:/data"
+          - "/sys/fs/cgroup:/sys/fs/cgroup:ro"
+        published_ports:
+          - "389:389"
+          - "636:636"
+          - "88:88/tcp"
+          - "88:88/udp"
+          - "464:464/tcp"
+          - "464:464/udp"
+        tmpfs:
+          - /run
+          - /tmp
+        security_opts:
+          - seccomp:unconfined
+        capabilities:
+          - SYS_TIME
+          - NET_ADMIN
+        sysctls:
+          net.ipv6.conf.all.disable_ipv6: "1"
+
+    - name: Wait for FreeIPA to complete installation (up to 10 minutes)
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ freeipa_container_name }}
+          ipa user-find admin --all
+      register: ipa_ready
+      until: ipa_ready.rc == 0
+      retries: 60
+      delay: 10
+      changed_when: false
+
+    - name: Create JumpServer service account in FreeIPA
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ freeipa_container_name }}
+          ipa user-add svc-jumpserver
+          --first=JumpServer --last=Service
+          --password={{ vault_ipa_dm_password }}
+          --shell=/sbin/nologin
+      register: svc_create
+      failed_when:
+        - svc_create.rc != 0
+        - "'already exists' not in svc_create.stderr"
+      changed_when: svc_create.rc == 0
+
+    - name: Create jumpserver-users group in FreeIPA
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ freeipa_container_name }}
+          ipa group-add jumpserver-users
+          --desc="Users allowed to log into JumpServer"
+      register: group_create
+      failed_when:
+        - group_create.rc != 0
+        - "'already exists' not in group_create.stderr"
+      changed_when: group_create.rc == 0
+
+    - name: Verify LDAPS is listening
+      ansible.builtin.wait_for:
+        host: "{{ freeipa_server_ip }}"
+        port: 636
+        timeout: 30
+
+    - name: FreeIPA installation complete
+      ansible.builtin.debug:
+        msg:
+          - "FreeIPA is running at ldaps://{{ freeipa_server_ip }}:636"
+          - "Admin UI: https://{{ freeipa_hostname }}/ipa/ui"
+          - "Next: Configure JumpServer LDAP settings"
+          - "Bind DN: uid=svc-jumpserver,cn=users,cn=accounts,dc={{ freeipa_domain.split('.') | join(',dc=') }}"

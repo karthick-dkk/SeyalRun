@@ -1,0 +1,53 @@
+rules:
+  # Enforce Vault/pydantic-settings usage — no raw os.environ outside config.py
+  - id: no-raw-environ-outside-config
+    patterns:
+      - pattern: os.environ.get(...)
+      - pattern-not-inside: |
+          class $CONFIG(BaseSettings):
+              ...
+    message: "Use pydantic-settings BaseSettings or the SecretsBackend, not os.environ directly"
+    languages: [python]
+    severity: WARNING
+    paths:
+      include:
+        - services/
+      exclude:
+        - "*/config.py"
+        - "*/tests/*"
+
+  # Enforce TLS verification on all httpx calls
+  - id: httpx-verify-required
+    patterns:
+      - pattern: httpx.$METHOD(..., verify=False, ...)
+    message: "Never disable TLS verification. Use verify=True or pass a CA bundle path."
+    languages: [python]
+    severity: ERROR
+
+  # Catch hardcoded passwords
+  - id: no-hardcoded-password
+    patterns:
+      - pattern: $VAR = "..."
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: "(?i)(password|passwd|secret|api_key|apikey|token|auth)"
+      - metavariable-regex:
+          metavariable: "\"...\"$"
+          regex: ".{8,}"
+    message: "Possible hardcoded credential in variable '{{$VAR}}'. Use SecretsBackend instead."
+    languages: [python]
+    severity: WARNING
+
+  # No shell=True in subprocess calls
+  - id: no-subprocess-shell-true
+    pattern: subprocess.$CALL(..., shell=True, ...)
+    message: "shell=True enables command injection. Pass command as a list instead."
+    languages: [python]
+    severity: ERROR
+
+  # JWT must use RS256, not HS256
+  - id: jwt-must-use-rs256
+    pattern: jwt.encode(..., algorithm="HS256", ...)
+    message: "Use RS256 (asymmetric) not HS256 (symmetric). HS256 requires sharing the signing secret."
+    languages: [python]
+    severity: ERROR

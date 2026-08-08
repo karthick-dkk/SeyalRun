@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff lint
+        run: ruff check services/
+
+      - name: Ruff format check
+        run: ruff format --check services/
+
+  sast:
+    name: SAST
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bandit
+        run: pip install bandit[toml]
+
+      - name: Bandit scan
+        run: |
+          bandit -r services/ -c security/scanning/.bandit \
+            --format sarif -o bandit.sarif || true
+          bandit -r services/ -c security/scanning/.bandit \
+            --format txt
+        continue-on-error: false
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit.sarif
+
+      # Run semgrep directly rather than via semgrep-action@v1: the action is
+      # deprecated, and a plain run exits 0 even with ERROR findings. --error is
+      # what actually turns a finding into a failed build.
+      - name: Install semgrep
+        run: pip install semgrep
+
+      - name: Semgrep (advisory — full rule packs)
+        run: |
+          semgrep --metrics=off --config p/python --config p/fastapi \
+            --config p/jwt --config p/secrets services/ || true
+
+      - name: Semgrep (blocking — project rules, ERROR severity)
+        run: |
+          semgrep --metrics=off --error --severity=ERROR \
+            --config security/scanning/.semgrep.yml services/
+
+  test:
+    name: Unit Tests — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - automation-bridge
+          - zbx-sync
+          - launch-token
+          - webhook-receiver
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install service deps
+        run: |
+          pip install -e services/_shared
+          pip install -e services/${{ matrix.service }}[dev]
+
+      - name: Run unit tests
+        run: |
+          pytest services/${{ matrix.service }}/tests/unit \
+            --cov=app \
+            --cov-report=xml \
+            --cov-fail-under=80 \
+            -v
+        working-directory: services/${{ matrix.service }}
+
+  build:
+    name: Build Image — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [lint, sast]
+    strategy:
+      matrix:
+        service:
+          - automation-bridge
+          - zbx-sync
+          - launch-token
+          - webhook-receiver
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (linux/arm64 for lab, linux/amd64 for CI)
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            -t pravesh/${{ matrix.service }}:${{ github.sha }} \
+            services/${{ matrix.service }}
+
+  image-scan:
+    name: Trivy Scan — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [build]
+    strategy:
+      matrix:
+        service:
+          - automation-bridge
+          - zbx-sync
+          - launch-token
+          - webhook-receiver
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image for scanning
+        run: |
+          docker build -t pravesh/${{ matrix.service }}:scan \
+            services/${{ matrix.service }}
+
+      - name: Trivy scan (fail on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pravesh/${{ matrix.service }}:scan
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif

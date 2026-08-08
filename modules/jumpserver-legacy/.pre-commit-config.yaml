@@ -1,0 +1,46 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        language_version: python3.12
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args:
+          - "--fix"
+          - "--ignore=B008,E501,S101,S103,S104,S105,S106,S107,S108,S110,S112,S501,S310,B904"
+      - id: ruff-format
+
+  # bandit runs in CI (ci.yml) via pyproject.toml config — not as a pre-commit hook
+  # because pre-commit bandit parses config differently from CI bandit
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+        language_version: python3.12
+      - id: check-yaml
+        language_version: python3.12
+      - id: check-json
+        language_version: python3.12
+      - id: check-toml
+        language_version: python3.12
+      - id: end-of-file-fixer
+        language_version: python3.12
+      - id: trailing-whitespace
+        language_version: python3.12
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+        language_version: python3.12
+      - id: no-commit-to-branch
+        args: ["--branch", "main"]
+        language_version: python3.12

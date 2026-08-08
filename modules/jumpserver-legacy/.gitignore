@@ -1,0 +1,53 @@
+# ── Sensitive / secrets ───────────────────────────────────────
+.env
+.env.*
+*.env
+servers.txt
+**/credentials.json
+**/.access_key
+**/*.key
+**/*.pem
+**/*.crt
+**/*.p12
+**/secret*
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Node / Vue ────────────────────────────────────────────────
+node_modules/
+services/pravesh-console/dist/
+services/pravesh-console/.vite/
+*.tsbuildinfo
+
+# ── Docker volumes / runtime ──────────────────────────────────
+data/
+jumpserver/
+grafana/data/
+*.sock
+
+# ── Editor ────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+servers.txt
+.claude/
+*.local.json
