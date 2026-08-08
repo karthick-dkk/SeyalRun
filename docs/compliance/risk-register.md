@@ -11,7 +11,13 @@ Severity reflects exploitability in a deployed system, not how hard it is to fix
 
 ---
 
-## R-1 — No encryption between internal services
+## R-1 — No encryption between internal services — CLOSED
+
+**Severity: High.** PCI DSS Req 4. **Closed** by `docker-compose.internal-tls.yml` + `ops/gen-internal-tls.sh`, verified on staging: plaintext HTTP to an internal port is refused, HTTPS via the internal CA succeeds, and a client without that CA is rejected (so verification is genuinely enforced, not merely configured). Enabling it is sticky — `_staging-bootstrap.sh` re-adds the overlay whenever the CA exists, so a redeploy cannot silently drop back to plaintext.
+
+Residual: the edge-proxy→frontend hop is still HTTP (static assets only; that container is nginx, not uvicorn, so it has no issued certificate), and this is one-way TLS — client authentication remains the signed X-Service-Token.
+
+Original finding:
 
 **Severity: High.** PCI DSS Req 4.
 
@@ -51,9 +57,14 @@ everything still speaks http (inert, no behaviour change), then flip one
 service's listener plus its callers and healthcheck together, verify on staging,
 and repeat. That keeps every step reversible instead of one large cutover.
 
-Until this lands, R-1 remains **open and accepted**, with the compensating
-controls above (single published port, signed `X-Service-Token` on every
-internal endpoint, `db_sslmode=require`) recorded as the mitigation.
+**How the scope above collapsed.** Measuring the mechanisms rather than assuming
+them removed nearly all of that table, and both findings were verified before any
+code was written: uvicorn accepts `UVICORN_SSL_KEYFILE`/`UVICORN_SSL_CERTFILE`
+from the environment (so no Dockerfile edits), and httpx honours `SSL_CERT_FILE`
+despite naming certifi in its default path (so none of the 52 client sites were
+touched). The trust bundle carries the public roots alongside the internal CA,
+because pointing at the internal CA alone would break every outbound call to S3,
+Elasticsearch and webhooks. Net application code changed: **none**.
 
 ## R-2 — Session end is not audited — CLOSED
 

@@ -66,13 +66,34 @@ Recordings predating the digest column report `no digest recorded` rather than
 
 ---
 
+## Internal transport encryption (R-1)
+
+Stack brought up with `docker-compose.internal-tls.yml`. All 12 containers
+healthy; uvicorn reported `Uvicorn running on https://0.0.0.0:<port>` for every
+Python service.
+
+| Probe (run from inside api-gateway) | Result |
+|---|---|
+| plaintext `http://identity-service:8101/health` | **refused** (`RemoteDisconnected`) |
+| `https://…` with the internal CA | `200 {"status":"ok"…}` |
+| `https://…` with the CA **removed** from the trust store | **rejected** (`URLError`) |
+| end-to-end `GET /api/v1/health` through edge-proxy | `200`, all downstream services `true` |
+
+The third row is the one that matters: it shows verification is actually
+enforced, rather than TLS being negotiated with validation silently disabled.
+
+Enabling it is sticky — `ops/_staging-bootstrap.sh` re-adds the overlay whenever
+`tls/internal/ca.pem` exists, so a routine redeploy cannot quietly put the mesh
+back on plaintext.
+
 ## What this record does not cover
 
 Stated so the gaps are not read as passes:
 
-- **R-1, internal transport encryption** — open and accepted. Inter-service
-  traffic is plaintext inside the Docker network; see the risk register for the
-  measured remediation scope.
+- **The edge-proxy→frontend hop** — still HTTP. That container is nginx, not
+  uvicorn, and serves static assets only, so it has no issued certificate.
+- **Client authentication at the transport layer** — this is one-way TLS.
+  Callers are authenticated by the signed `X-Service-Token`, not client certs.
 - **Recording playback/presign auditing** — the integrity half of R-4 is closed,
   the access-logging half is not.
 - **`ops/verify-staging.sh` login/PAT/CRUD checks** — skipped, because

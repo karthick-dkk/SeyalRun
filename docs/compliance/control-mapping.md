@@ -37,7 +37,7 @@ Status: **Implemented** / **Partial** / **Gap**.
 | KEK abstraction for HSM/KMS | Partial | `KeyProvider` axis exists; `env_key_provider.py` is the **only** implementation — KEK is still derived from `ZA_VAULT_PASSWORD`/`ZA_VAULT_SALT`, so it is not hardware-backed |
 | Ciphertext is self-describing | **Gap** | No key-version or algorithm prefix in the wire format (`crypto.py`), so rotation must be all-or-nothing and a partial rotation is unrecoverable |
 | TLS in transit (external) | Implemented | Terminates at edge-proxy, TLSv1.2/1.3 — `core/services/edge-proxy/templates/default.conf.template:34-41` |
-| TLS in transit (internal) | **Gap** | Every internal hop is `http://` (`api-gateway/app/config.py:28-36`). See risk register R-1 |
+| TLS in transit (internal) | Implemented (opt-in overlay) | Every Python service serves HTTPS with a cert from an internal CA; clients trust it via `SSL_CERT_FILE`; edge-proxy verifies upstreams. Enable with `ops/gen-internal-tls.sh` + `docker-compose.internal-tls.yml`. One-way TLS — client authN is the existing `X-Service-Token`. The edge-proxy→frontend hop stays HTTP (static assets, nginx not uvicorn) |
 | Database connection encryption | Implemented | `db_sslmode` defaults to `require` |
 
 ## Audit logging (PCI DSS Req 10 / SOC 2 CC7)
