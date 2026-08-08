@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
         import httpx
 
         try:
-            async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            async with httpx.AsyncClient(verify=settings.jumpserver_verify, timeout=10) as client:
                 r = await client.get(
                     f"{settings.jumpserver_api_url}/api/v1/assets/assets/?limit=200&offset=0",
                     headers={"Authorization": f"Bearer {user['token']}"},
@@ -107,7 +107,7 @@ def create_app() -> FastAPI:
 
         accounts: list[dict] = []
 
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        async with httpx.AsyncClient(verify=settings.jumpserver_verify, timeout=10) as client:
             for url in [
                 f"{settings.jumpserver_api_url}/api/v1/accounts/accounts/?asset={asset_id}&limit=50",
                 f"{settings.jumpserver_api_url}/api/v1/perms/users/{user['id']}/assets/{asset_id}/accounts/",
@@ -154,7 +154,7 @@ def create_app() -> FastAPI:
         domain_id = domain_name = gateway_host = gateway_port = None
         gateway_accounts: list[dict] = []
 
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        async with httpx.AsyncClient(verify=settings.jumpserver_verify, timeout=10) as client:
             # Step 1: get asset detail → extract domain
             try:
                 r = await client.get(
@@ -256,7 +256,7 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_400_BAD_REQUEST, detail="username and password required"
             )
         try:
-            async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            async with httpx.AsyncClient(verify=settings.jumpserver_verify, timeout=10) as client:
                 r = await client.post(
                     f"{settings.jumpserver_api_url}/api/v1/authentication/auth/",
                     json={"username": username, "password": password},
@@ -461,7 +461,7 @@ def create_app() -> FastAPI:
         # ── Asset count from JumpServer ────────────────────────────────
         total_assets = 0
         try:
-            async with httpx.AsyncClient(verify=False, timeout=8) as client:
+            async with httpx.AsyncClient(verify=settings.jumpserver_verify, timeout=8) as client:
                 r = await client.get(
                     f"{settings.jumpserver_api_url}/api/v1/assets/assets/?limit=1",
                     headers={"Authorization": f"Bearer {user['token']}"},

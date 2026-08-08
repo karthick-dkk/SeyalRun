@@ -53,15 +53,21 @@ jobs:
         with:
           sarif_file: bandit.sarif
 
-      - name: Semgrep
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/python
-            p/fastapi
-            p/jwt
-            p/secrets
-            security/scanning/.semgrep.yml
+      # Run semgrep directly rather than via semgrep-action@v1: the action is
+      # deprecated, and a plain run exits 0 even with ERROR findings. --error is
+      # what actually turns a finding into a failed build.
+      - name: Install semgrep
+        run: pip install semgrep
+
+      - name: Semgrep (advisory — full rule packs)
+        run: |
+          semgrep --metrics=off --config p/python --config p/fastapi \
+            --config p/jwt --config p/secrets services/ || true
+
+      - name: Semgrep (blocking — project rules, ERROR severity)
+        run: |
+          semgrep --metrics=off --error --severity=ERROR \
+            --config security/scanning/.semgrep.yml services/
 
   test:
     name: Unit Tests — ${{ matrix.service }}

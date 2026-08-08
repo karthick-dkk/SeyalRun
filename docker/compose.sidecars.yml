@@ -32,8 +32,8 @@ services:
       - ab_jobs:/tmp/ab-jobs      # ansible-runner job artifacts
     environment:
       AB_LOG_LEVEL: "WARNING"
-      AB_REDIS_URL: "redis://:${REDIS_PASSWORD}@192.168.250.1:6379/1"
-      AB_JUMPSERVER_API_URL: "http://192.168.250.1"
+      AB_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/1"
+      AB_JUMPSERVER_API_URL: "http://${INFRA_HOST:-192.168.250.1}"
       AB_JUMPSERVER_API_KEY: "${JUMPSERVER_API_KEY}"
       AB_PLAYBOOKS_DIR: "/playbooks"
       GIT_SHA: "${GIT_SHA:-unknown}"
@@ -53,10 +53,10 @@ services:
       - "127.0.0.1:8002:8002"
     environment:
       ZS_LOG_LEVEL: "WARNING"
-      ZS_REDIS_URL: "redis://:${REDIS_PASSWORD}@192.168.250.1:6379/2"
-      ZS_JUMPSERVER_API_URL: "http://192.168.250.1"
+      ZS_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/2"
+      ZS_JUMPSERVER_API_URL: "http://${INFRA_HOST:-192.168.250.1}"
       ZS_JUMPSERVER_API_KEY: "${JUMPSERVER_API_KEY}"
-      ZS_ZABBIX_API_URL: "http://192.168.64.8"
+      ZS_ZABBIX_API_URL: "http://${ZABBIX_HOST:-192.168.64.8}"
       ZS_ZABBIX_API_TOKEN: "${ZABBIX_API_TOKEN}"
       ZS_SYNC_INTERVAL_MINUTES: "5"
       GIT_SHA: "${GIT_SHA:-unknown}"
@@ -76,7 +76,7 @@ services:
       - "127.0.0.1:8003:8003"
     environment:
       LT_LOG_LEVEL: "WARNING"
-      LT_REDIS_URL: "redis://:${REDIS_PASSWORD}@192.168.250.1:6379/3"
+      LT_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/3"
       LT_JWT_PRIVATE_KEY_PATH: "/run/certs/jwt-private.pem"
       LT_JWT_TOKEN_TTL_SECONDS: "60"
       GIT_SHA: "${GIT_SHA:-unknown}"
@@ -98,7 +98,7 @@ services:
       - "127.0.0.1:8004:8004"
     environment:
       WR_LOG_LEVEL: "WARNING"
-      WR_REDIS_URL: "redis://:${REDIS_PASSWORD}@192.168.250.1:6379/4"
+      WR_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/4"
       WR_WEBHOOK_HMAC_SECRET: "${WEBHOOK_HMAC_SECRET}"
       WR_ZBX_SYNC_URL: "http://zbx_sync:8002"
       GIT_SHA: "${GIT_SHA:-unknown}"

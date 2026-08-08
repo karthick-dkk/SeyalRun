@@ -39,7 +39,7 @@ async def _get(path: str, token: str) -> Any:
         raise RuntimeError("JumpServer circuit breaker is open")
 
     try:
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        async with httpx.AsyncClient(verify=settings.jumpserver_verify, timeout=10) as client:
             resp = await client.get(
                 f"{settings.jumpserver_api_url}{path}",
                 headers={"Authorization": f"Bearer {token}"},
@@ -57,7 +57,7 @@ async def _post(path: str, token: str, payload: dict) -> Any:
         raise RuntimeError("JumpServer circuit breaker is open")
 
     try:
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        async with httpx.AsyncClient(verify=settings.jumpserver_verify, timeout=10) as client:
             resp = await client.post(
                 f"{settings.jumpserver_api_url}{path}",
                 headers={"Authorization": f"Bearer {token}"},

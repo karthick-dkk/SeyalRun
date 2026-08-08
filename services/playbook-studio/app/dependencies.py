@@ -41,7 +41,7 @@ async def get_current_user(
 
     # Validate against JumpServer
     try:
-        async with httpx.AsyncClient(verify=False, timeout=8) as client:
+        async with httpx.AsyncClient(verify=settings.jumpserver_verify, timeout=8) as client:
             r = await client.get(
                 f"{settings.jumpserver_api_url}/api/v1/users/profile/",
                 headers={"Authorization": f"Bearer {token}"},

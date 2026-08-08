@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -33,6 +35,9 @@ class Settings(BaseSettings):
 
     # JumpServer auth validation
     jumpserver_api_url: str = "http://192.168.64.2"
+    # Path to a PEM CA bundle trusted when calling JumpServer over HTTPS.
+    # Empty uses the system trust store. Verification is never disabled.
+    jumpserver_ca_bundle: str = ""
 
     # SMTP for email alerts
     smtp_host: str = "localhost"
@@ -57,6 +62,19 @@ class Settings(BaseSettings):
 
     # Misc
     environment: str = "production"
+
+    @property
+    def jumpserver_verify(self) -> str | bool:
+        """Value for httpx's ``verify`` when calling JumpServer."""
+        bundle = self.jumpserver_ca_bundle.strip()
+        if not bundle:
+            return True
+        if not os.path.isfile(bundle):
+            raise RuntimeError(
+                f"PS_JUMPSERVER_CA_BUNDLE points at '{bundle}', which is not a readable "
+                "file. Provide a valid PEM CA bundle or unset it to use system CAs."
+            )
+        return bundle
 
 
 _settings_instance: Settings | None = None

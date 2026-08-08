@@ -18,14 +18,22 @@ from pravesh_shared.health import register_readiness_check
 from pravesh_shared.health import router as health_router
 from pravesh_shared.log import configure_logging
 from pravesh_shared.middleware import RequestContextMiddleware
+from pravesh_shared.tls import verify_for
 from prometheus_client import Counter, make_asgi_app
 
 configure_logging("webhook-receiver", os.getenv("WR_LOG_LEVEL", "INFO"))
 log = structlog.get_logger(__name__)
 
 HMAC_SECRET = os.getenv("WR_WEBHOOK_HMAC_SECRET", "")
+if not HMAC_SECRET:
+    raise RuntimeError(
+        "WR_WEBHOOK_HMAC_SECRET is required. Without it every inbound webhook "
+        "would be accepted unsigned, letting anyone who can reach this port "
+        "trigger asset synchronisation."
+    )
 REDIS_URL = os.getenv("WR_REDIS_URL", "redis://localhost:6379/4")
 ZBX_SYNC_URL = os.getenv("WR_ZBX_SYNC_URL", "http://localhost:8002")
+ZBX_SYNC_VERIFY = verify_for("WR_ZBX_SYNC_CA_BUNDLE")
 DEDUP_WINDOW = 300  # 5 minutes
 
 WEBHOOKS_RECEIVED = Counter("webhooks_received_total", "Webhooks received", ["status"])
@@ -62,8 +70,6 @@ app.mount("/metrics", make_asgi_app())
 
 def verify_hmac(body: bytes, signature: str) -> bool:
     """Constant-time HMAC verification."""
-    if not HMAC_SECRET:
-        return True  # HMAC disabled if no secret configured
     expected = "sha256=" + hmac.new(HMAC_SECRET.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
@@ -74,7 +80,7 @@ async def receive_webhook(request: Request) -> dict:
     body = await request.body()
     sig = request.headers.get("X-Pravesh-Signature", "")
 
-    if HMAC_SECRET and not verify_hmac(body, sig):
+    if not verify_hmac(body, sig):
         WEBHOOKS_RECEIVED.labels(status="invalid_hmac").inc()
         log.warning(
             "invalid_hmac_signature",
@@ -121,7 +127,7 @@ async def process_event(event: dict[str, Any]) -> None:
     log.info("processing_event", event_type=event_type)
 
     try:
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        async with httpx.AsyncClient(verify=ZBX_SYNC_VERIFY, timeout=10) as client:
             r = await client.post(f"{ZBX_SYNC_URL}/sync/run", params={"dry_run": False})
             log.info("sync_triggered", status=r.status_code)
     except Exception as exc:

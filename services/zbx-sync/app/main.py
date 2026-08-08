@@ -14,6 +14,7 @@ from pravesh_shared.health import register_readiness_check
 from pravesh_shared.health import router as health_router
 from pravesh_shared.log import configure_logging
 from pravesh_shared.middleware import RequestContextMiddleware
+from pravesh_shared.tls import verify_for
 from prometheus_client import make_asgi_app
 
 configure_logging("zbx-sync", os.getenv("ZS_LOG_LEVEL", "INFO"))
@@ -21,8 +22,10 @@ log = structlog.get_logger(__name__)
 
 ZABBIX_URL = os.getenv("ZS_ZABBIX_API_URL", "http://192.168.64.8")
 ZABBIX_TOKEN = os.getenv("ZS_ZABBIX_API_TOKEN", "")
+ZABBIX_VERIFY = verify_for("ZS_ZABBIX_CA_BUNDLE")
 JMS_URL = os.getenv("ZS_JUMPSERVER_API_URL", "http://192.168.64.2")
 JMS_KEY = os.getenv("ZS_JUMPSERVER_API_KEY", "")
+JMS_VERIFY = verify_for("ZS_JUMPSERVER_CA_BUNDLE")
 SYNC_INTERVAL = int(os.getenv("ZS_SYNC_INTERVAL_MINUTES", "5")) * 60
 REDIS_URL = os.getenv("ZS_REDIS_URL", "redis://localhost:6379/2")
 
@@ -30,7 +33,7 @@ _sync_task: asyncio.Task | None = None
 
 
 async def check_zabbix() -> bool:
-    async with httpx.AsyncClient(verify=False, timeout=5) as client:
+    async with httpx.AsyncClient(verify=ZABBIX_VERIFY, timeout=5) as client:
         r = await client.post(
             f"{ZABBIX_URL}/api_jsonrpc.php",
             json={"jsonrpc": "2.0", "method": "apiinfo.version", "params": [], "id": 1},
@@ -40,7 +43,7 @@ async def check_zabbix() -> bool:
 
 
 async def check_jumpserver() -> bool:
-    async with httpx.AsyncClient(verify=False, timeout=5) as client:
+    async with httpx.AsyncClient(verify=JMS_VERIFY, timeout=5) as client:
         r = await client.get(f"{JMS_URL}/api/v1/settings/public/")
         assert r.status_code in (200, 401)
     return True
@@ -63,7 +66,7 @@ async def run_sync(dry_run: bool = False) -> dict:
 
     try:
         # 1. Get Zabbix hosts
-        async with httpx.AsyncClient(verify=False, timeout=30) as client:
+        async with httpx.AsyncClient(verify=ZABBIX_VERIFY, timeout=30) as client:
             zbx_resp = await client.post(
                 f"{ZABBIX_URL}/api_jsonrpc.php",
                 json={
@@ -85,7 +88,7 @@ async def run_sync(dry_run: bool = False) -> dict:
             "Authorization": f"Token {JMS_KEY}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(verify=False, timeout=30) as client:
+        async with httpx.AsyncClient(verify=JMS_VERIFY, timeout=30) as client:
             jms_resp = await client.get(
                 f"{JMS_URL}/api/v1/assets/assets/?type=linux",
                 headers=headers,
@@ -105,7 +108,7 @@ async def run_sync(dry_run: bool = False) -> dict:
 
             if hostname not in jms_assets:
                 # Create asset
-                async with httpx.AsyncClient(verify=False, timeout=15) as client:
+                async with httpx.AsyncClient(verify=JMS_VERIFY, timeout=15) as client:
                     r = await client.post(
                         f"{JMS_URL}/api/v1/assets/assets/",
                         headers=headers,

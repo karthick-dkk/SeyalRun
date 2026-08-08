@@ -1,4 +1,10 @@
-"""launch-token — mint short-lived RS256 JWTs for Zabbix→JumpServer session launch."""
+"""launch-token — mint short-lived, one-use tokens for Zabbix→JumpServer session launch.
+
+Tokens are JWT-shaped but signed with HS256, not RS256: SeyalRun both mints and
+verifies them, so a shared secret is sufficient and no third party needs to
+verify independently. Moving to RS256 only becomes necessary if JumpServer is
+ever expected to verify these tokens itself.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +32,18 @@ log = structlog.get_logger(__name__)
 REDIS_URL = os.getenv("LT_REDIS_URL", "redis://localhost:6379/3")
 TOKEN_TTL = int(os.getenv("LT_JWT_TOKEN_TTL_SECONDS", "60"))
 JUMPSERVER_URL = os.getenv("LT_JUMPSERVER_URL", "https://192.168.64.2")
+
+TOKEN_SECRET = os.getenv("LT_TOKEN_SECRET", "")
+# This placeholder was this service's default until the Phase 0 hardening pass,
+# so it is public in git history. It is 41 characters and would otherwise pass
+# the length check, hence the explicit denylist.
+_REJECTED_SECRETS = {"change-me-in-production-use-strong-secret"}
+if len(TOKEN_SECRET) < 32 or TOKEN_SECRET in _REJECTED_SECRETS:
+    raise RuntimeError(
+        "LT_TOKEN_SECRET is required, must be at least 32 characters, and must not "
+        "be a known placeholder. It signs session-launch tokens, so a guessable "
+        "value lets an attacker mint a token for any user against any asset."
+    )
 
 _redis: aioredis.Redis | None = None
 
@@ -83,13 +101,10 @@ async def create_launch_token(
     issued_at = int(time.time())
     expires_at = issued_at + TOKEN_TTL
 
-    # Simple signed token: base64(header).base64(payload).hmac_sha256
-    # For lab: use HMAC-SHA256 (production upgrade: RS256 with key pair)
     import base64
     import hmac
     import json
 
-    secret = os.getenv("LT_TOKEN_SECRET", "change-me-in-production-use-strong-secret")
     header = (
         base64.urlsafe_b64encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
         .rstrip(b"=")
@@ -113,7 +128,7 @@ async def create_launch_token(
     signing_input = f"{header}.{payload}"
     sig = (
         base64.urlsafe_b64encode(
-            hmac.new(secret.encode(), signing_input.encode(), hashlib.sha256).digest()
+            hmac.new(TOKEN_SECRET.encode(), signing_input.encode(), hashlib.sha256).digest()
         )
         .rstrip(b"=")
         .decode()
