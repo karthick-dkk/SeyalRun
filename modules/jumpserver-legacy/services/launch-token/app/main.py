@@ -159,16 +159,46 @@ async def verify_token(
     token: str,
     redis: Annotated[aioredis.Redis, Depends(get_redis)],
 ) -> dict:
-    """Verify and consume a launch token (one-use enforcement)."""
+    """Verify and consume a launch token (signature + expiry + one-use)."""
     import base64
+    import hmac
     import json
 
     try:
         header_b64, payload_b64, sig_b64 = token.split(".")
-        padded = payload_b64 + "=" * (4 - len(payload_b64) % 4)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token format"
+        ) from None
+
+    # Check the signature BEFORE decoding the payload. Until this passes, every
+    # field in the token is attacker-controlled: `sub` and `asset_id` decide who
+    # gets a session on which host, so trusting them unverified would let anyone
+    # holding one token rewrite it into a session as any user on any asset.
+    expected_sig = (
+        base64.urlsafe_b64encode(
+            hmac.new(
+                TOKEN_SECRET.encode(),
+                f"{header_b64}.{payload_b64}".encode(),
+                hashlib.sha256,
+            ).digest()
+        )
+        .rstrip(b"=")
+        .decode()
+    )
+    if not hmac.compare_digest(expected_sig, sig_b64):
+        log.warning("token_bad_signature")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token signature"
+        )
+
+    try:
+        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
         payload = json.loads(base64.urlsafe_b64decode(padded))
     except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token format")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token format"
+        ) from None
 
     jti = payload.get("jti", "")
     exp = payload.get("exp", 0)

