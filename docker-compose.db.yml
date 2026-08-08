@@ -23,7 +23,7 @@ services:
       AUTOMATION_DB_NAME: ${AUTOMATION_DB_NAME:-seyalrun_automation}
     volumes:
       - seyalrun_pgdata:/var/lib/postgresql/data
-      - ./docker-init/postgres:/docker-entrypoint-initdb.d:ro
+      - ./core/docker-init/postgres:/docker-entrypoint-initdb.d:ro
     networks: [seyalrun_net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
@@ -45,7 +45,7 @@ services:
       AUTOMATION_DB_NAME: ${AUTOMATION_DB_NAME:-seyalrun_automation}
     volumes:
       - seyalrun_mysqldata:/var/lib/mysql
-      - ./docker-init/mysql:/docker-entrypoint-initdb.d:ro
+      - ./core/docker-init/mysql:/docker-entrypoint-initdb.d:ro
     networks: [seyalrun_net]
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD}"]

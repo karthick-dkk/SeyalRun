@@ -55,8 +55,8 @@ jobs:
       - name: Build & push
         uses: docker/build-push-action@v7
         with:
-          context: .
-          file: services/${{ matrix.service }}/Dockerfile
+          context: ./core
+          file: ./core/services/${{ matrix.service }}/Dockerfile
           # frontend is amd64-only: its build runs a Vite/esbuild compile inside
           # the image, and esbuild's native binary hits an illegal instruction
           # under QEMU's arm64 emulation (SIGILL, "uncaught target signal 4").
