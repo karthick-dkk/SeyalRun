@@ -52,14 +52,15 @@ Status: **Implemented** / **Partial** / **Gap**.
 | **Machine credential access logged** | Implemented | `credential.secret_issued` on `/internal/credentials/{id}/secret`, attributed to the calling service via the verified `iss` claim. **Fail-closed**: the secret is withheld if the audit write fails — `core/tests/test_audit_failclosed.py` |
 | Human credential reveal logged | Implemented | `credential.viewed`, incl. elevation flag — `credentials.py:370` |
 | Session start logged | Implemented | `session.create` — `terminal-service/app/api/sessions.py:250` |
-| Session end logged | **Gap** | Normal disconnect/idle timeout sets `ended_at` with no audit row — `terminal-service/app/ws/terminal.py:309,372`. See R-2 |
-| Automation job execution logged | **Gap** | No `log_action` anywhere in automation-service. See R-3 |
+| Session end logged | Implemented | `session.end` with reason (terminated/closed/error) and duration_seconds — `terminal-service/app/ws/terminal.py`. Duration of privileged access is now in the chain |
+| Automation job execution logged | Implemented | `job.start` / `job.finish` with executor, template, target hosts, exit code and attempts — `automation-service/app/runner.py`. Machine triggers are attributed via `details.triggered_by`, never a fake `user_id` |
 | Logout logged | **Gap** | No logout endpoint exists |
-| Recording playback/download logged | **Gap** | No audit in recording-service. See R-4 |
+| Recording playback/download logged | **Gap** | Still no audit on playback/presign. Integrity is now protected (below), access is not. See R-4 |
 | Commands typed in a session | Partial | Written to `za_session_commands` (`ws/terminal.py:141`), **not** hash-chained, and write errors are suppressed |
+| Recording integrity | Implemented | SHA-256 over canonical frame JSON at ingest, re-checked by `GET /internal/recordings/{id}/verify` — recording-service migration `003_recording_integrity`. Pre-existing recordings have no digest and are reported as unverifiable rather than passing |
 | Log redaction | Implemented | `core/libs/securelog/filter.py`; `core/tests/test_securelog_redaction.py` |
 | Audit retention | Partial | `AUDIT_LOG_RETENTION_DAYS` configured; no automated archival job, no pre-archival chain verification |
-| Audit immutability at the DB layer | **Gap** | No `REVOKE UPDATE/DELETE`, no trigger. The chain *detects* tampering but the database does not *prevent* it. See R-5 |
+| Audit immutability at the DB layer | Implemented (Postgres/MySQL) | Append-only triggers reject UPDATE/DELETE — identity-service migration `022_audit_immutability`. Other engines are a documented no-op. Superusers can still disable the trigger (residual risk) |
 
 ## Secrets management
 
@@ -77,7 +78,7 @@ Status: **Implemented** / **Partial** / **Gap**.
 | Static analysis, blocking | Implemented | `.github/workflows/security-scan.yml` — semgrep `--error --severity=ERROR` over `core/` and `modules/` |
 | Dependency + misconfig scanning | Implemented | Trivy, fails on fixable HIGH/CRITICAL; weekly schedule |
 | SBOM | Implemented | CycloneDX via Trivy, uploaded per run |
-| Security invariant test suite | Implemented | 138 tests, no DB/Redis required, run on every push |
+| Security invariant test suite | Implemented | 151 tests, no DB/Redis required, run on every push |
 | Container hardening | Implemented | `read_only: true`, tmpfs, non-root users, healthchecks — `docker-compose.yml` |
 | Network exposure | Implemented | Only edge-proxy publishes ports |
 

@@ -154,8 +154,18 @@ CREATE TABLE IF NOT EXISTS za_audit_logs (
     details       JSON         NOT NULL,
     ip_address    VARCHAR(64)  NOT NULL DEFAULT '',
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Tamper-evident chain (PCI DSS Req 10.5). Defined here as well as in
+    -- Alembic 008_audit_hash_chain: a deployment built from this file without
+    -- running migrations would otherwise have an audit table with no chain at
+    -- all, and verify_chain() would silently have nothing to check.
+    session_id    VARCHAR(36),
+    result        VARCHAR(20),
+    seq           BIGINT,
+    prev_hash     VARCHAR(64),
+    entry_hash    VARCHAR(64),
     KEY ix_za_audit_created_at (created_at),
-    KEY ix_za_audit_user_id (user_id)
+    KEY ix_za_audit_user_id (user_id),
+    KEY ix_za_audit_logs_seq (seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO za_roles (id, name, description, permissions) VALUES

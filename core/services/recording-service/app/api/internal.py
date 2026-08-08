@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import uuid
@@ -24,6 +26,39 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/internal", tags=["internal"], dependencies=[Depends(require_service_token)])
 
 
+def _canonical_frames(frames: list[dict]) -> str:
+    """Stable JSON for hashing — same convention as libs/audithash.canonical.
+
+    Sorted keys and no incidental whitespace, so a hash computed at ingest still
+    matches after the value has round-tripped through the database's JSON type.
+    """
+    return json.dumps(frames, sort_keys=True, separators=(",", ":"), default=str)
+
+
+@router.get("/recordings/{session_id}/verify")
+async def verify_recording(session_id: str, db: AsyncSession = Depends(get_session)):
+    """Re-hash the stored frames and compare against the digest taken at ingest."""
+    result = await db.execute(select(ZARecording).where(ZARecording.session_id == session_id))
+    rec = result.scalar_one_or_none()
+    if rec is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="recording not found")
+
+    if not rec.frames_sha256:
+        # Predates the column, or the frames were purged by retention.
+        return {"ok": False, "reason": "no digest recorded", "session_id": session_id}
+
+    actual = hashlib.sha256(_canonical_frames(rec.frames or []).encode("utf-8")).hexdigest()
+    ok = hmac.compare_digest(actual, rec.frames_sha256)
+    if not ok:
+        logger.error("recording integrity check FAILED", extra={"session_id": session_id})
+    return {
+        "ok": ok,
+        "session_id": session_id,
+        "expected": rec.frames_sha256,
+        "actual": actual,
+    }
+
+
 class RecordingWrite(BaseModel):
     session_id: str
     frames: list[dict]
@@ -37,13 +72,16 @@ async def write_recording(payload: RecordingWrite, db: AsyncSession = Depends(ge
     existing = result.scalar_one_or_none()
 
     frames_json = payload.frames
-    size_bytes = len(json.dumps(frames_json))
+    canonical = _canonical_frames(frames_json)
+    size_bytes = len(canonical)
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     if existing:
         existing.frames = frames_json
         existing.duration_seconds = payload.duration_seconds
         existing.size_bytes = size_bytes
         existing.format = "frames_v1"
+        existing.frames_sha256 = digest
         await db.commit()
         return {"id": existing.id, "created": False}
     else:
@@ -53,6 +91,7 @@ async def write_recording(payload: RecordingWrite, db: AsyncSession = Depends(ge
             frames=frames_json,
             duration_seconds=payload.duration_seconds,
             size_bytes=size_bytes,
+            frames_sha256=digest,
         )
         db.add(rec)
         await db.commit()

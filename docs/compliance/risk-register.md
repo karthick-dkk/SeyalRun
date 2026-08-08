@@ -32,9 +32,11 @@ A full service mesh is disproportionate for a Compose-first product. Until then
 this must be declared in scope documentation as an accepted risk with the
 compensating controls above.
 
-## R-2 — Session end is not audited
+## R-2 — Session end is not audited — CLOSED
 
-**Severity: Medium.** PCI DSS Req 10.2.
+**Severity: Medium.** PCI DSS Req 10.2. **Closed**: `session.end` is emitted from the disconnect/idle path with a reason and `duration_seconds`, so the length of privileged access is now chained.
+
+Original finding:
 
 `terminal-service/app/ws/terminal.py:309,372` sets `ended_at` on normal
 disconnect and idle timeout without writing an audit row. Only explicit API
@@ -45,9 +47,11 @@ chain.
 **Remediation.** Emit `session.end` with a reason (`disconnect`, `idle_timeout`,
 `terminated`) and duration from both paths.
 
-## R-3 — Automation job execution is not audited
+## R-3 — Automation job execution is not audited — CLOSED
 
-**Severity: High.** PCI DSS Req 10.2.
+**Severity: High.** PCI DSS Req 10.2. **Closed**: `job.start` and `job.finish` are emitted from `runner.execute()` with executor, template, target hosts, exit code and attempt count.
+
+Original finding:
 
 `grep log_action core/services/automation-service` returns nothing. Jobs run
 commands as privileged accounts on managed hosts — including `rotate_secret`,
@@ -59,7 +63,11 @@ control, but not what the job then did with it.
 **Remediation.** Audit job submit / start / finish with the executor name,
 target hosts and exit status, mirroring `terminal-service/app/audit.py`.
 
-## R-4 — Recording integrity and access are unprotected
+## R-4 — Recording access is unaudited (integrity now protected)
+
+**Severity: Medium.** **Partially closed**: a SHA-256 digest is now taken at ingest and re-checked by `/internal/recordings/{id}/verify`, so tampering is detectable. Playback and presigned-URL issuance are still unaudited — that half remains open.
+
+Original finding:
 
 **Severity: Medium.** SOC 2 CC7; PCI DSS Req 10.5.
 
@@ -72,7 +80,11 @@ that *references* it is tamper-evident. Playback and presigned-URL issuance
 **Remediation.** Store a SHA-256 over the frame payload at write time, verify on
 read, and audit playback/presign.
 
-## R-5 — The database does not prevent audit tampering
+## R-5 — The database does not prevent audit tampering — CLOSED
+
+**Severity: Medium.** **Closed**: append-only triggers on Postgres and MySQL reject UPDATE/DELETE (identity-service `022_audit_immutability`), and the chain columns are now in `schema.sql` as well as Alembic, so a migration-less install is no longer chain-less. Residual: a superuser can disable the trigger.
+
+Original finding:
 
 **Severity: Medium.** PCI DSS Req 10.5.
 
@@ -92,7 +104,11 @@ hashes.
 role, add an `ON UPDATE/DELETE` rule or trigger, fold the chain columns into
 `schema.sql`, and schedule `/audit/verify` rather than relying on manual runs.
 
-## R-6 — KEK rotation cannot rotate the primary credential vault
+## R-6 — KEK rotation cannot rotate the primary credential vault — CLOSED
+
+**Severity: High.** **Closed**: rotation now rewraps `wrapped_dek` for envelope rows and re-encrypts `secret_ciphertext` only for legacy rows, with `DRY_RUN` reporting counts per mode.
+
+Original finding:
 
 **Severity: High.** PCI DSS Req 3.6/3.7.
 

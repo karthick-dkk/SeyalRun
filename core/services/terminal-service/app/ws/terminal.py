@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.servicetoken import ServiceTokenError, mint, verify
 
+from .. import audit
 from ..config import get_settings
 from ..database import SessionLocal
 from ..models import ZASSHSession, ZASessionCommand
@@ -657,6 +658,25 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
             if not sess.ended_at:
                 sess.ended_at = datetime.now(timezone.utc)
             await db.commit()
+
+            # Only session.create and explicit API termination were audited, so a
+            # session that ended by disconnect or idle timeout left no record and
+            # the duration of privileged access was never in the chain (R-3/R-2).
+            await audit.log_action(
+                user_id=user_id,
+                username=username,
+                action="session.end",
+                resource_type="ssh_session",
+                resource_id=session_id,
+                details={
+                    "reason": "terminated" if terminate_event.is_set() else sess.status,
+                    "duration_seconds": round(duration, 3),
+                    "host_id": sess.host_id,
+                    "recorded_frames": len(frames) if frames else 0,
+                },
+                session_id=session_id,
+                result=sess.status,
+            )
 
             # Post recording to recording-service (best-effort)
             if frames:

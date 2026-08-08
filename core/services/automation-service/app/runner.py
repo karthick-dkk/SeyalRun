@@ -13,6 +13,7 @@ import redis.asyncio as aioredis
 
 from libs.servicetoken import mint
 
+from . import audit
 from .config import get_settings
 from .database import SessionLocal
 from .models import ZAJobRun, ZANotification
@@ -22,6 +23,20 @@ logger = logging.getLogger(__name__)
 _redis: aioredis.Redis | None = None
 
 _SEVERITY_BY_STATUS = {"success": "info", "failed": "critical", "error": "critical"}
+
+# RunRequest.triggered_by is a user id, "zabbix:<event_id>" or "schedule:<id>".
+_NON_USER_TRIGGER_PREFIXES = ("zabbix:", "schedule:")
+
+
+def _actor_id(triggered_by: str | None) -> str | None:
+    """The user id to attribute an audit row to, or None for machine triggers.
+
+    Writing "schedule:7" into user_id would make it look like a user account,
+    so machine-originated runs carry the trigger in details.triggered_by only.
+    """
+    if not triggered_by or triggered_by.startswith(_NON_USER_TRIGGER_PREFIXES):
+        return None
+    return triggered_by
 
 
 def get_redis() -> aioredis.Redis:
@@ -142,6 +157,24 @@ async def execute(
         run.status = "running"
         await session.commit()
 
+    # Audited before the executor touches anything, so an job that hangs or takes
+    # the process down still leaves a record that it started (R-3).
+    await audit.log_action(
+        user_id=_actor_id(request.triggered_by),
+        action="job.start",
+        resource_type="job_run",
+        resource_id=run_id,
+        details={
+            "action_type": request.action_type,
+            "executor": getattr(executor, "name", ""),
+            "template": template_name,
+            "target_host_ids": list(request.target_host_ids or []),
+            "credential_id": request.credential_id,
+            "triggered_by": request.triggered_by,
+        },
+        result="started",
+    )
+
     total_attempts = max(1, retry_count + 1)
     exit_code = None
     final_status = "error"
@@ -187,6 +220,23 @@ async def execute(
             if diff_summary:
                 run.diff_summary = diff_summary
             await session.commit()
+
+    await audit.log_action(
+        user_id=_actor_id(request.triggered_by),
+        action="job.finish",
+        resource_type="job_run",
+        resource_id=run_id,
+        details={
+            "action_type": request.action_type,
+            "executor": getattr(executor, "name", ""),
+            "template": template_name,
+            "target_host_ids": list(request.target_host_ids or []),
+            "exit_code": exit_code,
+            "attempts": total_attempts,
+            "triggered_by": request.triggered_by,
+        },
+        result=final_status,
+    )
 
     done_msg = json.dumps({"type": "done", "status": final_status, "exit_code": exit_code})
     await redis.publish(channel, done_msg)

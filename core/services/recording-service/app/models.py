@@ -22,4 +22,10 @@ class ZARecording(Base):
     storage_location: str = Column(String(20), nullable=False, default="local")  # local|s3|elasticsearch (v1.1)
     storage_key: str = Column(Text, nullable=False, default="")  # S3 key / ES doc id when tiered (v1.1)
     tiered_at = Column(DateTime(timezone=True), nullable=True)  # v1.1
+    # SHA-256 over the canonical frame JSON, written once at ingest. Without it a
+    # recording could be altered or swapped with nothing to detect it, while the
+    # audit row that references the session stays hash-chained (R-4). Nullable so
+    # recordings written before this column existed stay readable — they simply
+    # cannot be integrity-checked, which /verify reports rather than hides.
+    frames_sha256: str = Column(String(64), nullable=True)
     created_at: datetime = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

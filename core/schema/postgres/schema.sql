@@ -150,8 +150,18 @@ CREATE TABLE IF NOT EXISTS za_audit_logs (
     resource_id   VARCHAR(36)  NOT NULL DEFAULT '',
     details       JSONB        NOT NULL DEFAULT '{}',
     ip_address    VARCHAR(64)  NOT NULL DEFAULT '',
-    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    -- Tamper-evident chain (PCI DSS Req 10.5). Defined here as well as in
+    -- Alembic 008_audit_hash_chain: a deployment built from this file without
+    -- running migrations would otherwise have an audit table with no chain at
+    -- all, and verify_chain() would silently have nothing to check.
+    session_id    VARCHAR(36),
+    result        VARCHAR(20),
+    seq           BIGINT,
+    prev_hash     VARCHAR(64),
+    entry_hash    VARCHAR(64)
 );
+CREATE INDEX IF NOT EXISTS ix_za_audit_logs_seq ON za_audit_logs (seq);
 CREATE INDEX IF NOT EXISTS ix_za_audit_created_at ON za_audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS ix_za_audit_user_id ON za_audit_logs(user_id);
 
