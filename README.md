@@ -20,6 +20,25 @@ first run (image pulls); safe to re-run (an existing `.env`/cert/database is
 reused, not overwritten).
 <img width="2842" height="1622" alt="image" src="https://github.com/user-attachments/assets/1ca5e5cf-fad5-4964-8224-0ac56c62bff8" />
 
+# Repository layout
+
+SeyalRun is a standalone SSH PAM + Automation platform. Integrations with other
+systems are optional modules, not part of the product's core.
+
+```
+core/         the platform — libs, services, schema, tests, monitoring
+modules/      optional integrations
+  zabbix/     Zabbix frontend module (embeds SeyalRun's UI inside Zabbix)
+  jumpserver-legacy/   staging for the JumpServer merge; see its MIGRATION.md
+ops/          deploy, backup, rotation and verification scripts
+security/     scanning rules enforced by CI
+```
+
+`core/` runs on its own with no module enabled. Extensibility goes through
+`core/libs/pluginbase`: each axis is a small ABC, and implementations are
+discovered from `app/plugins/<axis>/` at startup — so a deployment that does not
+use an integration never even imports its code.
+
 # Documentation
 Please refer to [seyalrun.com](https://seyalrun.com/)
 
@@ -97,7 +116,7 @@ by both paths.
 
      This creates all four databases (`seyalrun_identity`,
      `seyalrun_inventory`, `seyalrun_terminal`, `seyalrun_automation`) and
-     imports `schema/<engine>/schema.sql` into identity/inventory
+     imports `core/schema/<engine>/schema.sql` into identity/inventory
      (idempotent, safe to re-run) — `terminal`/`automation` have no static
      schema, their tables come entirely from step 4's Alembic migrations.
 
@@ -154,17 +173,17 @@ Every variable is documented in [.env.example](.env.example). Highlights:
 | `TLS_CERT_PATH` / `TLS_KEY_PATH` | edge-proxy TLS cert/key (host paths, bind-mounted) |
 | `FRONTEND_ORIGIN` | CORS allow-origin for api-gateway — must match the URL you browse to |
 | `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` | Initial superadmin (leave password blank to auto-generate) |
-| `ZABBIX_MODULE_SECRET` | Optional — only if using [zabbix-module/seyalrun/](zabbix-module/README.md); HMAC-signs the module's SSO handshake |
+| `ZABBIX_MODULE_SECRET` | Optional — only if using [modules/zabbix/seyalrun/](modules/zabbix/README.md); HMAC-signs the module's SSO handshake |
 
 No secret has a default value — services fail fast at startup if a required
 var is missing. `.env` is git-ignored; never commit real values or hardcode
-them in source (`libs/securelog` redacts `password`/`secret`/`token`/`vault`/
+them in source (`core/libs/securelog` redacts `password`/`secret`/`token`/`vault`/
 `authorization` fields from all structured logs regardless).
 
 ## Self-monitoring (Zabbix)
 
 Every Phase-1 service exposes `GET /health` and `GET /metrics` — both JSON.
-`/metrics` is a flat `libs/obsmetrics` snapshot (`requests_total`,
+`/metrics` is a flat `core/libs/obsmetrics` snapshot (`requests_total`,
 `errors_total`, `uptime_seconds`, plus optional service extras) built for
 Zabbix HTTP polling + JSONPath preprocessing. Monitoring is agentless: zabbix-integration-service
 serves `GET /webhook/zabbix/monitor` (through edge-proxy, authenticated by
@@ -177,8 +196,8 @@ payload — one HTTP request per interval, regardless of service count.
 **Import steps:**
 
 1. In Zabbix, import the template matching your server version:
-   - Zabbix 7.0: `monitoring/zabbix-templates/7.0/seyalrun-platform.yaml`
-   - Zabbix 8.0: `monitoring/zabbix-templates/8.0/seyalrun-platform.yaml`
+   - Zabbix 7.0: `core/monitoring/zabbix-templates/7.0/seyalrun-platform.yaml`
+   - Zabbix 8.0: `core/monitoring/zabbix-templates/8.0/seyalrun-platform.yaml`
 2. Create (or pick) a host for the SeyalRun stack and link the imported
    **SeyalRun Platform** template (no agent interface needed).
 3. Set the template macros on that host:
@@ -192,11 +211,11 @@ payload — one HTTP request per interval, regardless of service count.
 
 ## SeyalRun inside Zabbix (frontend module)
 
-Separately from monitoring, `zabbix-module/seyalrun/` is a Zabbix **frontend
+Separately from monitoring, `modules/zabbix/seyalrun/` is a Zabbix **frontend
 module** that embeds SeyalRun directly into the Zabbix UI: a SeyalRun menu
 right after Monitoring (Dashboard, Assets, SSH Hosts, Sessions, Jobs,
 Automation, Trigger Bindings), a permission-aware SSH-Hosts page with a
 one-click terminal icon on hosts you can write to, and a SeyalRun Settings
-page under Administration. See **[zabbix-module/README.md](zabbix-module/README.md)**
+page under Administration. See **[modules/zabbix/README.md](modules/zabbix/README.md)**
 for install steps, the `ZABBIX_MODULE_SECRET` trust setup, and troubleshooting.
 

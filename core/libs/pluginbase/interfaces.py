@@ -133,3 +133,81 @@ class TriggerSource(ABC):
     @abstractmethod
     def parse(self, payload: dict) -> RunRequest:
         ...
+
+
+@dataclass
+class SessionTarget:
+    """One host a user is trying to open an interactive session against."""
+
+    host_id: str
+    address: str
+    ssh_username: str
+    credential_id: str | None = None  # None when the broker owns the credential itself
+    gateway: dict | None = None  # optional jump-host hop
+
+
+@dataclass
+class BrokeredSession:
+    ok: bool
+    # The external PAM's own session id. Recorded on the audit row so a
+    # SeyalRun session can be reconciled against the external system's log.
+    broker_session_id: str | None = None
+    reason: str | None = None  # populated when ok is False
+
+
+class SessionBroker(ABC):
+    """Delegates live interactive session establishment to an external PAM.
+
+    The other axes answer "who am I", "what do I store", or "how do I run one
+    action". None answer *who terminates the live session and owns its
+    transport* — a concern that is stateful and long-lived (idle-pool resume,
+    resize, replay) and needs a pre-connect authorization check, so it does not
+    fit ``ActionExecutor``'s fire-and-forget RunRequest/RunResult shape.
+
+    Resolved per-host via ``za_hosts.broker``. The default ``"native"`` means
+    terminal-service connects directly with a KeyProvider-unwrapped credential,
+    exactly as it does today — so native and delegated hosts coexist in one
+    deployment and enabling a broker is opt-in per host, never a global switch.
+
+    Discovered by ``discover_plugins("app.plugins.brokers", SessionBroker)``.
+    A deployment that runs no external PAM ships no broker module, so its
+    client code is never even imported.
+    """
+
+    name: str
+
+    @abstractmethod
+    async def authorize(self, user: dict, target: SessionTarget) -> bool:
+        """Whether the external PAM permits this user→target session.
+
+        An *additional* gate: SeyalRun's own RBAC is still evaluated first by
+        api-gateway. A broker may narrow access, never widen it.
+        """
+
+    @abstractmethod
+    async def open_session(self, user: dict, target: SessionTarget) -> BrokeredSession:
+        """Establish or resume the live transport.
+
+        Implementations own their connection objects internally, keyed by
+        ``broker_session_id``; terminal-service holds only that opaque id.
+        """
+
+    @abstractmethod
+    async def close_session(self, broker_session_id: str, reason: str) -> None:
+        ...
+
+    async def sync_targets(self, hosts: list[SessionTarget]) -> dict:
+        """Optional: reconcile SeyalRun's canonical inventory into the external
+        PAM's own asset catalogue. Must be idempotent — it runs on a schedule.
+
+        Default is a no-op for brokers that keep no separate asset catalogue.
+        """
+        return {"created": 0, "updated": 0, "skipped": 0, "errors": 0}
+
+    async def mint_launch_token(self, user: dict, target: SessionTarget) -> dict:
+        """Optional: short-lived SSO handoff for an external PAM's own web console.
+
+        Brokers without a separate UI leave this unimplemented; terminal-service
+        reads that as "use the in-app terminal only".
+        """
+        raise NotImplementedError
