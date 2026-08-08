@@ -25,6 +25,7 @@ echo "[*] Rotating za_credentials encryption to the new ZA_VAULT_PASSWORD/ZA_VAU
 docker compose run --rm \
   -e OLD_ZA_VAULT_PASSWORD="$OLD_ZA_VAULT_PASSWORD" \
   -e OLD_ZA_VAULT_SALT="$OLD_ZA_VAULT_SALT" \
+  -e DRY_RUN="${DRY_RUN:-}" \
   -e PYTHONPATH=/app \
   -v "$REPO_ROOT/ops/rotate_vault_key.py:/ops/rotate_vault_key.py:ro" \
   --entrypoint python \

@@ -24,8 +24,13 @@ backups/
 *.zip
 web-search-mcp/
 
-# Only README.md is tracked — everything else stays local (skill docs,
-# design notes, test-case docs, etc. don't belong in the public repo).
+# Markdown is local by default (skill docs, design notes, test-case docs etc.
+# don't belong in the public repo). Exceptions below are product documentation
+# that has to ship with the code: compliance evidence is only credible if it is
+# versioned alongside what it describes, and the migration note is the record of
+# why the legacy tree still exists.
 *.md
 !README.md
+!docs/compliance/*.md
+!modules/jumpserver-legacy/MIGRATION.md
 docs/designs/

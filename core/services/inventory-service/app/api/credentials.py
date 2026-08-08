@@ -12,8 +12,13 @@ from libs.pluginbase import discover_plugins, CredentialKind
 from .. import audit
 from ..config import get_settings
 from ..database import get_session
-from ..deps import require_admin, require_service_token
-from ..models import ZACredential, ZACredentialHistory, ZACredentialHostLink, ZACredentialTemplate
+from ..deps import require_admin, require_service_token, service_token_issuer
+from ..models import (
+    ZACredential,
+    ZACredentialHistory,
+    ZACredentialHostLink,
+    ZACredentialTemplate,
+)
 from ..schemas import (
     CredentialCreate,
     CredentialOut,
@@ -380,8 +385,21 @@ async def reveal_credential(
 
 
 @router.get("/internal/credentials/{credential_id}/secret", response_model=CredentialSecretOut)
-async def get_credential_secret(credential_id: str, session: AsyncSession = Depends(get_session)):
-    """Decrypted secret — internal only, consumed by terminal-service/automation-service (Phase 2/3)."""
+async def get_credential_secret(
+    credential_id: str,
+    session: AsyncSession = Depends(get_session),
+    requested_by: str = Depends(service_token_issuer),
+    x_user_id: str | None = Header(default=None),
+    x_session_id: str | None = Header(default=None),
+):
+    """Decrypted secret — internal only, consumed by terminal-service/automation-service.
+
+    This is the path every SSH session and automation job takes to obtain a
+    plaintext credential, so it is the highest-volume egress of secret material
+    in the platform. It is audited as `credential.secret_issued`: without it the
+    only recorded credential access is the human `/reveal` UI path, and the
+    question "who used credential X, and when" has no answer for machine access.
+    """
     result = await session.execute(select(ZACredential).where(ZACredential.id == credential_id))
     cred = result.scalar_one_or_none()
     if cred is None:
@@ -392,6 +410,33 @@ async def get_credential_secret(credential_id: str, session: AsyncSession = Depe
         secret = kind.decode(_decrypt_secret(cred))
     except VaultDecryptError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    # Recorded before the secret leaves the process, and critical=True so a
+    # failed audit write aborts the request rather than releasing an unlogged
+    # credential.
+    try:
+        await audit.log_action(
+            user_id=x_user_id,
+            username="",
+            action="credential.secret_issued",
+            resource_type="credential",
+            resource_id=cred.id,
+            details={
+                "event_type": "machine_access",
+                "name": cred.name,
+                "requested_by": requested_by,
+                "secret_type": cred.secret_type,
+            },
+            session_id=x_session_id,
+            result="success",
+            critical=True,
+        )
+    except audit.AuditWriteError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="cannot issue credential: audit log unavailable",
+        ) from exc
+
     return CredentialSecretOut(
         id=cred.id, username=cred.username, secret_type=cred.secret_type, secret=secret,
         is_sudo=cred.is_sudo, is_push_account=cred.is_push_account,

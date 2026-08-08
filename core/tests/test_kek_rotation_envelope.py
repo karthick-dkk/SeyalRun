@@ -1,0 +1,104 @@
+"""KEK rotation must work for envelope-encrypted credentials.
+
+Mirrors ops/rotate_vault_key.py. Envelope rows are the actual PAM vault: the
+secret is encrypted under a random per-row DEK, and the KEK only wraps that DEK
+(inventory-service/app/vault.py, plugins/kms/env_key_provider.py).
+
+The point of the key hierarchy is that rotating the KEK rewrites only small
+wrapped-DEK blobs and never re-encrypts every credential — so a rotation that
+touches secret_ciphertext is not just wasteful, it is wrong.
+"""
+
+from __future__ import annotations
+
+import base64
+import os
+
+import pytest
+from cryptography.exceptions import InvalidTag
+
+
+@pytest.fixture
+def crypto(load_module):
+    return load_module("libs/dbcore/crypto.py", "za_crypto_kek_rot")
+
+
+def _wrap(crypto, dek: bytes, kek: bytes) -> str:
+    """EnvKeyProvider.wrap_dek."""
+    return crypto.encrypt_secret(base64.b64encode(dek).decode("ascii"), kek)
+
+
+def _unwrap(crypto, wrapped: str, kek: bytes) -> bytes:
+    """EnvKeyProvider.unwrap_dek."""
+    return base64.b64decode(crypto.decrypt_secret(wrapped, kek))
+
+
+def _keys(crypto):
+    return (
+        crypto.derive_key("old-vault-password-1234567890abc", "00" * 16),
+        crypto.derive_key("new-vault-password-zyxwvutsrqpo", "ff" * 16),
+    )
+
+
+def test_rewrapping_the_dek_preserves_the_secret(crypto):
+    old_kek, new_kek = _keys(crypto)
+    dek = os.urandom(32)
+    ciphertext = crypto.encrypt_secret("s3cr3t", dek)
+    wrapped = _wrap(crypto, dek, old_kek)
+
+    # Rotation: re-encrypt the wrapped-DEK blob only, leaving ciphertext alone.
+    dek_b64 = crypto.decrypt_secret(wrapped, old_kek)
+    rewrapped = crypto.encrypt_secret(dek_b64, new_kek)
+
+    assert _unwrap(crypto, rewrapped, new_kek) == dek
+    assert crypto.decrypt_secret(ciphertext, _unwrap(crypto, rewrapped, new_kek)) == "s3cr3t"
+
+
+def test_old_kek_cannot_unwrap_after_rotation(crypto):
+    old_kek, new_kek = _keys(crypto)
+    dek = os.urandom(32)
+    wrapped = _wrap(crypto, dek, old_kek)
+    rewrapped = crypto.encrypt_secret(crypto.decrypt_secret(wrapped, old_kek), new_kek)
+
+    with pytest.raises(InvalidTag):
+        _unwrap(crypto, rewrapped, old_kek)
+
+
+def test_credential_ciphertext_must_not_be_touched(crypto):
+    """Regression for the original script, which decrypted secret_ciphertext with
+    the KEK. For an envelope row that is the wrong key, and AES-GCM authenticates,
+    so it raises rather than silently corrupting — which is why rotation died on
+    the first envelope row instead of completing."""
+    old_kek, _ = _keys(crypto)
+    dek = os.urandom(32)
+    ciphertext = crypto.encrypt_secret("s3cr3t", dek)
+
+    with pytest.raises(InvalidTag):
+        crypto.decrypt_secret(ciphertext, old_kek)
+
+
+def test_legacy_single_kek_rows_still_rotate(crypto):
+    """Rows predating envelope encryption keep the old path: the secret itself is
+    under the KEK, so it is re-encrypted."""
+    old_kek, new_kek = _keys(crypto)
+    ciphertext = crypto.encrypt_secret("legacy", old_kek)
+
+    rotated = crypto.encrypt_secret(crypto.decrypt_secret(ciphertext, old_kek), new_kek)
+
+    assert crypto.decrypt_secret(rotated, new_kek) == "legacy"
+    with pytest.raises(InvalidTag):
+        crypto.decrypt_secret(rotated, old_kek)
+
+
+def test_rotation_is_classified_by_wrapped_dek_presence(crypto):
+    """How the script decides which path a row takes."""
+    rows = [
+        {"id": "a", "wrapped_dek": _wrap(crypto, os.urandom(32), _keys(crypto)[0])},
+        {"id": "b", "wrapped_dek": None},
+        {"id": "c", "wrapped_dek": ""},
+    ]
+    envelope = [r for r in rows if r["wrapped_dek"]]
+    legacy = [r for r in rows if not r["wrapped_dek"]]
+
+    assert [r["id"] for r in envelope] == ["a"]
+    assert [r["id"] for r in legacy] == ["b", "c"]
