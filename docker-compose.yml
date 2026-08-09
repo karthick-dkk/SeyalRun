@@ -188,6 +188,9 @@ services:
       # docker-compose.internal-tls.yml flips these to https / on.
       INTERNAL_PROTO: ${INTERNAL_PROTO:-http}
       INTERNAL_PROXY_SSL_VERIFY: ${INTERNAL_PROXY_SSL_VERIFY:-off}
+      # Port the HTTP->HTTPS redirect points at. Must track the host side of the
+      # 8443 mapping below, or plain-HTTP visitors are redirected to a dead port.
+      PUBLIC_HTTPS_PORT: ${EDGE_HTTPS_PORT:-8443}
     networks: [seyalrun_net]
     # NOT read_only: the nginx entrypoint renders the CSP template into
     # /etc/nginx/conf.d at boot (envsubst), which needs a writable conf.d owned by

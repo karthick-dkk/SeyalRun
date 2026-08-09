@@ -182,6 +182,7 @@ services:
       # in docker-compose.yml) until QA caught it.
       INTERNAL_PROTO: ${INTERNAL_PROTO:-http}
       INTERNAL_PROXY_SSL_VERIFY: ${INTERNAL_PROXY_SSL_VERIFY:-off}
+      PUBLIC_HTTPS_PORT: ${EDGE_HTTPS_PORT:-8443}
     networks: [seyalrun_net]
     # NOT read_only: the nginx entrypoint renders the CSP template into
     # /etc/nginx/conf.d at boot (envsubst), which needs a writable conf.d owned by

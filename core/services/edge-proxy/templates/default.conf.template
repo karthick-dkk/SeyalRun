@@ -7,9 +7,21 @@
 # and writes /etc/nginx/conf.d/default.conf at boot. ONLY variables that exist
 # in the container environment are substituted, so nginx's own runtime vars
 # ($host, $remote_addr, $upstream_*, $http_upgrade, ...) are preserved as-is.
-# The only substituted value here is ${FRAME_ANCESTORS}.
+# The substituted values here are ${FRAME_ANCESTORS}, ${INTERNAL_PROTO},
+# ${INTERNAL_PROXY_SSL_VERIFY} and ${PUBLIC_HTTPS_PORT}.
 
 resolver 127.0.0.11 valid=30s;
+
+# The port the HTTP->HTTPS redirect must send the browser to. nginx's $host
+# never carries a port, so a bare `https://$host$request_uri` always lands on
+# 443 — correct only when the operator maps 443:8443. On the default mapping
+# (8080/8443) it redirected to a port nothing listens on, so plain-HTTP visitors
+# got a connection failure instead of the app. Emit the real published port,
+# and only omit it for 443, where it is implied.
+map "${PUBLIC_HTTPS_PORT}" $public_https_port_suffix {
+    "443"   "";
+    default ":${PUBLIC_HTTPS_PORT}";
+}
 
 server {
     listen 8080;
@@ -26,7 +38,7 @@ server {
     }
 
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://$host$public_https_port_suffix$request_uri;
     }
 }
 
