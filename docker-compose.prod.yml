@@ -172,6 +172,16 @@ services:
     # unquoted host source) to allow the embedded dashboard to iframe this app. Never "*".
     environment:
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
+      # These three MUST be defined. nginx's entrypoint runs envsubst with an
+      # explicit list of the variables that exist in the container environment,
+      # so an undefined one is left in the rendered config verbatim — and nginx
+      # then rejects `proxy_ssl_verify ${INTERNAL_PROXY_SSL_VERIFY}` outright:
+      #   [emerg] invalid value "${INTERNAL_PROXY_SSL_VERIFY}" ... must be "on" or "off"
+      # edge-proxy is the only host-published service, so that is not a degraded
+      # deployment, it is an unreachable one. They were missing here (present only
+      # in docker-compose.yml) until QA caught it.
+      INTERNAL_PROTO: ${INTERNAL_PROTO:-http}
+      INTERNAL_PROXY_SSL_VERIFY: ${INTERNAL_PROXY_SSL_VERIFY:-off}
     networks: [seyalrun_net]
     # NOT read_only: the nginx entrypoint renders the CSP template into
     # /etc/nginx/conf.d at boot (envsubst), which needs a writable conf.d owned by
