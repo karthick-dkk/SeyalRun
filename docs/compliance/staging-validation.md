@@ -27,8 +27,16 @@ stopped, then restored.
 | restored | 200 | yes | 1 → 2 |
 
 Attribution recorded as `terminal-service`, read from the service token's
-verified `iss` claim rather than a caller-supplied header. Chain state after:
-**2 rows, 2 hashed**.
+verified `iss` claim rather than a caller-supplied header.
+
+> **Correction (2026-08-09).** This section originally reported chain state as
+> "2 rows, 2 hashed". That was a **count of hashed rows, not a verification** —
+> `verify_chain()` was never run. When it finally was, 84 of 90 rows failed:
+> `log_action` hashed `session_id`/`result` into the payload but never persisted
+> them, so verification rebuilt a payload missing keys the stored hash covered.
+> Fixed; see "Audit chain verification" below. Counting hashed rows is not
+> evidence that a chain verifies, and this document should not have implied it
+> was.
 
 The middle row is the control: when the audit log cannot be written, the
 credential is withheld rather than released unrecorded.
@@ -85,6 +93,25 @@ enforced, rather than TLS being negotiated with validation silently disabled.
 Enabling it is sticky — `ops/_staging-bootstrap.sh` re-adds the overlay whenever
 `tls/internal/ca.pem` exists, so a routine redeploy cannot quietly put the mesh
 back on plaintext.
+
+## Audit chain verification (2026-08-09)
+
+The first genuine end-to-end run of `verify_chain()` against real data, after the
+`session_id`/`result` persistence fix.
+
+| Rows | Verifying |
+|---|---|
+| 90 written before the fix | **6** — only those written without a `result` |
+| 3 written after, each carrying `session_id` and `result` | **3** |
+
+Proof of cause: recomputing seq=1's hash while omitting `result` yields
+`e546b9be…`; including `result="success"` yields `bf8e1b24…`, which is the stored
+value — while the row's `result` column reads `None`.
+
+**The 84 pre-fix rows are permanently unverifiable.** The hashed values were never
+stored, so they cannot be recovered, and migration 022's immutability trigger
+blocks UPDATE by design. Staging needs a chain re-baseline (fresh identity
+database) before its audit evidence means anything to an assessor.
 
 ## What this record does not cover
 

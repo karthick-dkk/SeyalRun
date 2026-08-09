@@ -66,6 +66,25 @@ touched). The trust bundle carries the public roots alongside the internal CA,
 because pointing at the internal CA alone would break every outbound call to S3,
 Elasticsearch and webhooks. Net application code changed: **none**.
 
+## R-9 — Pre-fix audit rows are permanently unverifiable
+
+**Severity: High.** PCI DSS Req 10.5.
+
+Until 2026-08-09, `log_action` hashed `session_id` and `result` into the entry
+payload but never persisted those columns, so `verify_chain()` reported
+"contents were altered" for any row carrying either. Measured on staging: 84 of
+90 rows unverifiable. Fixed, with `tests/test_audit_payload_persistence.py`
+comparing hashed fields against persisted fields so it cannot recur.
+
+Rows written before the fix **cannot be repaired** — the hashed values were never
+stored and the 022 immutability trigger blocks UPDATE. Any environment carrying
+pre-fix rows must be re-baselined with a fresh identity database before its audit
+log is presented as evidence.
+
+**This went unnoticed because the evidence collected was a count of hashed rows
+rather than a verification.** Any future claim that the chain verifies must cite
+`verify_chain()` output, never a row count.
+
 ## R-2 — Session end is not audited — CLOSED
 
 **Severity: Medium.** PCI DSS Req 10.2. **Closed**: `session.end` is emitted from the disconnect/idle path with a reason and `duration_seconds`, so the length of privileged access is now chained.
