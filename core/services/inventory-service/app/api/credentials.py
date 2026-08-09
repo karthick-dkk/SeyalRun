@@ -12,7 +12,7 @@ from libs.pluginbase import discover_plugins, CredentialKind
 from .. import audit
 from ..config import get_settings
 from ..database import get_session
-from ..deps import require_admin, require_service_token, service_token_issuer
+from ..deps import require_admin, require_service_token, service_token_claims
 from ..models import (
     ZACredential,
     ZACredentialHistory,
@@ -388,7 +388,7 @@ async def reveal_credential(
 async def get_credential_secret(
     credential_id: str,
     session: AsyncSession = Depends(get_session),
-    requested_by: str = Depends(service_token_issuer),
+    claims: dict = Depends(service_token_claims),
     x_user_id: str | None = Header(default=None),
     x_session_id: str | None = Header(default=None),
 ):
@@ -399,7 +399,17 @@ async def get_credential_secret(
     in the platform. It is audited as `credential.secret_issued`: without it the
     only recorded credential access is the human `/reveal` UI path, and the
     question "who used credential X, and when" has no answer for machine access.
+
+    Actor attribution comes from the token's signed `sub` claim. The X-User-Id
+    header is only a migration fallback for callers not yet minting with a
+    subject, and any value taken from it is marked unverified in the audit
+    details — an unsigned assertion must never be recorded as though it were
+    established fact.
     """
+    requested_by = str(claims.get("iss", "unknown"))
+    signed_user = claims.get("sub")
+    actor_id = signed_user or x_user_id
+    actor_verified = signed_user is not None
     result = await session.execute(select(ZACredential).where(ZACredential.id == credential_id))
     cred = result.scalar_one_or_none()
     if cred is None:
@@ -416,7 +426,7 @@ async def get_credential_secret(
     # credential.
     try:
         await audit.log_action(
-            user_id=x_user_id,
+            user_id=actor_id,
             username="",
             action="credential.secret_issued",
             resource_type="credential",
@@ -426,6 +436,7 @@ async def get_credential_secret(
                 "name": cred.name,
                 "requested_by": requested_by,
                 "secret_type": cred.secret_type,
+                "actor_verified": actor_verified,
             },
             session_id=x_session_id,
             result="success",

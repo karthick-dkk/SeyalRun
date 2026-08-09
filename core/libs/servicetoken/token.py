@@ -19,7 +19,21 @@ class ServiceTokenError(Exception):
     pass
 
 
-def mint(issuer: str, audience: str, secret: str, ttl_seconds: int = DEFAULT_TTL_SECONDS) -> str:
+def mint(
+    issuer: str,
+    audience: str,
+    secret: str,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    subject: str | None = None,
+) -> str:
+    """Mint a short-lived internal service token.
+
+    ``subject`` carries the end user the call is being made on behalf of. It
+    matters because attribution written into the tamper-evident audit chain must
+    be signed, not asserted: reading the actor from a plain X-User-Id header let
+    any service-token holder attribute a credential fetch to any user, so the
+    chain proved the row was unedited without proving it was ever true.
+    """
     now = int(time.time())
     payload = {
         "iss": issuer,
@@ -27,6 +41,8 @@ def mint(issuer: str, audience: str, secret: str, ttl_seconds: int = DEFAULT_TTL
         "iat": now,
         "exp": now + ttl_seconds,
     }
+    if subject:
+        payload["sub"] = subject
     # HS256 is deliberate here, not an oversight. The rule guards against
     # symmetric signing where a third party must verify independently — that
     # would mean handing out the shared secret. These tokens never leave the

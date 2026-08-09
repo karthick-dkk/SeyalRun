@@ -112,8 +112,11 @@ async def _identity_get(path: str, settings, **params) -> Any:
     return resp.json()
 
 
-async def _inventory_get(path: str, settings) -> Any:
-    token = mint("terminal-service", "inventory-service", settings.service_jwt_secret)
+async def _inventory_get(path: str, settings, subject: str | None = None) -> Any:
+    """`subject` is the end user this call is made for. It travels inside the
+    signed token so inventory-service can attribute the credential fetch without
+    trusting an unsigned header."""
+    token = mint("terminal-service", "inventory-service", settings.service_jwt_secret, subject=subject)
     async with httpx.AsyncClient(timeout=5.0) as client:
         resp = await client.get(
             f"{settings.inventory_service_url}/api/v1{path}",
@@ -195,7 +198,7 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
         # Fetch host + credential details
         try:
             host = await _inventory_get(f"/hosts/{sess.host_id}", settings)
-            cred_secret = await _inventory_get(f"/internal/credentials/{sess.credential_id}/secret", settings)
+            cred_secret = await _inventory_get(f"/internal/credentials/{sess.credential_id}/secret", settings, subject=user_id)
         except Exception as exc:
             await websocket.send_text(json.dumps({"type": "error", "message": "failed to fetch host/credential"}))
             await websocket.close(code=4500)
@@ -216,7 +219,7 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
                 try:
                     gw_cred_id = hop.get("credential_id")
                     if gw_cred_id:
-                        gw_cred_data = await _inventory_get(f"/internal/credentials/{gw_cred_id}/secret", settings)
+                        gw_cred_data = await _inventory_get(f"/internal/credentials/{gw_cred_id}/secret", settings, subject=user_id)
                         gw_username = gw_cred_data["username"]
                         gw_password = gw_cred_data["secret"].get("password") if gw_cred_data["secret_type"] == "password" else None
                         gw_keys = (
@@ -659,25 +662,46 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
                 sess.ended_at = datetime.now(timezone.utc)
             await db.commit()
 
-            # Only session.create and explicit API termination were audited, so a
-            # session that ended by disconnect or idle timeout left no record and
-            # the duration of privileged access was never in the chain (R-3/R-2).
-            await audit.log_action(
-                user_id=user_id,
-                username=username,
-                action="session.end",
-                resource_type="ssh_session",
-                resource_id=session_id,
-                details={
-                    "reason": "terminated" if terminate_event.is_set() else sess.status,
-                    "duration_seconds": round(duration, 3),
-                    "host_id": sess.host_id,
-                    "recorded_frames": len(frames) if frames else 0,
-                },
-                session_id=session_id,
-                result=sess.status,
-            )
-
             # Post recording to recording-service (best-effort)
             if frames:
                 asyncio.create_task(_post_recording(session_id, frames, duration, settings))
+
+            # Guarded: this is inside `finally`, so anything escaping here would
+            # mask whatever actually ended the session. log_action already swallows
+            # httpx errors; this catches the rest (including cancellation during
+            # shutdown) so teardown always completes.
+            # Only session.create and explicit API termination were audited, so a
+            # session that ended by disconnect or idle timeout left no record and
+            # the duration of privileged access was never in the chain (R-3/R-2).
+            try:
+                await audit.log_action(
+                    user_id=user_id,
+                    username=username,
+                    action="session.end",
+                    resource_type="ssh_session",
+                    resource_id=session_id,
+                    details={
+                        "reason": "terminated" if terminate_event.is_set() else sess.status,
+                        "duration_seconds": round(duration, 3),
+                        "host_id": sess.host_id,
+                        "recorded_frames": len(frames) if frames else 0,
+                    },
+                    session_id=session_id,
+                    result=sess.status,
+                )
+            except asyncio.CancelledError:
+                # Re-raised, never swallowed: suppressing cancellation stalls
+                # shutdown. Safe to propagate now because the recording upload is
+                # already scheduled above, so nothing is lost by unwinding here.
+                logger.error("audit: session.end cancelled", extra={"session": session_id})
+                raise
+            except Exception as exc:  # noqa: BLE001 - deliberate: see below
+                # Intentionally broad. This runs inside `finally` during teardown,
+                # where anything escaping would mask the error that actually ended
+                # the session and skip the rest of cleanup. Cancellation is handled
+                # separately above and re-raised; everything else is recorded with
+                # full context and swallowed so teardown always completes.
+                logger.error(
+                    "audit: session.end write failed",
+                    extra={"session": session_id, "error": str(exc)},
+                )

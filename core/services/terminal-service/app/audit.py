@@ -13,6 +13,10 @@ from .config import get_settings
 logger = logging.getLogger(__name__)
 
 
+class AuditWriteError(RuntimeError):
+    """The audit entry could not be recorded in the tamper-evident chain."""
+
+
 async def log_action(
     *,
     user_id: str | None,
@@ -24,7 +28,15 @@ async def log_action(
     ip_address: str = "",
     session_id: str | None = None,
     result: str | None = None,
+    critical: bool = False,
 ) -> None:
+    """Forward one entry to identity-service's hash-chained audit log.
+
+    ``critical=True`` raises instead of warning, for paths where proceeding
+    unlogged would defeat the control. Session start/end are not critical: a
+    session already in progress must not be torn down because identity-service
+    blipped, and the row still lands in za_ssh_sessions either way.
+    """
     settings = get_settings()
     token = mint("terminal-service", "identity-service", settings.service_jwt_secret)
     payload = {
@@ -40,10 +52,21 @@ async def log_action(
     }
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            await client.post(
+            response = await client.post(
                 f"{settings.identity_service_url}/api/v1/internal/audit",
                 json=payload,
                 headers={"X-Service-Token": token},
             )
-    except httpx.HTTPError:
-        logger.warning("audit: failed to forward to identity-service", extra={"action": action})
+        # The response status was previously ignored, so identity-service
+        # rejecting an entry looked identical to success — a privileged session
+        # could start and end with no audit row and no error anywhere.
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.error(
+            "audit: failed to forward entry to identity-service",
+            extra={"action": action, "resource_id": resource_id, "error": str(exc)},
+        )
+        if critical:
+            raise AuditWriteError(
+                f"could not record audit entry for {action!r}; refusing to proceed"
+            ) from exc

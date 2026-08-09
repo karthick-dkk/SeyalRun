@@ -67,10 +67,12 @@ async def _identity_get(path: str, settings=None, **params) -> dict:
     return resp.json()
 
 
-async def _inventory_get(path: str, settings=None, **params) -> dict | list:
+async def _inventory_get(path: str, settings=None, subject: str | None = None, **params) -> dict | list:
+    """`subject` is the end user this call is made for — signed into the token so
+    inventory-service can attribute credential access without trusting a header."""
     if settings is None:
         settings = get_settings()
-    token = mint("terminal-service", "inventory-service", settings.service_jwt_secret)
+    token = mint("terminal-service", "inventory-service", settings.service_jwt_secret, subject=subject)
     query = {k: v for k, v in params.items() if v is not None}
     async with httpx.AsyncClient(timeout=5.0) as client:
         resp = await client.get(
@@ -101,7 +103,7 @@ async def authorized_credentials(
     ids = resolve.get("credential_ids") or ([resolve["credential_id"]] if resolve.get("credential_id") else [])
     for cid in ids:
         try:
-            sec = await _inventory_get(f"/internal/credentials/{cid}/secret", settings)
+            sec = await _inventory_get(f"/internal/credentials/{cid}/secret", settings, subject=user_id)
             out.append({"id": cid, "username": sec.get("username", ""), "name": sec.get("username", "")})
         except HTTPException:
             continue

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import os
+import pathlib
 
 import pytest
 from cryptography.exceptions import InvalidTag
@@ -102,3 +103,40 @@ def test_rotation_is_classified_by_wrapped_dek_presence(crypto):
 
     assert [r["id"] for r in envelope] == ["a"]
     assert [r["id"] for r in legacy] == ["b", "c"]
+
+
+def test_history_table_must_rotate_too(crypto):
+    """Regression for the archive-loss bug: za_credential_history carries its own
+    wrapped_dek, so rotating only za_credentials leaves every archived version
+    permanently unreadable once the old KEK is discarded — silently, while the
+    script reports success."""
+    old_kek, new_kek = _keys(crypto)
+
+    live_dek, archived_dek = os.urandom(32), os.urandom(32)
+    live_wrapped = _wrap(crypto, live_dek, old_kek)
+    archived_wrapped = _wrap(crypto, archived_dek, old_kek)
+    archived_ct = crypto.encrypt_secret("previous-password", archived_dek)
+
+    # Rotate ONLY the live row, as the buggy version did.
+    live_rotated = crypto.encrypt_secret(crypto.decrypt_secret(live_wrapped, old_kek), new_kek)
+    assert _unwrap(crypto, live_rotated, new_kek) == live_dek
+
+    # The archive is now orphaned: the new KEK cannot unwrap it...
+    with pytest.raises(InvalidTag):
+        _unwrap(crypto, archived_wrapped, new_kek)
+    # ...and once the old KEK is discarded, nothing can. The ciphertext survives
+    # but is undecryptable forever.
+    assert archived_ct
+
+    # Rotating BOTH tables keeps the archive readable.
+    archived_rotated = crypto.encrypt_secret(crypto.decrypt_secret(archived_wrapped, old_kek), new_kek)
+    recovered_dek = _unwrap(crypto, archived_rotated, new_kek)
+    assert recovered_dek == archived_dek
+    assert crypto.decrypt_secret(archived_ct, recovered_dek) == "previous-password"
+
+
+def test_rotation_covers_every_table_carrying_wrapped_dek():
+    """The script must enumerate both tables; missing one is silent and permanent."""
+    script = (pathlib.Path(__file__).resolve().parents[2] / "ops" / "rotate_vault_key.py").read_text()
+    for table in ("za_credentials", "za_credential_history"):
+        assert table in script, f"rotate_vault_key.py never touches {table}"
