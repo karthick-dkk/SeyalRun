@@ -508,7 +508,10 @@ onMounted(() => { loadAll() })
 
 /* ── Column widths ─────────────────────────────────────────────────────── */
 .col-status { width: 24px; padding: 0 8px !important; }
-.col-name   { width: 180px; max-width: 180px; }
+/* The name is the column people scan, so it takes the table's slack instead of
+   being pinned to 180px while several hundred pixels sit empty to its right.
+   Every other column is fixed or min-width, so this is the only one that grows. */
+.col-name   { width: auto; min-width: 200px; }
 .col-ip     { width: 130px; max-width: 130px; }
 .col-port   { width: 54px; }
 .col-gw       { min-width: 160px; }
@@ -523,7 +526,10 @@ onMounted(() => { loadAll() })
 .col-name { display: table-cell; }
 .hv-name-text {
   display: inline-block;
-  max-width: 120px;
+  /* Truncate only when the cell genuinely runs out of room. The old hard 120px
+     cap clipped "demo-payments-api" to "demo-payments-…" on a 1440px window
+     with ~400px of the table unused. */
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
