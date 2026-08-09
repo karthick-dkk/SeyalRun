@@ -58,10 +58,21 @@ remote_sudo_out() {
 echo "=== SeyalRun v2.0 staging verification: ${HOST} ==="
 
 # ── Edge proxy ────────────────────────────────────────────────────────────
+# Follow the redirect, don't just count it. Checking for a 301 alone passed for
+# months while the Location pointed at :443, where nothing listens — the check
+# said "redirects HTTP -> HTTPS" about a link that dead-ended (ISSUE-001). Same
+# failure shape as R-9: a proxy for the property, measured instead of the
+# property. Assert the browser actually arrives.
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://${HOST}:${EDGE_HTTP_PORT}/" 2>/dev/null || echo 000)
-[[ "$code" == "301" ]] \
-  && ok "edge-proxy :${EDGE_HTTP_PORT} redirects HTTP -> HTTPS (301)" \
-  || bad "edge-proxy :${EDGE_HTTP_PORT} returned ${code} (want 301)"
+if [[ "$code" != "301" ]]; then
+  bad "edge-proxy :${EDGE_HTTP_PORT} returned ${code} (want 301)"
+else
+  final=$(curl -skL -o /dev/null -w '%{url_effective} %{http_code}' --max-time 15 \
+            "http://${HOST}:${EDGE_HTTP_PORT}/" 2>/dev/null || echo "- 000")
+  [[ "$final" == "https://"*" 200" ]] \
+    && ok "edge-proxy :${EDGE_HTTP_PORT} redirects HTTP -> HTTPS and lands (${final})" \
+    || bad "edge-proxy :${EDGE_HTTP_PORT} redirect does not resolve: ${final}"
+fi
 
 health_json=$(curl -sk --max-time 10 "${EDGE_HTTPS}/api/v1/health" 2>/dev/null || echo '{}')
 echo "$health_json" | grep -q '"status":"ok"' \
