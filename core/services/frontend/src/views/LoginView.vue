@@ -20,7 +20,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">Code</label>
-              <input v-model="mfaCode" class="input" placeholder="123456" inputmode="numeric" maxlength="6" @keydown.enter="doVerifyMfa" autofocus />
+              <input v-model="mfaCode" class="input" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6" @keydown.enter="doVerifyMfa" autofocus />
             </div>
             <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
             <button class="btn btn-primary" style="width:100%;justify-content:center" @click="doVerifyMfa" :disabled="loading">
@@ -49,7 +49,7 @@
                 </div>
                 <div class="form-group">
                   <label class="form-label">Code from your app</label>
-                  <input v-model="enrollCode" class="input" placeholder="123456" inputmode="numeric" maxlength="6" @keydown.enter="confirmEnroll" />
+                  <input v-model="enrollCode" class="input" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6" @keydown.enter="confirmEnroll" />
                 </div>
                 <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
                 <button class="btn btn-primary" style="width:100%;justify-content:center" :disabled="saving || !enrollCode" @click="confirmEnroll">{{ saving ? 'Verifying…' : 'Enable & Continue' }}</button>
@@ -62,7 +62,7 @@
               <template v-else>
                 <div class="form-group">
                   <label class="form-label">Code from your email</label>
-                  <input v-model="enrollCode" class="input" placeholder="123456" inputmode="numeric" maxlength="6" @keydown.enter="confirmEnroll" />
+                  <input v-model="enrollCode" class="input" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6" @keydown.enter="confirmEnroll" />
                 </div>
                 <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
                 <div style="display:flex;gap:8px">
@@ -90,11 +90,11 @@
             </div>
             <div class="form-group">
               <label class="form-label">New password</label>
-              <input v-model="newPassword" type="password" class="input" placeholder="New password" @keydown.enter="doChangePassword" autofocus />
+              <input v-model="newPassword" type="password" autocomplete="new-password" class="input" placeholder="New password" @keydown.enter="doChangePassword" autofocus />
             </div>
             <div class="form-group">
               <label class="form-label">Confirm new password</label>
-              <input v-model="confirmPassword" type="password" class="input" placeholder="Confirm new password" @keydown.enter="doChangePassword" />
+              <input v-model="confirmPassword" type="password" autocomplete="new-password" class="input" placeholder="Confirm new password" @keydown.enter="doChangePassword" />
             </div>
             <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
             <button class="btn btn-primary" style="width:100%;justify-content:center" @click="doChangePassword" :disabled="loading">
@@ -104,11 +104,11 @@
           <template v-else>
             <div class="form-group">
               <label class="form-label">Username</label>
-              <input v-model="username" class="input" placeholder="Username" @keydown.enter="doLogin" autofocus />
+              <input v-model="username" type="text" name="username" autocomplete="username" class="input" placeholder="Username" @keydown.enter="doLogin" autofocus />
             </div>
             <div class="form-group">
               <label class="form-label">Password</label>
-              <input v-model="password" type="password" class="input" placeholder="Password" @keydown.enter="doLogin" />
+              <input v-model="password" type="password" name="password" autocomplete="current-password" class="input" placeholder="Password" @keydown.enter="doLogin" />
             </div>
             <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
             <button class="btn btn-primary" style="width:100%;justify-content:center" @click="doLogin" :disabled="loading">
