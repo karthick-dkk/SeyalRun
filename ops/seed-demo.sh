@@ -21,6 +21,13 @@ if [[ -f .compose-flags ]]; then
   while IFS= read -r flag; do [[ -n "$flag" ]] && COMPOSE_FLAGS+=("$flag"); done < .compose-flags
 fi
 
+# .compose-flags may include the internal-TLS overlay, whose volume paths are
+# built from INTERNAL_TLS_DIR. Reusing the flags without also providing that
+# variable makes compose resolve those mounts to empty strings — noisy at best,
+# and a wrong bind mount if it ever recreates a container rather than exec'ing
+# into a running one. Same default as ops/_staging-bootstrap.sh.
+export INTERNAL_TLS_DIR="${INTERNAL_TLS_DIR:-$(pwd)/tls/internal}"
+
 if ! docker compose "${COMPOSE_FLAGS[@]}" ps inventory-service 2>/dev/null | grep -q "Up\|running"; then
   echo "[X] inventory-service is not running. Start the stack first." >&2
   exit 1

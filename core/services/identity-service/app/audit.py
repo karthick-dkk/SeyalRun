@@ -116,6 +116,16 @@ async def log_action(
                 details=details or {},
                 ip_address=ip_address,
                 created_at=created,
+                # session_id and result are part of the hashed payload above, so
+                # they MUST be persisted. Omitting them (as this did until now)
+                # stores a row whose recomputed payload lacks keys the stored hash
+                # was built from, and verify_chain then reports "row contents were
+                # altered" for a row nobody touched — permanently, for every entry
+                # carrying a result or a session id. Any field added to
+                # audit_payload has to be added here in the same change;
+                # tests/test_audit_payload_persistence.py enforces that.
+                session_id=session_id,
+                result=result,
                 seq=seq,
                 prev_hash=prev_hash,
                 entry_hash=entry_hash,
