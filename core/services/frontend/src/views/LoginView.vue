@@ -231,7 +231,13 @@ function kioskTargetFromRedirect(): string | undefined {
 }
 
 async function doLogin() {
-  if (!username.value || !password.value) return
+  // Say why nothing happened. Returning silently left the user clicking a
+  // button that made no request and showed no message — indistinguishable
+  // from the app being broken.
+  if (!username.value || !password.value) {
+    error.value = 'Enter your username and password'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
@@ -265,7 +271,10 @@ async function doLogin() {
 }
 
 async function doChangePassword() {
-  if (!newPassword.value) return
+  if (!newPassword.value) {
+    error.value = 'Enter a new password'
+    return
+  }
   if (newPassword.value !== confirmPassword.value) {
     error.value = 'Passwords do not match'
     return
@@ -297,7 +306,10 @@ async function doChangePassword() {
 }
 
 async function doVerifyMfa() {
-  if (!mfaCode.value) return
+  if (!mfaCode.value) {
+    error.value = 'Enter the 6-digit code'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
