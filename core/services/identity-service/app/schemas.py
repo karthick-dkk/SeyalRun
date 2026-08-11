@@ -309,6 +309,14 @@ class AuditLogOut(BaseModel):
     details: dict
     ip_address: str
     created_at: datetime
+    # All three are stored on the row and bound into the entry hash, and none of
+    # them were exposed — so an API consumer (including this product's own Audit
+    # Logs page) could not see the success/failure indication PCI DSS Req 10.2.2
+    # requires, could not correlate an entry to the session it happened in, and
+    # could not see where in the chain an entry sat.
+    result: str | None = None
+    session_id: str | None = None
+    seq: int | None = None
 
 
 class AccessReviewCampaignCreate(BaseModel):
