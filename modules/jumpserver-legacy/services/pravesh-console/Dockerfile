@@ -23,4 +23,12 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD wget -qO- http://localhost:3000/ || exit 1
 
+# Runs as a non-root user. This tree is quarantined and slated for deletion,
+# but it is still scanned and still buildable, and a container that runs as
+# root is a real finding whether or not the image is currently deployed
+# (Trivy DS-0002).
+RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/log/nginx \
+    && touch /var/run/nginx.pid && chown nginx:nginx /var/run/nginx.pid
+USER nginx
+
 CMD ["nginx", "-g", "daemon off;"]

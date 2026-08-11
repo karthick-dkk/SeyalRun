@@ -59,4 +59,11 @@ EXPOSE 8005
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8005/health || exit 1
 
+# Runs as a non-root user. This tree is quarantined and slated for deletion,
+# but it is still scanned and still buildable, and a container that runs as
+# root is a real finding whether or not the image is currently deployed
+# (Trivy DS-0002).
+RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
+USER appuser
+
 ENTRYPOINT ["./entrypoint.sh"]
