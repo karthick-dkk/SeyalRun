@@ -159,6 +159,12 @@ services:
     build:
       context: ./core
       dockerfile: services/frontend/Dockerfile
+      # Without this the Dockerfile's own `ARG APP_VERSION=dev` default wins and
+      # the sidebar reads "vdev" in every source-built deployment — including
+      # staging, and anything installed via install.sh. "Which version is this?"
+      # is not a cosmetic question on a system that has to produce audit evidence.
+      args:
+        APP_VERSION: ${SEYALRUN_VERSION:-dev}
     restart: unless-stopped
     networks: [seyalrun_net]
     read_only: true
