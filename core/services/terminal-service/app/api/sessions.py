@@ -372,6 +372,7 @@ async def terminate_session(
         resource_type="ssh_session",
         resource_id=session_id,
         details={"terminated_by": user_id},
+        result="success",
     )
 
 
@@ -402,5 +403,6 @@ async def terminate_sessions_by_user(target_user_id: str, db: AsyncSession = Dep
             user_id=target_user_id, username=row.username, action="session.terminate",
             resource_type="ssh_session", resource_id=row.id,
             details={"terminated_by": "deprovision_webhook"},
+            result="success",
         )
     return {"terminated": len(rows)}

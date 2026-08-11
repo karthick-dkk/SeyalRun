@@ -142,7 +142,9 @@ async def set_group_roles(
     await session.commit()
 
     await log_action(session, user_id=actor_id, username=actor_name or "", action="group.roles.set",
-                     resource_type="user-group", resource_id=group_id, details={"role_ids": payload.role_ids})
+                     resource_type="user-group", resource_id=group_id, details={"role_ids": payload.role_ids},
+                     result="success",
+                 )
     return {"group_id": group_id, "role_ids": payload.role_ids}
 
 
@@ -177,7 +179,9 @@ async def set_group_policies(
     await session.refresh(group)
 
     await log_action(session, user_id=actor_id, username=actor_name or "", action="group.policies.set",
-                     resource_type="user-group", resource_id=group_id, details=group.policies)
+                     resource_type="user-group", resource_id=group_id, details=group.policies,
+                     result="success",
+                 )
     return group
 
 
@@ -214,7 +218,9 @@ async def put_group_ip_restriction(
     cfg.cidrs = payload.cidrs
     await session.commit()
     await log_action(session, user_id=actor_id, username=actor_name or "", action="group.ip_restriction.set",
-                     resource_type="user-group", resource_id=group_id, details={"cidrs": payload.cidrs})
+                     resource_type="user-group", resource_id=group_id, details={"cidrs": payload.cidrs},
+                     result="success",
+                 )
     return {"cidrs": cfg.cidrs}
 
 
@@ -253,7 +259,9 @@ async def put_group_notify_config(
     await session.commit()
     await log_action(session, user_id=actor_id, username=actor_name or "", action="group.notify_config.set",
                      resource_type="user-group", resource_id=group_id,
-                     details={"emails": payload.emails, "min_severity": payload.min_severity})
+                     details={"emails": payload.emails, "min_severity": payload.min_severity},
+                     result="success",
+                 )
     return {"emails": cfg.emails, "min_severity": cfg.min_severity}
 
 
@@ -334,7 +342,9 @@ async def create_role(
     await session.commit()
     await session.refresh(role)
     await log_action(session, user_id=actor_id, username=actor_name or "", action="role.create",
-                     resource_type="role", resource_id=role.id, details={"name": role.name})
+                     resource_type="role", resource_id=role.id, details={"name": role.name},
+                     result="success",
+                 )
     return role
 
 
@@ -360,7 +370,9 @@ async def update_role(
     await session.commit()
     await session.refresh(role)
     await log_action(session, user_id=actor_id, username=actor_name or "", action="role.update",
-                     resource_type="role", resource_id=role.id, details={"name": role.name})
+                     resource_type="role", resource_id=role.id, details={"name": role.name},
+                     result="success",
+                 )
     return role
 
 
@@ -379,7 +391,9 @@ async def delete_role(
     await session.delete(role)  # za_user_roles rows cascade
     await session.commit()
     await log_action(session, user_id=actor_id, username=actor_name or "", action="role.delete",
-                     resource_type="role", resource_id=role_id, details={"name": role.name})
+                     resource_type="role", resource_id=role_id, details={"name": role.name},
+                     result="success",
+                 )
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -421,6 +435,7 @@ async def create_user(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="user.create",
         resource_type="user", resource_id=user.id, details={"username": user.username},
+        result="success",
     )
     return await _user_out(session, user)
 
@@ -477,6 +492,7 @@ async def update_user(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="user.update",
         resource_type="user", resource_id=user.id,
+        result="success",
     )
     return await _user_out(session, user)
 
@@ -524,6 +540,7 @@ async def delete_user(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="user.delete",
         resource_type="user", resource_id=user_id, details={"username": username},
+        result="success",
     )
 
 
@@ -606,6 +623,7 @@ async def reset_user_mfa(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="user.mfa_reset",
         resource_type="user", resource_id=user_id, details={"username": user.username},
+        result="success",
     )
     return {"mfa_method": None}
 
@@ -681,6 +699,7 @@ async def delete_group(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="usergroup.delete",
         resource_type="user_group", resource_id=group_id, details={"name": name},
+        result="success",
     )
 
 

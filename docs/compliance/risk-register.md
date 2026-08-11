@@ -85,27 +85,45 @@ log is presented as evidence.
 rather than a verification.** Any future claim that the chain verifies must cite
 `verify_chain()` output, never a row count.
 
-## R-10 — Most audit records carry no success/failure indication
+## R-10 — Most audit records carried no success/failure indication — CLOSED
 
-**Severity: Medium.** PCI DSS Req 10.2.2.
+**Severity: Medium.** PCI DSS Req 10.2.2. **Closed**: all 41 `log_action` call
+sites across `core/services` now record an outcome, classified individually at
+the call site. `tests/test_audit_result_indication.py` fails the build on any
+new call site that omits one.
 
-Measured across `core/services`: **48 of 64** `log_action` call sites pass no
-`result`, so the column is null on those rows. PCI DSS lists a success or
-failure indication as a required element of every audit record.
+Found by re-baselining staging and then *reading* the fresh chain rather than
+only verifying it. The first three rows were:
 
-Found by re-baselining staging and then *reading* the resulting chain rather
-than only verifying it: `login_failed` rows carried `result='failure'` while the
-successful `login` row beside them carried nothing, so outcome could not be
-filtered or reported on uniformly.
+```
+seq 1  login_failed  failure
+seq 2  login_failed  failure
+seq 3  login         (null)
+```
 
-The three authentication successes that had a failure counterpart — `login`,
-`login_sso`, `mfa.verify_login` — now record `result="success"`. The remaining
-call sites are unchanged.
+Failures recorded an outcome; the success beside them recorded nothing.
+Measured: **48 of 64** call sites passed no `result`, so the column was null on
+the majority of the log and outcome could not be filtered or reported on
+uniformly.
 
-**Remediation, with a hazard.** The tempting fix is to default `result` to
-`"success"` in `log_action`. Do not: a failure path that forgets to pass
-`result="failure"` would then positively assert success, which is worse than a
-null. Each call site has to be classified deliberately.
+Two of the 41 are denials rather than successes — both `login_denied_ip` sites,
+each followed immediately by `raise HTTPException(403)`. They record
+`result="failure"`. The rest sit after the operation they describe (several
+after `session.commit()`) and record `result="success"`.
+
+**The fix that was deliberately NOT made**, and the test says so: defaulting
+`result` to `"success"` inside `log_action`. A failure path that forgot to pass
+`"failure"` would then positively assert success, which is worse than a null.
+
+A second, quieter half of the same gap: `AuditLogOut` never exposed `result`,
+`session_id` or `seq`. All three are stored on the row and bound into the entry
+hash, so the values existed, were hashed, and were invisible to every API
+consumer — including this product's own Audit Logs page, which is why the fix
+above appeared to do nothing until the schema was corrected too.
+
+Verified end to end on staging: a host create and delete issued through the API
+produced `host.create`/`success` and `host.delete`/`success`, forwarded from
+inventory-service, and `verify_chain()` returned ok over 13 rows.
 
 ## R-2 — Session end is not audited — CLOSED
 

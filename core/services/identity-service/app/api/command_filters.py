@@ -83,6 +83,7 @@ async def create_command_filter(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="command_filter.create",
         resource_type="command_filter", resource_id=cmd_filter.id, details={"name": cmd_filter.name},
+        result="success",
     )
     return cmd_filter
 
@@ -108,6 +109,7 @@ async def update_command_filter(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="command_filter.update",
         resource_type="command_filter", resource_id=cmd_filter.id,
+        result="success",
     )
     return cmd_filter
 
@@ -130,4 +132,5 @@ async def delete_command_filter(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="command_filter.delete",
         resource_type="command_filter", resource_id=filter_id,
+        result="success",
     )

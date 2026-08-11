@@ -375,6 +375,7 @@ async def create_authorization(
         session, user_id=actor_id, username=actor_name or "", action="authorization.create",
         resource_type="authorization", resource_id=authz.id,
         details={"name": authz.name, "auto_approved": authz.status == "active"},
+        result="success",
     )
     if authz.status == "pending_approval":
         await _send_approval_request_emails(session, authz)
@@ -409,6 +410,7 @@ async def update_authorization(
         session, user_id=actor_id, username=actor_name or "", action="authorization.update",
         resource_type="authorization", resource_id=authz.id,
         details={"auto_approved": authz.status == "active"},
+        result="success",
     )
     if authz.status == "pending_approval":
         await _send_approval_request_emails(session, authz)
@@ -503,4 +505,5 @@ async def delete_authorization(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="authorization.delete",
         resource_type="authorization", resource_id=authz_id,
+        result="success",
     )

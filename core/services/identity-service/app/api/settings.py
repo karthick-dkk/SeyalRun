@@ -72,6 +72,7 @@ async def put_integration(
         resource_type="settings", resource_id=INTEGRATION_KEY,
         details={"zabbix_console_url": new["zabbix_console_url"], "zabbix_api_url": new["zabbix_api_url"],
                  "token_set": bool(new["zabbix_api_token"])},
+        result="success",
     )
     return _redacted(new)
 
@@ -145,6 +146,7 @@ async def _put_value(session: AsyncSession, key: str, value: dict, actor_id: str
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="settings.update",
         resource_type="settings", resource_id=key, details=value,
+        result="success",
     )
 
 

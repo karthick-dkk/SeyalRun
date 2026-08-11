@@ -191,6 +191,7 @@ async def sweep_expired_authorizations(session: AsyncSession = Depends(get_sessi
             session, user_id=None, username="system", action="authorization.auto_expired",
             resource_type="authorization", resource_id=authz.id,
             details={"name": authz.name, "date_expired": authz.date_expired.isoformat()},
+            result="success",
         )
     return {"expired": len(rows)}
 

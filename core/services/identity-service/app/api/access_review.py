@@ -66,6 +66,7 @@ async def create_campaign(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="access_review.create",
         resource_type="access_review_campaign", resource_id=campaign.id, details={"name": campaign.name},
+        result="success",
     )
     return await _campaign_out(session, campaign)
 

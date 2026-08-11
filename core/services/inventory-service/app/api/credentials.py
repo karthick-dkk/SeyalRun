@@ -191,6 +191,7 @@ async def create_credential(
         user_id=actor_id, username=actor_name or "", action="credential.create",
         resource_type="credential", resource_id=cred.id,
         details={"name": cred.name, "secret_type": cred.secret_type, "username": cred.username},
+        result="success",
     )
     return await _credential_out(session, cred)
 
@@ -238,6 +239,7 @@ async def update_credential(
     await audit.log_action(
         user_id=actor_id, username=actor_name or "", action="credential.update",
         resource_type="credential", resource_id=cred.id,
+        result="success",
     )
     return await _credential_out(session, cred)
 
@@ -260,6 +262,7 @@ async def delete_credential(
     await audit.log_action(
         user_id=actor_id, username=actor_name or "", action="credential.delete",
         resource_type="credential", resource_id=credential_id,
+        result="success",
     )
 
 
@@ -497,4 +500,5 @@ async def update_credential_secret(
         user_id=actor_id or "system", username="", action="credential.secret_rotated",
         resource_type="credential", resource_id=credential_id,
         details={"event_type": "credential_rotated", "note": "secret rotated"},
+        result="success",
     )

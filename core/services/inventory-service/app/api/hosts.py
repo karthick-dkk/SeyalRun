@@ -82,6 +82,7 @@ async def create_host(
     await audit.log_action(
         user_id=actor_id, username=actor_name or "", action="host.create",
         resource_type="host", resource_id=host.id, details={"name": host.name, "ip": host.ip},
+        result="success",
     )
     return await _host_out(session, host)
 
@@ -203,6 +204,7 @@ async def update_host(
     await audit.log_action(
         user_id=actor_id, username=actor_name or "", action="host.update",
         resource_type="host", resource_id=host.id,
+        result="success",
     )
     return await _host_out(session, host)
 
@@ -239,6 +241,7 @@ async def delete_host(
     await audit.log_action(
         user_id=actor_id, username=actor_name or "", action="host.delete",
         resource_type="host", resource_id=host_id,
+        result="success",
     )
 
 

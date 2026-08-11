@@ -281,6 +281,7 @@ async def login(payload: LoginRequest, request: Request, session: AsyncSession =
         await log_action(
             session, user_id=user.id, username=user.username, action="login_denied_ip",
             resource_type="session", ip_address=ip,
+            result="failure",
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="login not permitted from this IP")
 
@@ -348,6 +349,7 @@ async def change_password(
     await log_action(
         session, user_id=user.id, username=user.username, action="password_change",
         resource_type="user", ip_address=_client_ip(request),
+        result="success",
     )
 
     return TokenResponse(
@@ -413,6 +415,7 @@ async def sso_exchange(payload: SSOExchangeRequest, request: Request, session: A
         await log_action(
             session, user_id=user.id, username=user.username, action="login_denied_ip",
             resource_type="session", ip_address=ip,
+            result="failure",
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="login not permitted from this IP")
 
@@ -543,7 +546,9 @@ async def mfa_enable(
 
     await session.commit()
     await log_action(session, user_id=user.id, username=user.username, action="mfa.enable",
-                     resource_type="user", details={"method": user.mfa_method})
+                     resource_type="user", details={"method": user.mfa_method},
+                     result="success",
+                 )
 
     from ..grouppolicy import effective_group_policies
 
@@ -603,7 +608,7 @@ async def mfa_disable(
     user.totp_enabled = False
     user.mfa_method = None
     await session.commit()
-    await log_action(session, user_id=user.id, username=user.username, action="mfa.disable", resource_type="user")
+    await log_action(session, user_id=user.id, username=user.username, action="mfa.disable", resource_type="user", result="success")
     return {"enabled": False}
 
 

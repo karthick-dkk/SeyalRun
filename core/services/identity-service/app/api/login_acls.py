@@ -37,6 +37,7 @@ async def create_login_acl(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="login_acl.create",
         resource_type="login_acl", resource_id=acl.id, details={"name": acl.name},
+        result="success",
     )
     return acl
 
@@ -62,6 +63,7 @@ async def update_login_acl(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="login_acl.update",
         resource_type="login_acl", resource_id=acl.id,
+        result="success",
     )
     return acl
 
@@ -84,4 +86,5 @@ async def delete_login_acl(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="login_acl.delete",
         resource_type="login_acl", resource_id=acl_id,
+        result="success",
     )

@@ -48,6 +48,7 @@ async def create_token(
     await log_action(
         session, user_id=user_id, username=actor_name or "", action="api_token.create",
         resource_type="api_token", resource_id=token.id, details={"name": token.name, "scopes": token.scopes},
+        result="success",
     )
 
     return ApiTokenCreated(
@@ -81,4 +82,5 @@ async def revoke_token(
     await log_action(
         session, user_id=user_id, username=actor_name or "", action="api_token.revoke",
         resource_type="api_token", resource_id=token_id,
+        result="success",
     )
