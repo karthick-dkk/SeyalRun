@@ -298,6 +298,11 @@ async def login(payload: LoginRequest, request: Request, session: AsyncSession =
         action="login" if not (mfa_pending or mfa_setup_required) else "login_mfa_pending",
         resource_type="session",
         ip_address=ip,
+        # login_failed records result="failure"; without the matching "success"
+        # here the outcome could not be filtered or reported on uniformly, and
+        # PCI DSS Req 10.2.2 lists a success/failure indication as a required
+        # element of every audit record.
+        result="success",
     )
 
     return TokenResponse(
@@ -423,7 +428,7 @@ async def sso_exchange(payload: SSOExchangeRequest, request: Request, session: A
     await log_action(
         session, user_id=user.id, username=user.username,
         action="login_sso" if not (mfa_pending or mfa_setup_required) else "login_sso_mfa_pending",
-        resource_type="session", ip_address=ip,
+        resource_type="session", ip_address=ip, result="success",
     )
 
     return TokenResponse(
@@ -641,7 +646,7 @@ async def mfa_verify_login(
     )
     await log_action(
         session, user_id=user.id, username=user.username, action="mfa.verify_login",
-        resource_type="session", ip_address=_client_ip(request),
+        resource_type="session", ip_address=_client_ip(request), result="success",
     )
     needs_setup_wizard = bool(policies.get("setup_wizard")) and not user.setup_completed
     return TokenResponse(access_token=token, user=await _user_out(session, user), needs_setup_wizard=needs_setup_wizard)

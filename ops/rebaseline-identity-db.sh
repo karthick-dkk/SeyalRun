@@ -123,7 +123,7 @@ psql_ -d postgres -c "CREATE DATABASE ${IDENTITY_DB_NAME} OWNER ${DB_USER};" >/d
 ok "fresh database created"
 
 info "Running migrations to head..."
-dc run --rm --no-deps identity-service alembic upgrade head >/dev/null
+dc run --rm --no-deps identity-service python -m alembic upgrade head >/dev/null
 ok "migrations at head"
 
 info "Seeding superadmin..."

@@ -85,6 +85,28 @@ log is presented as evidence.
 rather than a verification.** Any future claim that the chain verifies must cite
 `verify_chain()` output, never a row count.
 
+## R-10 — Most audit records carry no success/failure indication
+
+**Severity: Medium.** PCI DSS Req 10.2.2.
+
+Measured across `core/services`: **48 of 64** `log_action` call sites pass no
+`result`, so the column is null on those rows. PCI DSS lists a success or
+failure indication as a required element of every audit record.
+
+Found by re-baselining staging and then *reading* the resulting chain rather
+than only verifying it: `login_failed` rows carried `result='failure'` while the
+successful `login` row beside them carried nothing, so outcome could not be
+filtered or reported on uniformly.
+
+The three authentication successes that had a failure counterpart — `login`,
+`login_sso`, `mfa.verify_login` — now record `result="success"`. The remaining
+call sites are unchanged.
+
+**Remediation, with a hazard.** The tempting fix is to default `result` to
+`"success"` in `log_action`. Do not: a failure path that forgets to pass
+`result="failure"` would then positively assert success, which is worse than a
+null. Each call site has to be classified deliberately.
+
 ## R-2 — Session end is not audited — CLOSED
 
 **Severity: Medium.** PCI DSS Req 10.2. **Closed**: `session.end` is emitted from the disconnect/idle path with a reason and `duration_seconds`, so the length of privileged access is now chained.
