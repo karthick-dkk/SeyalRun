@@ -4,14 +4,15 @@
 
       <!-- Header -->
       <div class="sv-header">
+        <!-- The counts used to be repeated here as passive chips ("N active",
+             "N total") 40px above the tab bar, which shows the same two numbers
+             and is clickable. One source of truth, and it is the interactive
+             one. The subtitle says what the page is instead, matching the other
+             list pages. -->
         <div class="sv-title-row">
-          <h1 class="sv-title">Sessions</h1>
-          <div class="sv-stats">
-            <span class="sv-stat sv-stat--active">
-              <span class="sv-stat-dot"></span>
-              {{ activeSessions.length }} active
-            </span>
-            <span class="sv-stat">{{ sessions.length }} total</span>
+          <div>
+            <h1 class="sv-title">Sessions</h1>
+            <div class="sv-subtitle">Every SSH session brokered by SeyalRun, live and historical, with the commands run in each</div>
           </div>
         </div>
         <div class="sv-controls">
@@ -45,9 +46,18 @@
       <div v-else-if="error" class="sv-error">{{ error }}</div>
 
       <!-- Empty state -->
+      <!-- An empty state should say why it is empty and what to do next. This
+           was a white-square emoji over "No sessions found." — which reads the
+           same whether nothing has happened yet or a filter excluded
+           everything, and offers no way forward in either case. -->
       <div v-else-if="tabSessions.length === 0" class="sv-empty">
-        <div class="sv-empty-icon">⬜</div>
-        <div class="sv-empty-text">{{ tab === 'active' ? 'No active sessions right now.' : 'No sessions found.' }}</div>
+        <svg class="sv-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2.5" y="4" width="19" height="15" rx="2"/><path d="m7 9 3 2.5L7 14M12.5 14.5h4.5"/>
+        </svg>
+        <div class="sv-empty-text">{{ emptyHeadline }}</div>
+        <div class="sv-empty-hint">{{ emptyHint }}</div>
+        <button v-if="isFiltered" class="btn btn-sm" @click="clearFilters">Clear filters</button>
+        <button v-else class="btn btn-primary btn-sm" @click="openTerminal">Start an SSH session</button>
       </div>
 
       <!-- Sessions table -->
@@ -125,11 +135,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import AppShell from '@/components/layout/AppShell.vue'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const router = useRouter()
 const isAdmin = computed(() => auth.isAdmin)
 
 interface Session {
@@ -159,6 +171,25 @@ const terminating = reactive(new Set<string>())
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const activeSessions = computed(() => sessions.value.filter(s => s.status === 'active'))
+
+const isFiltered = computed(() => !!search.value || !!statusFilter.value)
+const emptyHeadline = computed(() => {
+  if (isFiltered.value) return 'No sessions match those filters'
+  return tab.value === 'active' ? 'No one is connected right now' : 'No sessions yet'
+})
+const emptyHint = computed(() => {
+  if (isFiltered.value) return 'Try a different host, user or status.'
+  return tab.value === 'active'
+    ? 'Live SSH sessions appear here the moment someone connects.'
+    : 'Every session SeyalRun brokers is recorded here, with the commands run in it.'
+})
+function clearFilters() {
+  search.value = ''
+  statusFilter.value = ''
+}
+function openTerminal() {
+  router.push('/terminal')
+}
 
 const filteredSessions = computed(() => {
   let list = sessions.value
@@ -273,20 +304,7 @@ onBeforeUnmount(() => {
 .sv-header { margin-bottom: 16px; }
 .sv-title-row { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
 .sv-title { font-size: 20px; font-weight: 600; margin: 0; }
-.sv-stats { display: flex; align-items: center; gap: 12px; }
-.sv-stat {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 12px; color: var(--text2);
-  background: var(--bg3); border: 1px solid var(--border);
-  padding: 2px 8px; border-radius: 10px;
-}
-.sv-stat--active { border-color: rgba(34,197,94,0.4); color: var(--accent); }
-.sv-stat-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 4px var(--accent);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.sv-subtitle { font-size: 13px; color: var(--text2); margin-top: 4px; }
 
 .sv-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sv-search { flex: 1; min-width: 200px; max-width: 340px; }
@@ -330,9 +348,10 @@ onBeforeUnmount(() => {
 /* ── States ──────────────────────────────────────────────────────────────── */
 .sv-loading { color: var(--text2); padding: 40px; text-align: center; }
 .sv-error { color: var(--danger); padding: 16px; background: var(--bg3); border-radius: 6px; }
-.sv-empty { text-align: center; padding: 60px 20px; }
-.sv-empty-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.3; }
-.sv-empty-text { color: var(--text2); font-size: 14px; }
+.sv-empty { text-align: center; padding: 60px 20px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.sv-empty-icon { width: 40px; height: 40px; color: var(--text2); opacity: 0.45; }
+.sv-empty-text { color: var(--text); font-size: 15px; font-weight: 600; }
+.sv-empty-hint { color: var(--text2); font-size: 13px; max-width: 380px; margin-bottom: 6px; }
 
 /* ── Table ───────────────────────────────────────────────────────────────── */
 .sv-table-wrap { overflow-x: auto; }
