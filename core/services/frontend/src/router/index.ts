@@ -37,9 +37,13 @@ const router = createRouter({
       component: () => import('@/views/AssetsView.vue'),
     },
     {
+      // Zone/gateway topology is admin-only — libs/rbaccore grants the `zones`
+      // segment to admin and superadmin and to nobody else, and the gateway maps
+      // both the `zones` and `admin.zones` nav areas onto the same GET zones
+      // check. So this top-level entry was a second door to an admin page, not a
+      // lower-privilege view of it. One destination, behind requiresAdmin.
       path: '/zones',
-      name: 'zones',
-      component: () => import('@/views/ZonesView.vue'),
+      redirect: '/admin/zones',
     },
     {
       // Self-service MFA enrollment — deliberately NOT under /admin or /settings

@@ -97,3 +97,21 @@ def test_router_redirects_moved_sections():
     assert "VALID_ADMIN_SECTIONS = SECTIONS.filter" in src, (
         "route validation must derive from the registry, not a second hand-written list"
     )
+
+
+def test_zones_is_admin_only_and_has_one_entry_point():
+    """Zone/gateway topology is admin-or-above (libs/rbaccore grants the `zones`
+    segment to admin and superadmin and to nobody else). It used to be reachable
+    both at /zones, from a top-level nav item, and at /admin/zones behind
+    requiresAdmin — one page, two doors, only one of them gated. /zones now
+    redirects, so the admin gate cannot be walked around."""
+    owner = {slug: shell for slug, shell in _sections()}
+    assert owner.get("zones") == "admin", "zones must be owned by the admin shell"
+
+    router = CONSUMERS["router"].read_text()
+    assert "redirect: '/admin/zones'" in router, "/zones must redirect to the gated route"
+
+    shell = CONSUMERS["AppShell"].read_text()
+    assert 'to="/zones"' not in shell, (
+        "the top-level Zones nav item is a second door to an admin page"
+    )

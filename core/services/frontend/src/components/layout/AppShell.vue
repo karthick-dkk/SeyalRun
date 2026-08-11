@@ -15,7 +15,6 @@
         <router-link v-if="auth.can('dashboard')" to="/"         class="nav-item" active-class="active"><span class="nav-icon" v-html="ICONS.dashboard" /><span class="nav-label">Dashboard</span></router-link>
         <router-link v-if="auth.can('hosts')"     to="/hosts"    class="nav-item" active-class="active"><span class="nav-icon" v-html="ICONS.hosts" /><span class="nav-label">Hosts</span></router-link>
         <router-link v-if="auth.can('assets')"    to="/assets"   class="nav-item" active-class="active"><span class="nav-icon" v-html="ICONS.assets" /><span class="nav-label">Assets</span></router-link>
-        <router-link v-if="auth.can('zones')"     to="/zones"    class="nav-item" active-class="active"><span class="nav-icon" v-html="ICONS.globe" /><span class="nav-label">Zones</span></router-link>
         <router-link v-if="auth.can('sessions')"  to="/sessions" class="nav-item" active-class="active"><span class="nav-icon" v-html="ICONS.sessions" /><span class="nav-label">Sessions</span></router-link>
         <router-link v-if="auth.can('automation')" to="/automation" class="nav-item" active-class="active"><span class="nav-icon" v-html="ICONS.automation" /><span class="nav-label">Automation</span></router-link>
         <!-- One nav, not two: Admin is an inline expandable tree (grouped into Access /
