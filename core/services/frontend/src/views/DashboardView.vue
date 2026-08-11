@@ -47,21 +47,29 @@
       </div>
 
       <!-- ── 7-Day Activity ───────────────────────────────────────────────── -->
+      <!-- With no data this used to render the full 150px chart frame plus a
+           legend for bars that were not there — roughly 230px of the landing
+           page's most prominent block spent saying "No activity data." The
+           frame and legend now render only when there is something to plot. -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">7-Day Activity</div>
-        <div class="chart">
-          <div v-for="d in (m?.activity_7d || [])" :key="d.date" class="chart-col">
-            <div class="chart-bars">
-              <div class="chart-bar chart-bar--jobs" :style="{ height: barH(d.jobs) }" :title="`${d.jobs} jobs`"></div>
-              <div class="chart-bar chart-bar--sessions" :style="{ height: barH(d.sessions) }" :title="`${d.sessions} sessions`"></div>
+        <template v-if="hasActivity">
+          <div class="chart">
+            <div v-for="d in (m?.activity_7d || [])" :key="d.date" class="chart-col">
+              <div class="chart-bars">
+                <div class="chart-bar chart-bar--jobs" :style="{ height: barH(d.jobs) }" :title="`${d.jobs} jobs`"></div>
+                <div class="chart-bar chart-bar--sessions" :style="{ height: barH(d.sessions) }" :title="`${d.sessions} sessions`"></div>
+              </div>
+              <div class="chart-label">{{ shortDate(d.date) }}</div>
             </div>
-            <div class="chart-label">{{ shortDate(d.date) }}</div>
           </div>
-          <div v-if="!(m?.activity_7d || []).length" class="muted" style="padding:24px">No activity data.</div>
-        </div>
-        <div class="chart-legend">
-          <span><i class="dot dot--jobs"></i> Jobs</span>
-          <span><i class="dot dot--sessions"></i> Sessions</span>
+          <div class="chart-legend">
+            <span><i class="dot dot--jobs"></i> Jobs</span>
+            <span><i class="dot dot--sessions"></i> Sessions</span>
+          </div>
+        </template>
+        <div v-else class="chart-empty">
+          Nothing has run in the last 7 days. Sessions and automation jobs are plotted here as they happen.
         </div>
       </div>
 
@@ -216,6 +224,10 @@ function jobActor(triggeredBy: string): string {
 }
 function shortName(n: string) { return n && n.length > 26 ? n.slice(0, 24) + '…' : (n || '—') }
 
+const hasActivity = computed(() =>
+  (m.value?.activity_7d || []).some((d: any) => (d.jobs || 0) + (d.sessions || 0) > 0)
+)
+
 // ── 7-Day Activity chart + Recent Jobs / Top Playbooks ────────────────────
 const maxActivity = computed(() => {
   const a = m.value?.activity_7d || []
@@ -288,6 +300,7 @@ onMounted(load)
 .muted { text-align: center; color: var(--text2); font-size: 13px; }
 
 .chart { display: flex; align-items: flex-end; gap: 4px; height: 150px; padding: 16px 16px 0; }
+.chart-empty { padding: 22px 20px; color: var(--text2); font-size: 13px; }
 .chart-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
 .chart-bars { display: flex; align-items: flex-end; gap: 3px; height: 110px; }
 .chart-bar { width: 12px; border-radius: 3px 3px 0 0; min-height: 2px; transition: height 0.3s; }
