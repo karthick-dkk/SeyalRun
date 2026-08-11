@@ -2,7 +2,10 @@
   <AppShell>
   <div class="hosts-view">
     <div class="hv-header">
-      <h1 class="hv-title">Hosts <span class="hv-count">{{ filteredHosts.length }}</span></h1>
+      <div class="hv-heading">
+        <h1 class="hv-title">Hosts <span class="hv-count">{{ filteredHosts.length }}</span></h1>
+        <div class="hv-subtitle">Machines SeyalRun can broker an SSH session to. Manage them under Assets.</div>
+      </div>
       <div class="hv-search">
         <input v-model="filter" type="text" placeholder="Filter by name or IP…" class="hv-input" />
       </div>
@@ -427,6 +430,8 @@ onMounted(() => { loadAll() })
   gap: 12px;
   margin-bottom: 20px;
 }
+.hv-heading { display: flex; flex-direction: column; }
+.hv-subtitle { font-size: 13px; color: var(--text2); margin-top: 4px; }
 .hv-title {
   font-size: 20px;
   font-weight: 600;

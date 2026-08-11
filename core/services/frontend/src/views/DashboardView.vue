@@ -88,7 +88,7 @@
               </tr>
             </tbody>
           </table>
-          <div v-if="!(m?.recent_jobs || []).length" class="muted" style="padding:20px">No jobs yet.</div>
+          <div v-if="!(m?.recent_jobs || []).length" class="dash-empty">No automation jobs have run yet. Runs appear here as soon as one starts.</div>
         </div>
 
         <div class="card">
@@ -101,7 +101,7 @@
               </tr>
             </tbody>
           </table>
-          <div v-if="!(m?.top_playbooks || []).length" class="muted" style="padding:20px">No runs yet.</div>
+          <div v-if="!(m?.top_playbooks || []).length" class="dash-empty">Nothing to rank yet. Once playbooks run, the most-used ones are listed here.</div>
         </div>
       </div>
 
@@ -126,7 +126,7 @@
             </tr>
           </tbody>
         </table>
-        <div v-if="!recentActivity.length" class="muted" style="padding:24px">No activity yet.</div>
+        <div v-if="!recentActivity.length" class="dash-empty">No sessions, jobs or access grants recorded yet.</div>
       </div>
     </div>
   </AppShell>
@@ -300,6 +300,7 @@ onMounted(load)
 .muted { text-align: center; color: var(--text2); font-size: 13px; }
 
 .chart { display: flex; align-items: flex-end; gap: 4px; height: 150px; padding: 16px 16px 0; }
+.dash-empty { padding: 22px 20px; color: var(--text2); font-size: 13px; text-align: center; }
 .chart-empty { padding: 22px 20px; color: var(--text2); font-size: 13px; }
 .chart-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
 .chart-bars { display: flex; align-items: flex-end; gap: 3px; height: 110px; }
