@@ -1,8 +1,13 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { setToken } from '@/api/client'
+import { SECTIONS, MOVED_TO_SETTINGS } from '@/config/adminSections'
 
-export const VALID_ADMIN_SECTIONS = ['users', 'roles', 'authorizations', 'credentials', 'zones', 'security', 'audit', 'integration', 'trigger-bindings', 'platform', 'health', 'housekeeping', 'log-backend', 'mail-settings']
+// Derived from the shared section registry, so a section can never be valid
+// here but missing from the nav (or the reverse). Both lists used to be typed
+// out by hand and VALID_ADMIN_SECTIONS still listed every Settings section,
+// which is how /admin/<s> and /settings/<s> both stayed reachable.
+export const VALID_ADMIN_SECTIONS = SECTIONS.filter(s => s.shell === 'admin').map(s => s.slug)
 
 // Integration/platform/health/security/housekeeping/log-backend/audit moved out of the
 // standalone Admin nav into their own Settings page (reached via the topbar gear icon) —
@@ -10,7 +15,7 @@ export const VALID_ADMIN_SECTIONS = ['users', 'roles', 'authorizations', 'creden
 // second route prefix onto them. /admin/<section> for these still works unchanged (Zabbix's
 // embedded "Administration > SeyalRun" flyout links straight to those PHP-rendered routes),
 // this is purely an additional, better-organized path for the standalone app.
-export const VALID_SETTINGS_SECTIONS = ['integration', 'platform', 'health', 'security', 'housekeeping', 'log-backend', 'mail-settings', 'audit']
+export const VALID_SETTINGS_SECTIONS = SECTIONS.filter(s => s.shell === 'settings').map(s => s.slug)
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -51,6 +56,12 @@ const router = createRouter({
       meta: { requiresAdmin: true },
       beforeEnter: (to) => {
         const section = to.params.section as string
+        // These moved to Settings. Redirect rather than 404 so existing
+        // bookmarks, docs and deep links from Zabbix keep working — same
+        // pattern as /recordings -> /sessions.
+        if (MOVED_TO_SETTINGS.includes(section)) {
+          return { path: `/settings/${section}` }
+        }
         if (!VALID_ADMIN_SECTIONS.includes(section)) {
           return { path: '/admin/users' }
         }

@@ -154,6 +154,7 @@ import { useNotificationsStore } from '@/stores/notifications'
 import { useCapturesStore } from '@/stores/captures'
 import api, { terminalUrl } from '@/api/client'
 import { theme, toggleTheme } from '@/theme'
+import { groupsFor, SETTINGS_AREAS } from '@/config/adminSections'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -204,21 +205,10 @@ const ICONS = {
 // Log Backend/Audit Logs) moved to the dedicated Settings page (topbar gear icon) —
 // AdminView.vue's own nav (used only inside the Zabbix iframe) is untouched and still
 // shows all 13 sections there, unchanged.
-const ADMIN_GROUPS = [
-  { label: 'Access', tabs: [
-    { area: 'admin.users', to: '/admin/users', label: 'Users & Groups', icon: ICONS.users },
-    { area: 'admin.roles', to: '/admin/roles', label: 'Roles', icon: ICONS.shield },
-    { area: 'admin.authorizations', to: '/admin/authorizations', label: 'Authorizations', icon: ICONS.lock },
-  ] },
-  { label: 'Inventory', tabs: [
-    { area: 'admin.credentials', to: '/admin/credentials', label: 'Credentials', icon: ICONS.key },
-  ] },
-  { label: 'Automation', tabs: [
-    { area: 'admin.zabbix-integration', to: '/admin/trigger-bindings', label: 'Trigger Bindings', icon: ICONS.bolt },
-  ] },
-]
-
-const SETTINGS_AREAS = ['admin.integration', 'admin.platform', 'admin.health', 'admin.security', 'admin.housekeeping', 'admin.log-backend', 'admin.audit']
+// ADMIN_GROUPS and SETTINGS_AREAS come from the shared registry now. They used
+// to be a second hand-maintained copy of AdminView's list and had drifted:
+// this tree carried no Platform group at all while AdminView's carried five.
+const ADMIN_GROUPS = computed(() => groupsFor('admin', isEmbedded))
 const canAnySettings = computed(() => SETTINGS_AREAS.some((a) => auth.can(a)))
 
 const onAdminRoute = computed(() => route.path.startsWith('/admin'))
