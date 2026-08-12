@@ -73,7 +73,10 @@
               </div>
             </td>
           </tr>
-        </tbody>
+                  <tr v-if="!users.length">
+            <td :colspan="auth.isSuperAdmin ? 7 : 6" class="ua-empty">No users yet.</td>
+          </tr>
+</tbody>
       </table>
       <div v-if="loadingUsers" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
     </div>
@@ -211,7 +214,15 @@
               </td>
             </tr>
           </template>
-        </tbody>
+                  <!-- A table of headers over nothing is a dead end: it reads as
+               broken rather than empty, and says nothing about what a group
+               is for or how to make one. -->
+          <tr v-if="!groups.length">
+            <td :colspan="auth.isSuperAdmin ? 6 : 5" class="ua-empty">
+              No user groups yet. Groups bundle roles, IP restrictions and MFA policy so they can be applied to several people at once.
+            </td>
+          </tr>
+</tbody>
       </table>
       <div v-if="loadingGroups" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
     </div>
@@ -940,4 +951,5 @@ onMounted(() => { loadUsers(); loadGroups(); loadRoles() })
 .roles-expand { border-top: 1px solid var(--border); background: var(--bg3); padding: 12px 14px; }
 .roles-expand-title { font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
 .roles-expand-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.ua-empty { padding: 26px 16px; text-align: center; color: var(--text2); font-size: 13px; }
 </style>

@@ -30,19 +30,19 @@
       <!-- ── Tabs ──────────────────────────────────────────────────────────── -->
       <div v-if="serviceAvailable" class="auto-tabs">
         <button :class="['auto-tab', { active: autoTab === 'playbooks' }]" @click="autoTab = 'playbooks'">
-          <span>📜</span> Playbooks &amp; Scripts
+          <span class="auto-tab-icon" v-html="TAB_ICONS.playbooks"></span> Playbooks &amp; Scripts
           <span v-if="playbookTemplates.length" class="tab-badge">{{ playbookTemplates.length }}</span>
         </button>
         <button v-if="auth.isAdminOrSupport" :class="['auto-tab', { active: autoTab === 'templates' }]" @click="autoTab = 'templates'">
-          <span>⚙</span> All Templates
+          <span class="auto-tab-icon" v-html="TAB_ICONS.templates"></span> All Templates
           <span v-if="allTemplates.length" class="tab-badge">{{ allTemplates.length }}</span>
         </button>
         <button v-if="auth.isAdminOrSupport" :class="['auto-tab', { active: autoTab === 'schedules' }]" @click="autoTab = 'schedules'">
-          <span>📅</span> Schedules
+          <span class="auto-tab-icon" v-html="TAB_ICONS.schedules"></span> Schedules
           <span v-if="schedules.length" class="tab-badge">{{ schedules.length }}</span>
         </button>
         <button :class="['auto-tab', { active: autoTab === 'runs' }]" @click="autoTab = 'runs'; loadRuns()">
-          <span>▦</span> Recent Runs
+          <span class="auto-tab-icon" v-html="TAB_ICONS.runs"></span> Recent Runs
         </button>
       </div>
 
@@ -846,6 +846,16 @@ const allHostGroups  = ref<any[]>([])
 // already used by JobRunsListView/JobRunView for "triggered by" and now "created by".
 const allUsers        = ref<any[]>([])
 
+// Tab icons. Defined here rather than inline in the template because v-html
+// binds a JS expression — a raw SVG literal in the attribute is not one, and
+// the Vue compiler rejects it.
+const TAB_ICONS = {
+  playbooks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H17a2 2 0 0 1 2 2v12.5a2.5 2.5 0 0 1-2.5 2.5H7a3 3 0 0 1-3-3z"/><path d="M8 7.5h7M8 11h7M8 14.5h4"/></svg>',
+  templates: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.6v2.2M12 19.2v2.2M21.4 12h-2.2M4.8 12H2.6M18.6 5.4l-1.6 1.6M7 17l-1.6 1.6M18.6 18.6 17 17M7 7 5.4 5.4"/></svg>',
+  schedules: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/></svg>',
+  runs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18.5" cy="18" r="2.5"/></svg>',
+}
+
 // ── Playbooks & Scripts toolbar (search / project filter / view mode) ─────────
 const templateSearch      = ref('')
 const templateProjectFilter = ref('')
@@ -872,7 +882,10 @@ const userMap     = computed(() => new Map(allUsers.value.map(u => [u.id, u.user
 function projectName(id: string | null): string { return id ? (projectMap.value.get(id)?.name || id) : '' }
 function templateName(id: string | null): string { return id ? (templateMap.value.get(id)?.name || id) : '' }
 function credName(id: string | null): string { return id ? (credMap.value.get(id)?.name || id) : '' }
-function userName(id: string | null): string { return id ? (userMap.value.get(id) || id) : '' }
+function userName(id: string | null): string {
+  if (!id) return ''
+  return userMap.value.get(id) || 'deleted user'
+}
 
 function actionTypeBadgeClass(t: string): string {
   return { ansible_playbook: 'badge-green', bash_script: 'badge-blue', chain: 'badge-orange', account_push: 'badge-orange', rotate_secret: 'badge-red' }[t] || 'badge-blue'
@@ -1555,6 +1568,8 @@ onMounted(async () => {
   display: flex; gap: 4px; margin-bottom: 20px;
   border-bottom: 2px solid var(--border); padding-bottom: 0;
 }
+.auto-tab-icon { display: inline-flex; width: 15px; height: 15px; }
+.auto-tab-icon :deep(svg) { width: 100%; height: 100%; }
 .auto-tab {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 18px; font-size: 13px; font-weight: 600;
