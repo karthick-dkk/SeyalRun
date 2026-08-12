@@ -147,7 +147,8 @@
 
           <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
             <button class="btn" :disabled="!effectiveHostId || run.testing" @click="testConnection">
-              {{ run.testing ? 'Testing…' : '🔌 Test Connection' }}
+              <svg v-if="!run.testing" class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5"/></svg>
+              {{ run.testing ? 'Testing…' : 'Test Connection' }}
             </button>
             <div v-if="run.testResult" style="margin-top:10px">
               <div v-if="run.testResult.ok" style="font-size:12.5px;color:var(--accent)">✓ Connected</div>

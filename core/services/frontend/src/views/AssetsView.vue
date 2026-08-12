@@ -489,7 +489,7 @@
               <div v-if="hdlg.activityLoading" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
               <div v-else-if="hdlg.activity.length" class="hd-activity">
                 <div v-for="(ev, i) in hdlg.activity" :key="i" class="hd-act-row" :class="{ 'hd-act-row--click': ev.runId }" @click="ev.runId && router.push(`/jobs/${ev.runId}`)">
-                  <span class="hd-act-icon">{{ ev.icon }}</span>
+                  
                   <div style="flex:1;min-width:0">
                     <div class="hd-act-label">{{ ev.label }}</div>
                     <div class="hd-act-sub">{{ ev.sub }}</div>
@@ -568,7 +568,7 @@ async function loadHostActivity() {
     ])
     const auditItems = (aud || [])
       .filter((l: any) => l.resource_id === hid || (l.details && JSON.stringify(l.details).includes(hid)))
-      .map((l: any) => ({ icon: '📝', ts: l.created_at, label: l.action, sub: l.username || '' }))
+      .map((l: any) => ({ ts: l.created_at, label: l.action, sub: l.username || '' }))
     const runItems = (runs || [])
       .filter((r: any) => (r.target_host_ids || []).includes(hid))
       .map((r: any) => ({ icon: '⚙', ts: r.started_at, label: `${r.job_template_name || 'job'} — ${r.status}`, sub: r.action_type || '', runId: r.id }))

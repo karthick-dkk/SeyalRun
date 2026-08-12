@@ -141,10 +141,10 @@
               <td style="font-weight:600">{{ a.name }}</td>
               <td>
                 <template v-if="principalsOf(a).type === 'user'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px">👤 {{ userName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(id) }}</span>
                 </template>
                 <template v-else-if="principalsOf(a).type === 'user_group'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px">👥 {{ userGroupName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(id) }}</span>
                 </template>
                 <span v-else style="color:var(--text2)">—</span>
               </td>

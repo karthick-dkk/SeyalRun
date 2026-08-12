@@ -127,7 +127,7 @@ const triggeredByLabel = computed(() => {
   const r = run.value
   if (!r) return '—'
   if (r.triggered_by_kind === 'user' && r.triggered_by_user_id) {
-    return '👤 ' + (userMap.value[r.triggered_by_user_id] || r.triggered_by_user_id)
+    return (userMap.value[r.triggered_by_user_id] || r.triggered_by_user_id)
   }
   return r.triggered_by || '—'
 })

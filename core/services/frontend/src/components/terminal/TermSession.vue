@@ -37,8 +37,8 @@
     <div v-if="ctxMenu.visible" class="term-ctx-backdrop" @click="ctxMenu.visible = false" @contextmenu.prevent="ctxMenu.visible = false" />
     <div v-if="ctxMenu.visible" class="term-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }">
       <button class="term-ctx-item" :disabled="!hasSelection" @click="ctxAction(() => { const s = term?.getSelection(); if (s) navigator.clipboard.writeText(s).catch(() => {}) })">⧉ Copy</button>
-      <button class="term-ctx-item" @click="ctxAction(pasteFromClipboard)">📋 Paste</button>
-      <button class="term-ctx-item" @click="ctxAction(snip)">📷 Capture Screen</button>
+      <button class="term-ctx-item" @click="ctxAction(pasteFromClipboard)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2"/><path d="M9.5 4V3h5v1"/></svg> Paste</button>
+      <button class="term-ctx-item" @click="ctxAction(snip)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2L8 5h8l1.5 2h2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.5" r="3.2"/></svg> Capture Screen</button>
       <div class="term-ctx-sep" />
       <div class="term-ctx-row">
         <span>Font Size</span>

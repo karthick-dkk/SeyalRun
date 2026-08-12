@@ -71,7 +71,7 @@
                 <span v-else class="hv-none">—</span>
               </td>
               <td class="col-actions hv-actions">
-                <button class="hv-btn hv-btn-terminal" title="Open SSH Terminal" @click="openTerminal(host)">💻</button>
+                <button class="hv-btn hv-btn-terminal" title="Open SSH Terminal" @click="openTerminal(host)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg></button>
                 <button
                   class="hv-btn hv-btn-test"
                   :class="{ 'is-ok': pingResults[host.id] === true, 'is-fail': pingResults[host.id] === false, 'is-spin': pingPending.has(host.id) }"

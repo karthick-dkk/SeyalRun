@@ -66,7 +66,7 @@
         </div>
 
         <div v-if="!playbookTemplates.length" class="cards-empty">
-          <div style="font-size:28px;margin-bottom:10px">📜</div>
+          <div style="font-size:28px;margin-bottom:10px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H17a2 2 0 0 1 2 2v12.5a2.5 2.5 0 0 1-2.5 2.5H7a3 3 0 0 1-3-3z"/><path d="M8 7.5h7M8 11h7M8 14.5h4"/></svg></div>
           <div>No playbooks or scripts yet.</div>
           <div v-if="auth.isAdminOrSupport" style="margin-top:8px"><button class="btn btn-primary" @click="openCreate">+ Create your first template</button></div>
         </div>
@@ -279,7 +279,7 @@
           </div>
 
           <div v-if="runDlg.template?.action_type === 'chain'" class="form-group" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px">
-            <div style="font-size:13px;font-weight:600;margin-bottom:6px">🔗 {{ (runDlg.template.chain_steps || []).length }} step{{ (runDlg.template.chain_steps || []).length === 1 ? '' : 's' }}</div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7l-1.5 1.5"/><path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5"/></svg> {{ (runDlg.template.chain_steps || []).length }} step{{ (runDlg.template.chain_steps || []).length === 1 ? '' : 's' }}</div>
             <div style="font-size:12px;color:var(--text2)">Each step runs against its own already-configured hosts and credential — nothing to select here.</div>
           </div>
           <div v-else class="run-grid">
@@ -652,7 +652,7 @@
     <div v-if="chainDlg.visible" class="modal-overlay" @click.self="chainDlg.visible = false">
       <div class="modal modal--lg">
         <div class="modal-header">
-          <div style="font-size:15px;font-weight:700">🔗 {{ chainDlg.isEdit ? 'Edit Chain' : 'New Chain' }}</div>
+          <div style="font-size:15px;font-weight:700"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7l-1.5 1.5"/><path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5"/></svg> {{ chainDlg.isEdit ? 'Edit Chain' : 'New Chain' }}</div>
           <button class="btn btn-sm btn-icon" @click="chainDlg.visible = false">✕</button>
         </div>
         <div class="modal-body">
@@ -891,15 +891,15 @@ function actionTypeBadgeClass(t: string): string {
   return { ansible_playbook: 'badge-green', bash_script: 'badge-blue', chain: 'badge-orange', account_push: 'badge-orange', rotate_secret: 'badge-red' }[t] || 'badge-blue'
 }
 // Ported from the standalone Jobs page (JobRunsListView.vue) when its list moved into
-// this tab — resolves the actual username instead of just showing "👤 User".
+// this tab — resolves the actual username instead of just showing a generic "User" label.
 function triggeredByLabel(run: any): string {
   if (run.triggered_by_kind === 'user' && run.triggered_by_user_id) {
-    return '👤 ' + userName(run.triggered_by_user_id)
+    return userName(run.triggered_by_user_id)
   }
   const tb = run.triggered_by || ''
-  if (tb.startsWith('schedule:')) return '📅 Schedule'
-  if (tb.startsWith('zabbix_event:')) return '🔔 Zabbix'
-  if (tb.startsWith('manual_trigger:')) return '🖱 Manual'
+  if (tb.startsWith('schedule:')) return 'Schedule'
+  if (tb.startsWith('zabbix_event:')) return 'Zabbix'
+  if (tb.startsWith('manual_trigger:')) return 'Manual'
   return tb || '—'
 }
 function runHostsLabel(run: any): string {

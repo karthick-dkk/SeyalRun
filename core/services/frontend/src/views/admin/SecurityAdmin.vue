@@ -48,13 +48,13 @@
             <td style="font-weight:600">{{ f.name }}</td>
             <td>{{ commandGroupName(f.command_group_id) }}</td>
             <td>
-              <span v-if="f.user_id" class="badge badge-blue">👤 {{ userName(f.user_id) }}</span>
-              <span v-else-if="f.user_group_id" class="badge badge-blue">👥 {{ userGroupName(f.user_group_id) }}</span>
+              <span v-if="f.user_id" class="badge badge-blue"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(f.user_id) }}</span>
+              <span v-else-if="f.user_group_id" class="badge badge-blue"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(f.user_group_id) }}</span>
               <span v-else style="color:var(--text2)">Any</span>
             </td>
             <td>
-              <span v-if="f.host_id" class="badge badge-gray">🖥 {{ hostName(f.host_id) }}</span>
-              <span v-else-if="f.host_group_id" class="badge badge-gray">📂 {{ hostGroupName(f.host_group_id) }}</span>
+              <span v-if="f.host_id" class="badge badge-gray"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg> {{ hostName(f.host_id) }}</span>
+              <span v-else-if="f.host_group_id" class="badge badge-gray"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h3.8l2 2.4H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> {{ hostGroupName(f.host_group_id) }}</span>
               <span v-else style="color:var(--text2)">Any</span>
             </td>
             <td>
@@ -95,8 +95,8 @@
           <tr v-for="a in loginAcls" :key="a.id">
             <td style="font-weight:600">{{ a.name }}</td>
             <td>
-              <span v-if="a.user_id" class="badge badge-blue">👤 {{ userName(a.user_id) }}</span>
-              <span v-else-if="a.user_group_id" class="badge badge-blue">👥 {{ userGroupName(a.user_group_id) }}</span>
+              <span v-if="a.user_id" class="badge badge-blue"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(a.user_id) }}</span>
+              <span v-else-if="a.user_group_id" class="badge badge-blue"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(a.user_group_id) }}</span>
               <span v-else style="color:var(--text2)">Any</span>
             </td>
             <td style="font-size:12px;color:var(--text2)">{{ a.ip_cidr || 'Any' }}</td>
