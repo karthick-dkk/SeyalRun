@@ -68,12 +68,12 @@
         <div v-if="!playbookTemplates.length" class="cards-empty">
           <div style="font-size:28px;margin-bottom:10px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H17a2 2 0 0 1 2 2v12.5a2.5 2.5 0 0 1-2.5 2.5H7a3 3 0 0 1-3-3z"/><path d="M8 7.5h7M8 11h7M8 14.5h4"/></svg></div>
           <div>No playbooks or scripts yet.</div>
-          <div v-if="auth.isAdminOrSupport" style="margin-top:8px"><button class="btn btn-primary" @click="openCreate">+ Create your first template</button></div>
+          <div class="u-mt-8" v-if="auth.isAdminOrSupport"><button class="btn btn-primary" @click="openCreate">+ Create your first template</button></div>
         </div>
         <div v-else-if="!filteredPlaybookTemplates.length" class="cards-empty">No templates match this search/project filter.</div>
 
         <!-- ── List view (default) ──────────────────────────────────────── -->
-        <div v-else-if="templateViewMode === 'list'" class="card" style="margin-top:0">
+        <div v-else-if="templateViewMode === 'list'" class="card u-mt-0">
           <table class="table">
             <thead>
               <tr>
@@ -86,17 +86,17 @@
                   <span v-if="t.default_params?.use_sudo" class="badge badge-orange" style="font-size:9px;margin-left:4px">sudo</span>
                   <span v-if="t.quick_action" class="badge badge-blue" style="font-size:9px;margin-left:4px">Quick Action</span>
                 </td>
-                <td><span class="badge" :class="actionTypeBadgeClass(t.action_type)" style="font-size:10px">{{ actionTypeLabel(t.action_type) }}</span></td>
-                <td style="color:var(--text2);font-size:13px">{{ projectName(t.project_id) || '—' }}</td>
+                <td><span class="badge u-fs-10" :class="actionTypeBadgeClass(t.action_type)">{{ actionTypeLabel(t.action_type) }}</span></td>
+                <td class="u-c-text2_fs-13">{{ projectName(t.project_id) || '—' }}</td>
                 <td class="text-muted-sm">{{ t.script_content ? `${t.script_content.split('\n').length} lines` : '—' }}</td>
                 <td class="text-muted-sm">{{ userName(t.created_by) || '—' }}</td>
-                <td><span v-if="t.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
+                <td><span class="u-c-3fb950_fs-12" v-if="t.enabled">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
                 <td>
                   <div style="display:flex;gap:6px;justify-content:flex-end">
                     <button class="btn-pill btn-pill-outline text-xs" :disabled="!t.enabled" @click="openRunModal(t)">▶ Run</button>
                     <template v-if="auth.isAdminOrSupport">
                       <button class="btn-pill btn-pill-outline text-xs" @click="openEdit(t)">✎</button>
-                      <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
+                      <button class="btn-pill btn-pill-outline u-bc-danger_c-danger_fs-11" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
                     </template>
                   </div>
                 </td>
@@ -113,7 +113,7 @@
               <div class="pb-meta">
                 <div class="pb-name">{{ t.name }}</div>
                 <div class="pb-type-badge">
-                  <span class="badge" :class="actionTypeBadgeClass(t.action_type)" style="font-size:10px">{{ actionTypeLabel(t.action_type) }}</span>
+                  <span class="badge u-fs-10" :class="actionTypeBadgeClass(t.action_type)">{{ actionTypeLabel(t.action_type) }}</span>
                   <span v-if="t.default_params?.use_sudo" class="badge badge-orange" style="font-size:10px;margin-left:4px">sudo</span>
                   <span v-if="t.quick_action" class="badge badge-blue" style="font-size:10px;margin-left:4px">Quick Action</span>
                 </div>
@@ -146,7 +146,7 @@
       <!-- ══════════════════════════════════════════════════════════════════ -->
       <!-- ALL TEMPLATES tab (admin only)                                    -->
       <!-- ══════════════════════════════════════════════════════════════════ -->
-      <div v-if="serviceAvailable && autoTab === 'templates' && auth.isAdminOrSupport" class="card" style="margin-top:0">
+      <div v-if="serviceAvailable && autoTab === 'templates' && auth.isAdminOrSupport" class="card u-mt-0">
         <table class="table">
           <thead>
             <tr>
@@ -162,16 +162,16 @@
           <tbody>
             <tr v-for="t in allTemplates" :key="t.id">
               <td class="fw-600">{{ t.name }}</td>
-              <td><span class="badge" :class="actionTypeBadgeClass(t.action_type)" style="font-size:10px">{{ t.action_type }}</span></td>
-              <td style="color:var(--text2);font-size:13px">{{ projectName(t.project_id) || '—' }}</td>
-              <td style="font-size:13px">{{ credName(t.credential_id) || '—' }}</td>
-              <td><span v-if="t.quick_action" class="badge badge-blue" style="font-size:10px">Yes</span><span class="text-muted-sm" v-else>—</span></td>
-              <td><span v-if="t.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
+              <td><span class="badge u-fs-10" :class="actionTypeBadgeClass(t.action_type)">{{ t.action_type }}</span></td>
+              <td class="u-c-text2_fs-13">{{ projectName(t.project_id) || '—' }}</td>
+              <td class="u-fs-13">{{ credName(t.credential_id) || '—' }}</td>
+              <td><span v-if="t.quick_action" class="badge badge-blue u-fs-10">Yes</span><span class="text-muted-sm" v-else>—</span></td>
+              <td><span class="u-c-3fb950_fs-12" v-if="t.enabled">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
               <td>
                 <div class="form-actions">
                   <button class="btn-pill btn-pill-outline text-xs" @click="openRunModal(t)" :disabled="!t.enabled">▶ Run</button>
                   <button class="btn-pill btn-pill-outline text-xs" @click="openEditRaw(t)">✎</button>
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
+                  <button class="btn-pill btn-pill-outline u-bc-danger_c-danger_fs-11" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
                 </div>
               </td>
             </tr>
@@ -183,7 +183,7 @@
       <!-- ══════════════════════════════════════════════════════════════════ -->
       <!-- SCHEDULES tab (admin only)                                         -->
       <!-- ══════════════════════════════════════════════════════════════════ -->
-      <div v-if="serviceAvailable && autoTab === 'schedules' && auth.isAdminOrSupport" class="card" style="margin-top:0">
+      <div v-if="serviceAvailable && autoTab === 'schedules' && auth.isAdminOrSupport" class="card u-mt-0">
         <table class="table">
           <thead>
             <tr>
@@ -198,14 +198,14 @@
           <tbody>
             <tr v-for="s in schedules" :key="s.id">
               <td class="fw-600">{{ s.name }}</td>
-              <td style="font-size:13px">{{ templateName(s.job_template_id) || '—' }}</td>
+              <td class="u-fs-13">{{ templateName(s.job_template_id) || '—' }}</td>
               <td><code style="font-size:12px;color:#58a6ff">{{ s.cron_expression }}</code></td>
               <td class="text-muted-sm">{{ s.next_run_at ? new Date(s.next_run_at).toLocaleString() : '—' }}</td>
-              <td><span v-if="s.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
+              <td><span class="u-c-3fb950_fs-12" v-if="s.enabled">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
               <td>
                 <div class="form-actions">
                   <button class="btn-pill btn-pill-outline text-xs" @click="openEditSchedule(s)">✎ Edit</button>
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteSchedule(s)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
+                  <button class="btn-pill btn-pill-outline u-bc-danger_c-danger_fs-11" @click="deleteSchedule(s)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
                 </div>
               </td>
             </tr>
@@ -217,7 +217,7 @@
       <!-- ══════════════════════════════════════════════════════════════════ -->
       <!-- RECENT RUNS tab                                                    -->
       <!-- ══════════════════════════════════════════════════════════════════ -->
-      <div v-if="serviceAvailable && autoTab === 'runs'" class="card" style="margin-top:0">
+      <div v-if="serviceAvailable && autoTab === 'runs'" class="card u-mt-0">
         <div class="card-header">Recent Runs <button class="btn btn-sm" @click="loadRuns">Refresh</button></div>
         <table class="table">
           <thead>
@@ -259,7 +259,7 @@
       <div class="modal modal--lg">
         <div class="modal-header">
           <div>
-            <div style="font-size:15px;font-weight:700">▶ Run Playbook</div>
+            <div class="u-fs-15_fw-700">▶ Run Playbook</div>
             <div style="font-size:12px;color:var(--text2);margin-top:2px">{{ runDlg.template?.name }}</div>
           </div>
           <button class="btn btn-sm btn-icon" @click="runDlg.visible = false">✕</button>
@@ -296,18 +296,18 @@
               <!-- Hosts: checkbox list with filter + select-all -->
               <div v-if="runDlg.targetMode === 'hosts'" class="form-group">
                 <label class="form-label">Hosts <span class="text-muted-normal">(none = template defaults)</span></label>
-                <input v-model="runDlg.hostFilter" class="input" placeholder="Filter hosts…" style="margin-bottom:8px" />
+                <input v-model="runDlg.hostFilter" class="input u-mb-8" placeholder="Filter hosts…" />
                 <div class="text-muted-sm" v-if="!allHosts.length">No hosts available.</div>
                 <div v-else class="chk-list chk-list--tall">
                   <label class="chk-row chk-row--head">
                     <input type="checkbox" :checked="allFilteredSelected" @change="toggleAllHosts" />
                     <span style="flex:1;font-weight:600">Select all{{ runDlg.hostFilter ? ' (filtered)' : '' }}</span>
-                    <span style="font-size:11px;color:var(--text2)">{{ runDlg.targetHostIds.length }} selected</span>
+                    <span class="u-c-text2_fs-11">{{ runDlg.targetHostIds.length }} selected</span>
                   </label>
                   <label v-for="h in filteredHosts" :key="h.id" class="chk-row">
                     <input type="checkbox" :value="h.id" v-model="runDlg.targetHostIds" />
                     <span class="flex-1">{{ h.name }}</span>
-                    <span style="font-size:11px;color:var(--text2)">{{ h.ip }}</span>
+                    <span class="u-c-text2_fs-11">{{ h.ip }}</span>
                   </label>
                   <div v-if="!filteredHosts.length" style="padding:10px;font-size:12px;color:var(--text2)">No hosts match “{{ runDlg.hostFilter }}”.</div>
                 </div>
@@ -321,7 +321,7 @@
                   <label v-for="g in allHostGroups" :key="g.id" class="chk-row">
                     <input type="checkbox" :value="g.id" v-model="runDlg.targetGroups" />
                     <span class="flex-1">{{ g.name }}</span>
-                    <span style="font-size:11px;color:var(--text2)">{{ groupHostCount(g.id) }} host{{ groupHostCount(g.id) === 1 ? '' : 's' }}</span>
+                    <span class="u-c-text2_fs-11">{{ groupHostCount(g.id) }} host{{ groupHostCount(g.id) === 1 ? '' : 's' }}</span>
                   </label>
                 </div>
               </div>
@@ -344,13 +344,13 @@
               <!-- One credential for all hosts: select from a list -->
               <div v-if="runDlg.credMode === 'all'" class="form-group">
                 <label class="form-label">Credential for all hosts</label>
-                <input v-if="allCredentials.length > 6" v-model="runDlg.credFilter" class="input" placeholder="Filter credentials…" style="margin-bottom:8px" />
+                <input class="u-mb-8 input" v-if="allCredentials.length > 6" v-model="runDlg.credFilter" placeholder="Filter credentials…" />
                 <div class="text-muted-sm" v-if="!allCredentials.length">No credentials available (admin-managed).</div>
                 <div v-else class="chk-list chk-list--tall">
                   <label v-for="c in filteredCreds" :key="c.id" class="chk-row">
                     <input type="checkbox" :checked="runDlg.credAll === c.id" @change="runDlg.credAll = (runDlg.credAll === c.id ? '' : c.id)" />
                     <span class="flex-1">{{ c.name }}</span>
-                    <span style="font-size:11px;color:var(--text2)">{{ c.username || '' }}</span>
+                    <span class="u-c-text2_fs-11">{{ c.username || '' }}</span>
                   </label>
                 </div>
               </div>
@@ -373,7 +373,7 @@
           </div>
 
           <template v-if="runDlg.template?.action_type !== 'chain' && runDlg.template?.survey_schema?.fields?.length">
-            <div v-for="f in runDlg.template.survey_schema.fields" :key="f.name" class="form-group" style="margin-top:8px">
+            <div v-for="f in runDlg.template.survey_schema.fields" :key="f.name" class="form-group u-mt-8">
               <label class="form-label">{{ f.prompt || f.name }} <span class="text-danger">*</span></label>
               <select v-if="f.type === 'dropdown'" v-model="runDlg.variableValues[f.name]" class="input">
                 <option v-for="opt in (f.options || [])" :key="opt" :value="opt">{{ opt }}</option>
@@ -383,7 +383,7 @@
               <div v-else-if="f.type === 'string' && f.validation && !runVarPasses(f)" style="color:var(--danger);font-size:12px;margin-top:4px">Doesn't match the required pattern.</div>
             </div>
           </template>
-          <div v-else-if="runDlg.template?.action_type !== 'chain'" class="form-group" style="margin-top:8px">
+          <div v-else-if="runDlg.template?.action_type !== 'chain'" class="form-group u-mt-8">
             <label class="form-label">Extra Variables <span class="text-muted-normal">(JSON, optional)</span></label>
             <textarea
               v-model="runDlg.extraVars"
@@ -394,7 +394,7 @@
             ></textarea>
             <div v-if="runDlg.extraVarsError" style="color:var(--danger);font-size:12px;margin-top:4px">{{ runDlg.extraVarsError }}</div>
           </div>
-          <div v-if="runDlg.template?.action_type === 'ansible_playbook'" class="form-group" style="margin-top:8px">
+          <div v-if="runDlg.template?.action_type === 'ansible_playbook'" class="form-group u-mt-8">
             <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
               <input type="checkbox" v-model="runDlg.dryRun" style="accent-color:#58a6ff" />
               Dry run <span class="text-muted-normal">(--check --diff — simulates without applying changes)</span>
@@ -421,7 +421,7 @@
     <div v-if="editDlg.visible" class="modal-overlay" @click.self="editDlg.visible = false">
       <div class="modal modal--full">
         <div class="modal-header">
-          <div style="font-size:15px;font-weight:700">{{ editDlg.isEdit ? 'Edit Job Template' : 'New Job Template' }}</div>
+          <div class="u-fs-15_fw-700">{{ editDlg.isEdit ? 'Edit Job Template' : 'New Job Template' }}</div>
           <button class="btn btn-sm btn-icon" @click="editDlg.visible = false">✕</button>
         </div>
         <!-- Two-pane, VS Code-style layout: a fixed-width fields sidebar on the left (its
@@ -475,8 +475,8 @@
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label"><input type="checkbox" v-model="editDlg.form.use_sudo" style="margin-right:6px;accent-color:#58a6ff" />Run with sudo</label>
-            <div v-if="editDlg.form.use_sudo" style="margin-top:8px">
+            <label class="form-label"><input class="u-accentcolor-58a6ff_marginright-6" type="checkbox" v-model="editDlg.form.use_sudo" />Run with sudo</label>
+            <div class="u-mt-8" v-if="editDlg.form.use_sudo">
               <select v-model="editDlg.form.sudo_credential_id" class="input">
                 <option value="">— Use the login credential's own password —</option>
                 <option v-for="c in allCredentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.username }})</option>
@@ -488,7 +488,7 @@
           </div>
           <div class="inline-form-row">
             <div class="form-group flex-1">
-              <label class="form-label"><input type="checkbox" v-model="editDlg.form.quick_action" style="margin-right:6px;accent-color:#58a6ff" />Quick Action button on host cards</label>
+              <label class="form-label"><input class="u-accentcolor-58a6ff_marginright-6" type="checkbox" v-model="editDlg.form.quick_action" />Quick Action button on host cards</label>
             </div>
             <div class="form-group flex-1">
               <label class="form-label">Status</label>
@@ -519,7 +519,7 @@
           </div>
           <div class="inline-form-row">
             <div class="form-group flex-1">
-              <label class="form-label"><input type="checkbox" v-model="editDlg.form.requiresApproval" style="margin-right:6px;accent-color:#58a6ff" />Requires approval before running</label>
+              <label class="form-label"><input class="u-accentcolor-58a6ff_marginright-6" type="checkbox" v-model="editDlg.form.requiresApproval" />Requires approval before running</label>
             </div>
             <div class="form-group flex-1" v-if="editDlg.form.requiresApproval">
               <label class="form-label">Approver role</label>
@@ -543,7 +543,7 @@
                validation regex with a live tester. ─────────────────────────────────── -->
           <div class="form-group">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-              <label class="form-label" style="margin:0">Runtime Variables <span class="text-muted-normal">— asked for at Run time</span></label>
+              <label class="form-label u-m-0">Runtime Variables <span class="text-muted-normal">— asked for at Run time</span></label>
               <button type="button" class="btn btn-sm" @click="addSurveyField">+ Add Variable</button>
             </div>
             <div class="text-muted-sm" v-if="!editDlg.form.surveyFields.length">
@@ -594,7 +594,7 @@
 
           <!-- ── Confirmation — shown at Run time before the job is allowed to start ── -->
           <div class="form-group">
-            <label class="form-label"><input type="checkbox" v-model="editDlg.form.confirmationEnabled" style="margin-right:6px;accent-color:#58a6ff" />Enable confirmation</label>
+            <label class="form-label"><input class="u-accentcolor-58a6ff_marginright-6" type="checkbox" v-model="editDlg.form.confirmationEnabled" />Enable confirmation</label>
             <div v-if="editDlg.form.confirmationEnabled" style="margin-top:8px;display:flex;gap:6px;align-items:flex-start">
               <textarea v-model="editDlg.form.confirmationText" class="input flex-1" rows="2" placeholder="e.g. This restarts prod nginx — proceed?"></textarea>
               <button type="button" class="btn btn-sm" @click="confirmTesting = !confirmTesting">Test confirmation</button>
@@ -611,8 +611,8 @@
                and hides the fields sidebar, for distraction-free editing of a long script. -->
           <div class="form-group code-block-max" :class="{ 'code-block-fullscreen': codeFullscreen }">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-              <label class="form-label" style="margin:0">{{ editDlg.form.action_type === 'bash_script' ? 'Script' : 'Inline Playbook YAML' }}</label>
-              <div style="display:flex;gap:8px">
+              <label class="form-label u-m-0">{{ editDlg.form.action_type === 'bash_script' ? 'Script' : 'Inline Playbook YAML' }}</label>
+              <div class="u-d-flex_gap-8">
                 <button type="button" class="btn btn-sm" :title="codeFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="codeFullscreen = !codeFullscreen">
                   {{ codeFullscreen ? '⤡ Exit Fullscreen' : '⤢ Fullscreen' }}
                 </button>
@@ -652,7 +652,7 @@
     <div v-if="chainDlg.visible" class="modal-overlay" @click.self="chainDlg.visible = false">
       <div class="modal modal--lg">
         <div class="modal-header">
-          <div style="font-size:15px;font-weight:700"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7l-1.5 1.5"/><path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5"/></svg> {{ chainDlg.isEdit ? 'Edit Chain' : 'New Chain' }}</div>
+          <div class="u-fs-15_fw-700"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7l-1.5 1.5"/><path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5"/></svg> {{ chainDlg.isEdit ? 'Edit Chain' : 'New Chain' }}</div>
           <button class="btn btn-sm btn-icon" @click="chainDlg.visible = false">✕</button>
         </div>
         <div class="modal-body">
@@ -677,7 +677,7 @@
             <div v-if="projectError" class="err">{{ projectError }}</div>
           </div>
 
-          <div class="form-group" style="margin-top:8px">
+          <div class="form-group u-mt-8">
             <label class="form-label">Steps <span class="text-muted-normal">— runs top to bottom, each step is an existing playbook/script run with its own configured hosts &amp; credential</span></label>
             <div v-if="!chainDlg.form.steps.length" style="font-size:12px;color:var(--text2);padding:10px 0">No steps yet — add one below.</div>
             <div v-for="(step, i) in chainDlg.form.steps" :key="i" class="chain-step-row">
@@ -689,7 +689,7 @@
               </label>
               <button class="btn-pill btn-pill-outline text-xs" :disabled="i === 0" @click="moveChainStep(i, -1)">↑</button>
               <button class="btn-pill btn-pill-outline text-xs" :disabled="i === chainDlg.form.steps.length - 1" @click="moveChainStep(i, 1)">↓</button>
-              <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="chainDlg.form.steps.splice(i, 1)">✕</button>
+              <button class="btn-pill btn-pill-outline u-bc-danger_c-danger_fs-11" @click="chainDlg.form.steps.splice(i, 1)">✕</button>
             </div>
           </div>
           <div class="form-group">
@@ -712,7 +712,7 @@
     <div v-if="githubImport.visible" class="modal-overlay" @click.self="githubImport.visible = false">
       <div class="modal">
         <div class="modal-header">
-          <div style="font-size:15px;font-weight:700">Import {{ editDlg.form.action_type === 'bash_script' ? 'Script' : 'Playbook' }} from GitHub</div>
+          <div class="u-fs-15_fw-700">Import {{ editDlg.form.action_type === 'bash_script' ? 'Script' : 'Playbook' }} from GitHub</div>
           <button class="btn btn-sm btn-icon" @click="githubImport.visible = false">✕</button>
         </div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
@@ -734,7 +734,7 @@
     <div v-if="schedDlg.visible" class="modal-overlay" @click.self="schedDlg.visible = false">
       <div class="modal">
         <div class="modal-header">
-          <div style="font-size:15px;font-weight:700">{{ schedDlg.isEdit ? 'Edit Schedule' : 'New Schedule' }}</div>
+          <div class="u-fs-15_fw-700">{{ schedDlg.isEdit ? 'Edit Schedule' : 'New Schedule' }}</div>
           <button class="btn btn-sm btn-icon" @click="schedDlg.visible = false">✕</button>
         </div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">

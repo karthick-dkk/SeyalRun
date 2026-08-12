@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="card" style="margin-bottom:16px">
+    <div class="card u-mb-16">
       <div class="card-header">
         Service Health &amp; API Status
         <button class="btn btn-sm" @click="load">Refresh</button>

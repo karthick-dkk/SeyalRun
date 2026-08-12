@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- Credentials card -->
-    <div class="card" style="margin-bottom:20px">
+    <div class="card u-mb-20">
       <div class="card-header">
         Credentials
         <button class="btn btn-primary btn-sm" @click="openCreateCred">+ Credential</button>
@@ -240,7 +240,7 @@
             <p v-else style="font-size:13px;color:var(--text2);margin:0 0 10px">Enter your 6-digit authenticator code to reveal this secret.</p>
             <input v-model="reveal.code" class="fp-input" inputmode="numeric" maxlength="6" placeholder="123456" style="text-align:center;letter-spacing:6px;font-size:18px" @keyup.enter="doReveal" />
           </div>
-          <div v-else-if="!reveal.secret && !reveal.error" style="font-size:13px;color:var(--text2)">Revealing…</div>
+          <div class="u-c-text2_fs-13" v-else-if="!reveal.secret && !reveal.error">Revealing…</div>
 
           <!-- Step 2: revealed secret -->
           <div v-if="reveal.secret">

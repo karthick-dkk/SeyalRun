@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- ── Command Groups ──────────────────────────────────────────────── -->
-    <div class="card" style="margin-bottom:20px">
+    <div class="card u-mb-20">
       <div class="card-header">
         Command Groups
         <button class="btn btn-primary btn-sm" @click="openCreateGroup">+ Command Group</button>
@@ -30,12 +30,12 @@
     </div>
 
     <!-- ── Command Filters ─────────────────────────────────────────────── -->
-    <div class="card" style="margin-bottom:20px">
+    <div class="card u-mb-20">
       <div class="card-header">
         Command Filters
         <button class="btn btn-primary btn-sm" @click="openCreateFilter">+ Command Filter</button>
       </div>
-      <div style="padding:10px 16px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">
+      <div class="u-borderbottom-1solidborder_c-text2_fs-12_p-1016">
         Enforced live by the terminal service on every command typed in an SSH session.
         Principal/Target "Any" means the rule applies to every user and every host.
       </div>
@@ -79,12 +79,12 @@
     </div>
 
     <!-- ── Login ACLs ──────────────────────────────────────────────────── -->
-    <div class="card" style="margin-bottom:20px">
+    <div class="card u-mb-20">
       <div class="card-header">
         Login ACLs
         <button class="btn btn-primary btn-sm" @click="openCreateAcl">+ Login ACL</button>
       </div>
-      <div style="padding:10px 16px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">
+      <div class="u-borderbottom-1solidborder_c-text2_fs-12_p-1016">
         Enforced live by the terminal service when an SSH session is requested.
       </div>
       <table class="table">
@@ -204,7 +204,7 @@
 
           <div class="form-group">
             <label class="form-label">Principal</label>
-            <select v-model="filterPrincipalType" class="input" style="margin-bottom:8px">
+            <select v-model="filterPrincipalType" class="input u-mb-8">
               <option value="any">Any</option>
               <option value="user">User</option>
               <option value="user_group">User Group</option>
@@ -215,7 +215,7 @@
 
           <div class="form-group">
             <label class="form-label">Target</label>
-            <select v-model="filterTargetType" class="input" style="margin-bottom:8px">
+            <select v-model="filterTargetType" class="input u-mb-8">
               <option value="any">Any</option>
               <option value="host">Host</option>
               <option value="host_group">Host Group</option>
@@ -265,7 +265,7 @@
 
           <div class="form-group">
             <label class="form-label">Principal</label>
-            <select v-model="aclPrincipalType" class="input" style="margin-bottom:8px">
+            <select v-model="aclPrincipalType" class="input u-mb-8">
               <option value="any">Any</option>
               <option value="user">User</option>
               <option value="user_group">User Group</option>

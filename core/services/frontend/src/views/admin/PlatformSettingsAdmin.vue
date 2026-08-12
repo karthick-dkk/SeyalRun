@@ -5,7 +5,7 @@
         Zabbix Integration
         <button class="btn btn-sm" @click="load">Refresh</button>
       </div>
-      <div style="padding:18px">
+      <div class="u-p-18">
         <p class="lede">How SeyalRun finds and talks to your Zabbix — the same URL used by the header's "Zabbix" link, host sync, and the webhook result post-back.</p>
         <div class="text-muted" v-if="loading">Loading…</div>
         <template v-else>
@@ -32,12 +32,12 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:16px">
+    <div class="card u-mt-16">
       <div class="card-header">
         Traffic &amp; Session Limits
         <button class="btn btn-sm" @click="load">Refresh</button>
       </div>
-      <div style="padding:18px">
+      <div class="u-p-18">
         <p class="lede">Changes apply immediately across every SeyalRun user — no restart, no redeploy.</p>
         <div class="text-muted" v-if="loading">Loading…</div>
         <template v-else>
@@ -78,9 +78,9 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:16px">
+    <div class="card u-mt-16">
       <div class="card-header">Zabbix Module <span class="badge badge-blue">superadmin</span></div>
-      <div style="padding:18px">
+      <div class="u-p-18">
         <p class="lede">
           Controls the SeyalRun menu &amp; SSH-Hosts page embedded inside Zabbix. The module's own
           identity assertion (<code>ZABBIX_MODULE_SECRET</code>) always stays in <code>.env</code> — this
@@ -109,9 +109,9 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:16px">
+    <div class="card u-mt-16">
       <div class="card-header">Not editable here, on purpose</div>
-      <div style="padding:18px">
+      <div class="u-p-18">
         <p style="color:var(--text2);font-size:12px;line-height:1.6">
           A few values are too risky to change from a settings page — get them wrong and every stored
           password/key silently stops decrypting. Those stay in the server's <code>.env</code> file,

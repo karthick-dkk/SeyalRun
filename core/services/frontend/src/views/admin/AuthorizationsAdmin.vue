@@ -28,7 +28,7 @@
         <tbody>
           <!-- New-rule expand row at top -->
           <tr v-if="expandedId === '__new__'" class="expand-row">
-            <td colspan="9" style="padding:0">
+            <td class="u-p-0" colspan="9">
               <div class="expand-form" @keydown.esc.stop="closeExpand" @keydown.enter.exact.stop.prevent="save">
                 <div class="expand-form-head">
                   <span>Add Authorization</span>
@@ -122,7 +122,7 @@
                 </div>
                 <div class="expand-footer">
                   <span class="eg-hint">Enter to save · Esc to cancel</span>
-                  <div style="display:flex;gap:8px">
+                  <div class="u-d-flex_gap-8">
                     <button class="btn" @click="closeExpand">Cancel</button>
                     <button class="btn btn-primary" @click="save" :disabled="saving">{{ saving ? 'Saving…' : 'Create' }}</button>
                   </div>
@@ -141,25 +141,25 @@
               <td class="fw-600">{{ a.name }}</td>
               <td>
                 <template v-if="principalsOf(a).type === 'user'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue u-m-1"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(id) }}</span>
                 </template>
                 <template v-else-if="principalsOf(a).type === 'user_group'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue u-m-1"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>—</span>
               </td>
               <td>
                 <template v-if="targetsOf(a).type === 'host'">
-                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray" style="margin:1px">&#128187; {{ hostName(id) }}</span>
+                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray u-m-1">&#128187; {{ hostName(id) }}</span>
                 </template>
                 <template v-else-if="targetsOf(a).type === 'host_group'">
-                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray" style="margin:1px">&#128193; {{ hostGroupName(id) }}</span>
+                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray u-m-1">&#128193; {{ hostGroupName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>—</span>
               </td>
               <td class="text-sm">
                 <template v-if="credsOf(a).length">
-                  <span v-for="id in credsOf(a)" :key="id" class="badge badge-gray" style="margin:1px">{{ credentialName(id) }}</span>
+                  <span v-for="id in credsOf(a)" :key="id" class="badge badge-gray u-m-1">{{ credentialName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>any</span>
               </td>
@@ -195,7 +195,7 @@
 
             <!-- Inline edit expand row -->
             <tr v-else class="expand-row">
-              <td colspan="9" style="padding:0">
+              <td class="u-p-0" colspan="9">
                 <div class="expand-form" @keydown.esc.stop="closeExpand" @keydown.enter.exact.stop.prevent="save">
                   <div class="expand-form-head">
                     <span>Edit — {{ a.name }}</span>
@@ -284,7 +284,7 @@
                   </div>
                   <div class="expand-footer">
                     <span class="eg-hint">Enter to save · Esc to cancel</span>
-                    <div style="display:flex;gap:8px">
+                    <div class="u-d-flex_gap-8">
                       <button class="btn" @click="closeExpand">Cancel</button>
                       <button class="btn btn-primary" @click="save" :disabled="saving">{{ saving ? 'Saving…' : 'Save Changes' }}</button>
                     </div>

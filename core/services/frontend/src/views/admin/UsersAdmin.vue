@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- Users card -->
-    <div class="card" style="margin-bottom:20px">
+    <div class="card u-mb-20">
       <div class="card-header">
         Users
         <div style="display:flex;gap:8px;align-items:center">
@@ -149,7 +149,7 @@
             </tr>
             <!-- Inline role-assignment row — this is how a group's members inherit a role -->
             <tr v-if="expandedRolesGroupId === g.id" class="members-expand-row">
-              <td colspan="6" style="padding:0">
+              <td class="u-p-0" colspan="6">
                 <div class="roles-expand">
                   <div class="roles-expand-title">Roles granted to — {{ g.name }} <span style="text-transform:none;font-weight:400">(members inherit these)</span></div>
                   <div class="role-check-list">
@@ -171,7 +171,7 @@
             </tr>
             <!-- Inline member management row -->
             <tr v-if="expandedGroupId === g.id" class="members-expand-row">
-              <td colspan="6" style="padding:0">
+              <td class="u-p-0" colspan="6">
                 <div class="members-expand">
                   <div class="members-expand-header">
                     <span class="members-expand-title">Members — {{ g.name }}</span>

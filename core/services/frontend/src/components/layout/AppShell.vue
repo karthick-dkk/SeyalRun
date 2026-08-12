@@ -74,11 +74,11 @@
           ⚠ Zabbix API token issue
         </router-link>
         <button type="button" class="topbar-icon-btn" @click="toggleTheme" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
-          <span v-html="theme === 'dark' ? ICONS.sun : ICONS.moon" style="display:flex;align-items:center;" />
+          <span class="u-ai-center_d-flex" v-html="theme === 'dark' ? ICONS.sun : ICONS.moon" />
         </button>
         <div class="notif-wrap">
           <button type="button" class="topbar-icon-btn" @click="toggleNotifDropdown" title="Notifications" style="position:relative">
-            <span v-html="ICONS.bell" style="display:flex;align-items:center;" />
+            <span class="u-ai-center_d-flex" v-html="ICONS.bell" />
             <span v-if="notifStore.unreadCount" class="notif-badge">{{ notifStore.unreadCount > 9 ? '9+' : notifStore.unreadCount }}</span>
           </button>
           <div v-if="showNotifDropdown" class="notif-backdrop" @click="showNotifDropdown = false" />
@@ -125,18 +125,18 @@
           </div>
         </div>
         <router-link v-if="canAnySettings" to="/settings" class="topbar-icon-btn" active-class="active" title="Settings">
-          <span v-html="ICONS.gear" style="display:flex;align-items:center;" />
+          <span class="u-ai-center_d-flex" v-html="ICONS.gear" />
         </router-link>
         <button class="topbar-btn" @click="openTerminal" title="SSH Terminal">
-          <span v-html="ICONS.terminal" style="display:flex;align-items:center;" />
+          <span class="u-ai-center_d-flex" v-html="ICONS.terminal" />
           SSH Terminal
         </button>
         <a class="topbar-link" :href="zabbixUrl" target="_blank" title="Back to Zabbix">
-          <span v-html="ICONS.arrowUpRight" style="display:flex;align-items:center;" />
+          <span class="u-ai-center_d-flex" v-html="ICONS.arrowUpRight" />
           Zabbix
         </a>
         <a class="topbar-link" href="https://seyalrun.com/guide/introduction" target="_blank" rel="noopener" title="SeyalRun documentation">
-          <span v-html="ICONS.docs" style="display:flex;align-items:center;" />
+          <span class="u-ai-center_d-flex" v-html="ICONS.docs" />
           Docs
         </a>
       </div>

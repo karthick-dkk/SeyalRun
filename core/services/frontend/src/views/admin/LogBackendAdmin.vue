@@ -2,7 +2,7 @@
   <div>
     <div class="card" style="max-width:680px">
       <div class="card-header">Log Storage Backend</div>
-      <div style="padding:18px">
+      <div class="u-p-18">
         <div class="fp-field">
           <label class="fp-label">Backend</label>
           <div class="fp-toggle-group">
@@ -15,7 +15,7 @@
           <div class="fp-field"><label class="fp-label">URL</label><input v-model="form.es_url" class="fp-input" placeholder="https://es.example.com:9200" /></div>
           <div class="fp-field"><label class="fp-label">API Key</label><input v-model="form.es_api_key" type="password" class="fp-input" placeholder="••••••••" /></div>
           <div class="fp-field"><label class="fp-label">Index Prefix</label><input v-model="form.es_index_prefix" class="fp-input" placeholder="seyalrun" /></div>
-          <div class="fp-field"><label class="fp-label" style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" v-model="form.es_verify_ssl" style="width:auto" /> Verify TLS certificate <span class="hint">(uncheck for a self-signed Elasticsearch)</span></label></div>
+          <div class="fp-field"><label class="fp-label u-ai-center_cur-pointer_d-flex_gap-8"><input type="checkbox" v-model="form.es_verify_ssl" style="width:auto" /> Verify TLS certificate <span class="hint">(uncheck for a self-signed Elasticsearch)</span></label></div>
         </template>
 
         <template v-if="form.backend === 's3' || form.backend === 'es+s3'">
@@ -32,7 +32,7 @@
         </div>
 
         <!-- Content routing: which log category goes to which backend(s) -->
-        <div class="fp-section-head" style="margin-top:16px">Content Routing</div>
+        <div class="fp-section-head u-mt-16">Content Routing</div>
         <div style="font-size:12px;color:var(--text2);margin:4px 0 8px">Pick which backend(s) receive each log category. Combine any (local + S3 + ES).</div>
         <table class="lb-route">
           <thead><tr><th></th><th>Local</th><th>Elasticsearch</th><th>S3</th></tr></thead>

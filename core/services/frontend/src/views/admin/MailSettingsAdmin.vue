@@ -2,7 +2,7 @@
   <div>
     <div class="card" style="max-width:680px">
       <div class="card-header">Mail Settings (MFA Email OTP)</div>
-      <div style="padding:18px">
+      <div class="u-p-18">
         <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
           Used to send one-time codes for the "Email OTP" MFA method. Choose SMTP AUTH
           (e.g. Office 365 <code>smtp.office365.com:587</code>) or Microsoft Graph API
@@ -10,7 +10,7 @@
         </div>
 
         <div class="fp-field">
-          <label class="fp-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <label class="fp-label u-ai-center_cur-pointer_d-flex_gap-8">
             <input type="checkbox" v-model="form.enabled" style="width:auto" /> Enable mail delivery
           </label>
         </div>
@@ -32,7 +32,7 @@
           <div class="fp-field"><label class="fp-label">Port</label><input v-model.number="form.smtp_port" type="number" class="fp-input" placeholder="587" /></div>
           <div class="fp-field"><label class="fp-label">Username</label><input v-model="form.smtp_username" class="fp-input" /></div>
           <div class="fp-field"><label class="fp-label">Password</label><input v-model="form.smtp_password" type="password" class="fp-input" placeholder="••••••••" /></div>
-          <div class="fp-field"><label class="fp-label" style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" v-model="form.smtp_use_tls" style="width:auto" /> Use STARTTLS</label></div>
+          <div class="fp-field"><label class="fp-label u-ai-center_cur-pointer_d-flex_gap-8"><input type="checkbox" v-model="form.smtp_use_tls" style="width:auto" /> Use STARTTLS</label></div>
         </template>
 
         <template v-if="form.provider === 'graph'">
