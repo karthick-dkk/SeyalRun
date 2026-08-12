@@ -99,8 +99,9 @@
                         <div class="eg-field">
                           <label class="eg-label">Allowed Actions</label>
                           <div class="act-check-row">
-                            <label v-for="act in availableActions" :key="act" class="act-check">
-                              <input type="checkbox" :value="act" v-model="form.actions" />{{ act }}
+                            <label v-for="act in availableActions" :key="act" class="act-check"
+                                   :class="{ 'act-check--unenforced': !actionEnforced(act) }" :title="actionHint(act)">
+                              <input type="checkbox" :value="act" v-model="form.actions" :disabled="!actionEnforced(act)" />{{ act }}<span v-if="!actionEnforced(act)" class="act-na">not enforced</span>
                             </label>
                           </div>
                         </div>
@@ -266,8 +267,9 @@
                           <div class="eg-field">
                             <label class="eg-label">Allowed Actions</label>
                             <div class="act-check-row">
-                              <label v-for="act in availableActions" :key="act" class="act-check">
-                                <input type="checkbox" :value="act" v-model="form.actions" />{{ act }}
+                              <label v-for="act in availableActions" :key="act" class="act-check"
+                                     :class="{ 'act-check--unenforced': !actionEnforced(act) }" :title="actionHint(act)">
+                                <input type="checkbox" :value="act" v-model="form.actions" :disabled="!actionEnforced(act)" />{{ act }}<span v-if="!actionEnforced(act)" class="act-na">not enforced</span>
                               </label>
                             </div>
                           </div>
@@ -309,7 +311,17 @@ import { useAuthStore } from '@/stores/auth'
 
 const { confirm } = useConfirm()
 const auth = useAuthStore()
+// R-11: sftp/upload/download are grantable here but nothing in the product
+// implements file transfer, so granting one enforces nothing. Until the SFTP
+// work lands (docs/compliance/terminal-parity-plan.md, Increment 1) they are
+// shown disabled and labelled, rather than silently offered — an access review
+// must not be able to report a control that does not exist.
 const availableActions = ['ssh', 'sftp', 'upload', 'download']
+const UNENFORCED_ACTIONS = ['sftp', 'upload', 'download']
+function actionEnforced(a: string) { return !UNENFORCED_ACTIONS.includes(a) }
+function actionHint(a: string) {
+  return actionEnforced(a) ? '' : 'Not yet enforced — file transfer is not implemented, so this grant has no effect'
+}
 
 const authorizations = ref<any[]>([])
 const users          = ref<any[]>([])
@@ -640,4 +652,6 @@ onMounted(load)
 }
 .act-check:hover { border-color: var(--accent2); }
 .act-check input { accent-color: var(--accent2); cursor: pointer; }
+.act-check--unenforced { opacity: 0.55; cursor: not-allowed; }
+.act-na { margin-left: 5px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--warn); border: 1px solid var(--warn); border-radius: 8px; padding: 0 5px; }
 </style>
