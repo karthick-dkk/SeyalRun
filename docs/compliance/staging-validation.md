@@ -128,3 +128,23 @@ Stated so the gaps are not read as passes:
   existing `.env`). Run `ops/reset-admin-password.sh` and re-run to cover them.
 - **The JumpServer module** — not deployed here; `modules/jumpserver-legacy/` is
   not wired into this stack.
+
+
+## Release loop (why staging is deployed twice)
+
+Every change runs: code → push → **staging from source** → test → build images →
+publish → **staging from the published images** → test again → repeat.
+
+The second deploy is the one that earns its place. A source build exercises
+`docker-compose.yml`; a release runs `docker-compose.prod.yml` and pulls
+published artifacts. Two release-only defects reached a tag before this step
+existed, and neither was visible to a source-only pipeline:
+
+| Defect | Why the source build stayed green |
+|---|---|
+| `docker-compose.prod.yml` omitted `INTERNAL_PROTO` / `INTERNAL_PROXY_SSL_VERIFY`, so edge-proxy — the only host-published service — failed nginx config parse and nothing was reachable | `docker-compose.yml` defined both |
+| `seyalrun-frontend` published amd64-only, making the whole release undeployable on ARM64 | the frontend compiles natively on the aarch64 staging host |
+
+`ops/deploy-staging-images.sh` performs the second deploy and prints the image
+each service is actually running, so "we deployed the release" is checkable
+rather than assumed.
