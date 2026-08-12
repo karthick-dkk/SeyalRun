@@ -5,7 +5,7 @@
       <div class="card-header">
         Users
         <div style="display:flex;gap:8px;align-items:center">
-          <button v-if="auth.isSuperAdmin && selectedUserIds.size" class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" @click="bulkDeleteUsers">
+          <button v-if="auth.isSuperAdmin && selectedUserIds.size" class="btn btn-sm btn-danger-outline" @click="bulkDeleteUsers">
             ✕ Delete {{ selectedUserIds.size }} selected
           </button>
           <button class="btn btn-sm" :disabled="syncingUsers" @click="syncUsersFromZabbix" title="Pull users &amp; groups from Zabbix">
@@ -34,23 +34,23 @@
                 @change="toggleUserSelect(u.id)"
               />
             </td>
-            <td style="font-weight:600">
+            <td class="fw-600">
               <span v-if="u.zabbix_userid" class="src-badge src-badge--zbx" title="Synced from Zabbix">Z</span>
               <span v-else class="src-badge src-badge--sr" title="SeyalRun native user">S</span>
               {{ u.username }}
             </td>
             <td>{{ u.display_name || '—' }}</td>
-            <td style="color:var(--text2)">{{ u.email || '—' }}</td>
+            <td class="text-muted">{{ u.email || '—' }}</td>
             <td>
               <span v-for="rn in (u.roles && u.roles.length ? u.roles : (u.role_name ? [u.role_name] : []))" :key="rn" class="badge badge-blue" style="margin-right:3px">{{ rn }}</span>
-              <span v-if="!(u.roles && u.roles.length) && !u.role_name" style="color:var(--text2)">—</span>
+              <span class="text-muted" v-if="!(u.roles && u.roles.length) && !u.role_name">—</span>
             </td>
             <td>
               <span v-if="u.is_active" class="badge badge-green">Active</span>
               <span v-else class="badge badge-gray">Disabled</span>
             </td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openEditUser(u)">✎ Edit</button>
                 <button
                   v-if="auth.isSuperAdmin && u.mfa_method"
@@ -60,8 +60,8 @@
                 >⟲ Reset MFA</button>
                 <button
                   v-if="auth.isSuperAdmin && !u.zabbix_userid"
-                  class="btn-pill btn-pill-outline"
-                  style="color:var(--danger);border-color:var(--danger)"
+                  class="btn-pill btn-pill-outline btn-danger-outline"
+                 
                   @click="deleteUser(u)"
                 >✕ Delete</button>
                 <span
@@ -78,7 +78,7 @@
           </tr>
 </tbody>
       </table>
-      <div v-if="loadingUsers" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell-sm" v-if="loadingUsers">Loading…</div>
     </div>
 
     <!-- Groups card -->
@@ -86,7 +86,7 @@
       <div class="card-header">
         User Groups
         <div style="display:flex;gap:8px;align-items:center">
-          <button v-if="auth.isSuperAdmin && selectedGroupIds.size" class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" @click="bulkDeleteGroups">
+          <button v-if="auth.isSuperAdmin && selectedGroupIds.size" class="btn btn-sm btn-danger-outline" @click="bulkDeleteGroups">
             ✕ Delete {{ selectedGroupIds.size }} selected
           </button>
           <button v-if="auth.isSuperAdmin" class="btn btn-primary btn-sm" @click="openCreateGroup">+ Group</button>
@@ -112,17 +112,17 @@
                   @change="toggleGroupSelect(g.id)"
                 />
               </td>
-              <td style="font-weight:600">
+              <td class="fw-600">
                 <span v-if="g.zabbix_usrgrpid" class="src-badge src-badge--zbx" title="Synced from Zabbix">Z</span>
                 <span v-else class="src-badge src-badge--sr" title="SeyalRun native group">S</span>
                 {{ g.name }}
                 <span v-if="g.policies?.mfa_enforced" class="badge badge-blue" style="margin-left:4px;font-size:10px" title="Members must set up MFA">MFA</span>
               </td>
-              <td style="color:var(--text2)">{{ g.description || '—' }}</td>
-              <td style="color:var(--text2);font-size:12px">{{ g.member_count ?? '—' }}</td>
-              <td style="color:var(--text2);font-size:12px">{{ formatDate(g.created_at) }}</td>
+              <td class="text-muted">{{ g.description || '—' }}</td>
+              <td class="text-muted-sm">{{ g.member_count ?? '—' }}</td>
+              <td class="text-muted-sm">{{ formatDate(g.created_at) }}</td>
               <td>
-                <div style="display:flex;gap:8px;justify-content:flex-end">
+                <div class="form-actions">
                   <button
                     :class="['btn-pill', expandedRolesGroupId === g.id ? 'btn-pill-active' : 'btn-pill-outline']"
                     @click="toggleRoles(g)"
@@ -134,8 +134,8 @@
                   <button class="btn-pill btn-pill-outline" @click="openEditGroup(g)">✎ Edit</button>
                   <button
                     v-if="auth.isSuperAdmin && !g.zabbix_usrgrpid"
-                    class="btn-pill btn-pill-outline"
-                    style="color:var(--danger);border-color:var(--danger)"
+                    class="btn-pill btn-pill-outline btn-danger-outline"
+                   
                     @click="deleteGroup(g)"
                   >✕ Delete</button>
                   <span
@@ -175,7 +175,7 @@
                 <div class="members-expand">
                   <div class="members-expand-header">
                     <span class="members-expand-title">Members — {{ g.name }}</span>
-                    <span style="font-size:12px;color:var(--text2)">{{ checkedMemberIds.size }} selected</span>
+                    <span class="text-muted-sm">{{ checkedMemberIds.size }} selected</span>
                   </div>
                   <input
                     v-model="memberSearch"
@@ -224,7 +224,7 @@
           </tr>
 </tbody>
       </table>
-      <div v-if="loadingGroups" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell-sm" v-if="loadingGroups">Loading…</div>
     </div>
 
     <!-- ── User panel ───────────────────────────────────────────────────── -->
@@ -323,7 +323,7 @@
           <input type="checkbox" v-model="groupForm.mfa_enforced" :disabled="!auth.isSuperAdmin" />
           <span>
             <b>Require MFA for this group</b>
-            <span v-if="!auth.isSuperAdmin" style="color:var(--text2)"> (superadmin only)</span>
+            <span class="text-muted" v-if="!auth.isSuperAdmin"> (superadmin only)</span>
             — members without MFA are blocked from everything except enrollment until they set it up.
           </span>
         </label>

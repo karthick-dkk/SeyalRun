@@ -28,7 +28,7 @@
         <tbody>
           <tr v-for="l in logs" :key="l.id">
             <td style="font-size:12px;color:var(--text2);white-space:nowrap">{{ formatDate(l.created_at) }}</td>
-            <td style="font-weight:600">{{ l.username }}</td>
+            <td class="fw-600">{{ l.username }}</td>
             <td><span class="badge badge-blue">{{ l.action }}</span></td>
             <!-- PCI DSS Req 10.2.2 counts a success/failure indication as a
                  required element of an audit record. It was being stored on
@@ -36,19 +36,19 @@
                  recorded show "—" rather than guessing an outcome. -->
             <td>
               <span v-if="l.result" class="badge" :class="resultClass(l.result)">{{ l.result }}</span>
-              <span v-else style="color:var(--text2)">—</span>
+              <span class="text-muted" v-else>—</span>
             </td>
-            <td style="font-size:12px">
+            <td class="text-sm">
               <span class="badge badge-gray">{{ l.resource_type }}</span>
-              <span style="color:var(--text2)">{{ l.resource_id }}</span>
+              <span class="text-muted">{{ l.resource_id }}</span>
             </td>
             <td style="font-size:12px;color:var(--text2);max-width:360px;overflow:hidden;text-overflow:ellipsis">{{ formatDetails(l.details) }}</td>
             <td><span class="ip-mono">{{ l.ip_address }}</span></td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!logs.length && !loading" style="padding:32px;text-align:center;color:var(--text2)">No audit log entries yet.</div>
-      <div v-if="loading" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell" v-if="!logs.length && !loading">No audit log entries yet.</div>
+      <div class="empty-cell-sm" v-if="loading">Loading…</div>
       <div style="display:flex;justify-content:center;padding:16px;border-top:1px solid var(--border)">
         <button class="btn" @click="loadMore" :disabled="loading || !hasMore">{{ hasMore ? 'Load more' : 'No more entries' }}</button>
       </div>

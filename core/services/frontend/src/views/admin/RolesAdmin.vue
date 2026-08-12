@@ -14,18 +14,18 @@
               <span v-if="r.is_builtin" class="badge badge-gray">Built-in</span>
               <span v-else class="badge badge-blue">Custom</span>
             </td>
-            <td style="color:var(--text2);font-size:12px">{{ r.description || '—' }}</td>
+            <td class="text-muted-sm">{{ r.description || '—' }}</td>
             <td style="font-size:11px;color:var(--text2)">{{ summary(r.permissions) }}</td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openView(r)">{{ (r.is_builtin || !auth.isSuperAdmin) ? '<svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg> View' : '✎ Edit' }}</button>
-                <button v-if="!r.is_builtin && auth.isSuperAdmin" class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeRole(r)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
+                <button v-if="!r.is_builtin && auth.isSuperAdmin" class="btn-pill btn-pill-outline btn-danger-outline" @click="removeRole(r)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!roles.length && !loading" style="padding:32px;text-align:center;color:var(--text2)">No roles.</div>
+      <div class="empty-cell" v-if="!roles.length && !loading">No roles.</div>
     </div>
 
     <!-- Create / Edit / View role -->

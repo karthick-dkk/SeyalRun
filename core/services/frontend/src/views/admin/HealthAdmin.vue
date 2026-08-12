@@ -11,13 +11,13 @@
         </thead>
         <tbody>
           <tr v-for="s in health.services" :key="s.service">
-            <td style="font-weight:600">{{ s.service }}</td>
+            <td class="fw-600">{{ s.service }}</td>
             <td><span class="badge" :class="statusClass(s.status)">{{ s.status }}</span></td>
-            <td style="color:var(--text2);font-size:12px">{{ s.http || '—' }}</td>
-            <td class="ip-mono" style="font-size:12px">{{ s.latency_ms }} ms</td>
-            <td class="ip-mono" style="font-size:12px">{{ latFor(s.service) }}</td>
-            <td class="ip-mono" style="font-size:12px">{{ reqFor(s.service) }}</td>
-            <td style="color:var(--text2);font-size:12px">{{ s.detail }}</td>
+            <td class="text-muted-sm">{{ s.http || '—' }}</td>
+            <td class="ip-mono text-sm">{{ s.latency_ms }} ms</td>
+            <td class="ip-mono text-sm">{{ latFor(s.service) }}</td>
+            <td class="ip-mono text-sm">{{ reqFor(s.service) }}</td>
+            <td class="text-muted-sm">{{ s.detail }}</td>
           </tr>
         </tbody>
       </table>

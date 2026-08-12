@@ -21,31 +21,31 @@
         </thead>
         <tbody>
           <tr v-for="b in bindings" :key="b.id">
-            <td style="font-weight:600">{{ b.name }}</td>
-            <td style="color:var(--text2)">{{ templateName(b.job_template_id) }}</td>
+            <td class="fw-600">{{ b.name }}</td>
+            <td class="text-muted">{{ templateName(b.job_template_id) }}</td>
             <td>
               <template v-if="b.zabbix_triggerid">
                 <div>{{ b.zabbix_trigger_name || b.zabbix_triggerid }}</div>
                 <div style="font-family:monospace;font-size:11px;color:var(--text2)">{{ b.zabbix_triggerid }}</div>
               </template>
-              <span v-else style="color:var(--text2)">— any —</span>
+              <span class="text-muted" v-else>— any —</span>
             </td>
-            <td style="color:var(--text2)">{{ b.zabbix_host_group || '— any —' }}</td>
+            <td class="text-muted">{{ b.zabbix_host_group || '— any —' }}</td>
             <td><span class="badge badge-blue">{{ SEVERITY_LABELS[b.severity_min] ?? b.severity_min }}</span></td>
             <td style="text-align:center">{{ b.post_result_to_zabbix ? '✓' : '—' }}</td>
             <td><span :class="b.enabled ? 'badge badge-green' : 'badge badge-gray'">{{ b.enabled ? 'Enabled' : 'Disabled' }}</span></td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openRun(b)">▶ Run</button>
                 <button class="btn-pill btn-pill-outline" @click="openEdit(b)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeBinding(b)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
+                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeBinding(b)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!bindings.length && !bindingsLoading" style="padding:24px;text-align:center;color:var(--text2)">No trigger bindings yet.</div>
-      <div v-if="bindingsLoading" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell-sm" v-if="!bindings.length && !bindingsLoading">No trigger bindings yet.</div>
+      <div class="empty-cell-sm" v-if="bindingsLoading">Loading…</div>
     </div>
 
     <!-- ── Trigger Binding modal ─────────────────────────────────────────── -->
@@ -56,18 +56,18 @@
           <label class="form-label">Name</label>
           <input v-model="modal.name" class="input" placeholder="Binding name" />
 
-          <label class="form-label" style="margin-top:12px">Job Template</label>
+          <label class="form-label mt-12">Job Template</label>
           <AsyncPicker v-model="templatePick" :search-fn="searchTemplates" :multiple="false"
                        placeholder="Search job templates…" />
 
-          <label class="form-label" style="margin-top:12px">Zabbix Trigger (optional, blank = any)</label>
+          <label class="form-label mt-12">Zabbix Trigger (optional, blank = any)</label>
           <AsyncPicker v-model="triggerPick" :search-fn="searchTriggers" :multiple="false"
                        placeholder="Search triggers by name…" />
 
-          <label class="form-label" style="margin-top:12px">Zabbix Host Group filter (optional, blank = any)</label>
+          <label class="form-label mt-12">Zabbix Host Group filter (optional, blank = any)</label>
           <input v-model="modal.zabbix_host_group" class="input" placeholder="e.g. Linux servers" />
 
-          <label class="form-label" style="margin-top:12px">Minimum Severity</label>
+          <label class="form-label mt-12">Minimum Severity</label>
           <select v-model="modal.severity_min" class="input">
             <option :value="0">Not classified (0)</option>
             <option :value="1">Information (1)</option>
@@ -135,7 +135,7 @@
           </template>
           <template v-else-if="run.mode === 'default'">
             <div v-if="run.hostLoading" style="font-size:13px;color:var(--text2)">Resolving host from Zabbix…</div>
-            <div v-else-if="run.hostError" style="font-size:12px;color:var(--danger)">{{ run.hostError }}</div>
+            <div class="text-danger-sm" v-else-if="run.hostError">{{ run.hostError }}</div>
             <div v-else-if="run.resolvedHost" style="font-size:13px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius)">
               <strong>{{ run.resolvedHost.name }}</strong>
               <span style="color:var(--text2);margin-left:8px">{{ run.resolvedHost.ip }}</span>

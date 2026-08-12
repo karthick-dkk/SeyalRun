@@ -7,7 +7,7 @@
       </div>
       <div style="padding:18px">
         <p class="lede">How SeyalRun finds and talks to your Zabbix — the same URL used by the header's "Zabbix" link, host sync, and the webhook result post-back.</p>
-        <div v-if="loading" style="color:var(--text2)">Loading…</div>
+        <div class="text-muted" v-if="loading">Loading…</div>
         <template v-else>
           <div class="fp-field">
             <label class="fp-label">Zabbix Console URL <span class="hint">(the "Back to Zabbix" link)</span></label>
@@ -25,7 +25,7 @@
             <input v-model="integrationForm.zabbix_api_token" type="password" autocomplete="new-password" class="fp-input" placeholder="leave blank to keep existing" />
           </div>
           <div v-if="integrationMsg" class="save-msg" :class="integrationErr ? 'err' : 'ok'">{{ integrationMsg }}</div>
-          <div style="margin-top:12px">
+          <div class="mt-12">
             <button class="btn btn-primary" :disabled="integrationSaving" @click="saveIntegration">{{ integrationSaving ? 'Saving…' : 'Save' }}</button>
           </div>
         </template>
@@ -39,7 +39,7 @@
       </div>
       <div style="padding:18px">
         <p class="lede">Changes apply immediately across every SeyalRun user — no restart, no redeploy.</p>
-        <div v-if="loading" style="color:var(--text2)">Loading…</div>
+        <div class="text-muted" v-if="loading">Loading…</div>
         <template v-else>
           <div class="fp-grid">
             <div class="fp-field">
@@ -71,7 +71,7 @@
             </div>
           </div>
           <div v-if="platformMsg" class="save-msg" :class="platformErr ? 'err' : 'ok'">{{ platformMsg }}</div>
-          <div style="margin-top:12px">
+          <div class="mt-12">
             <button class="btn btn-primary" :disabled="platformSaving" @click="savePlatform">{{ platformSaving ? 'Saving…' : 'Save' }}</button>
           </div>
         </template>
@@ -87,13 +87,13 @@
           only turns the integration on/off and grants a higher request allowance to the Zabbix
           server's own signed calls, not to end users browsing the embedded pages.
         </p>
-        <div v-if="loading" style="color:var(--text2)">Loading…</div>
+        <div class="text-muted" v-if="loading">Loading…</div>
         <template v-else>
           <label class="toggle-row">
             <input type="checkbox" v-model="moduleForm.enabled" />
             Show the SeyalRun menu inside Zabbix
           </label>
-          <div class="fp-field" style="margin-top:12px">
+          <div class="fp-field mt-12">
             <label class="fp-label">Requests allowed for the Zabbix server itself</label>
             <input v-model.number="moduleForm.elevated_rate_limit" type="number" min="10" class="fp-input" />
           </div>
@@ -102,7 +102,7 @@
             <input v-model="moduleTrustedIpsText" class="fp-input" placeholder="10.20.0.5, 10.20.0.6" />
           </div>
           <div v-if="moduleMsg" class="save-msg" :class="moduleErr ? 'err' : 'ok'">{{ moduleMsg }}</div>
-          <div style="margin-top:12px">
+          <div class="mt-12">
             <button class="btn btn-primary" :disabled="moduleSaving" @click="saveModule">{{ moduleSaving ? 'Saving…' : 'Save' }}</button>
           </div>
         </template>

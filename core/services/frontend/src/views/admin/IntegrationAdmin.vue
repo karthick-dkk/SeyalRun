@@ -6,13 +6,13 @@
         <button class="btn btn-sm" @click="load">Refresh</button>
       </div>
       <div style="padding:18px">
-        <div v-if="loading" style="color:var(--text2)">Loading…</div>
+        <div class="text-muted" v-if="loading">Loading…</div>
         <template v-else>
           <div class="int-grid">
             <div class="int-row">
               <span class="int-k">Zabbix URL</span>
               <a v-if="info.zabbix_url" :href="info.zabbix_url" target="_blank" class="int-link">{{ info.zabbix_url }}</a>
-              <span v-else style="color:var(--text2)">— not set</span>
+              <span class="text-muted" v-else>— not set</span>
             </div>
             <div class="int-row">
               <span class="int-k">API endpoint</span>
@@ -61,7 +61,7 @@
           <input v-model="form.zabbix_api_token" type="password" autocomplete="new-password" class="fp-input" placeholder="leave blank to keep existing" />
         </div>
         <div v-if="saveMsg" class="save-msg" :class="saveErr ? 'err' : 'ok'">{{ saveMsg }}</div>
-        <div style="margin-top:12px">
+        <div class="mt-12">
           <button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</button>
         </div>
       </div>

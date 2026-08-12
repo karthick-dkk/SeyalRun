@@ -12,23 +12,23 @@
         </thead>
         <tbody>
           <tr v-for="z in zones" :key="z.id">
-            <td style="font-weight:600"><span class="zone-badge"><span class="zone-badge-icon">⊕</span>{{ z.name }}</span></td>
-            <td style="color:var(--text2);font-size:12px">{{ zoneName(z.parent_zone_id) }}</td>
-            <td style="color:var(--text2)">{{ z.description || '—' }}</td>
-            <td style="color:var(--text2);font-size:12px">{{ gatewayCount(z.id) }}</td>
-            <td style="color:var(--text2);font-size:12px">{{ formatDate(z.created_at) }}</td>
+            <td class="fw-600"><span class="zone-badge"><span class="zone-badge-icon">⊕</span>{{ z.name }}</span></td>
+            <td class="text-muted-sm">{{ zoneName(z.parent_zone_id) }}</td>
+            <td class="text-muted">{{ z.description || '—' }}</td>
+            <td class="text-muted-sm">{{ gatewayCount(z.id) }}</td>
+            <td class="text-muted-sm">{{ formatDate(z.created_at) }}</td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openCreateGateway(z.id)">+ Gateway</button>
                 <button class="btn-pill btn-pill-outline" @click="openEditZone(z)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeZone(z)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
+                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeZone(z)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!zones.length && !loading" style="padding:32px;text-align:center;color:var(--text2)">No zones yet.</div>
-      <div v-if="loading" style="padding:32px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell" v-if="!zones.length && !loading">No zones yet.</div>
+      <div class="empty-cell" v-if="loading">Loading…</div>
     </div>
 
     <!-- ── Gateways (shown by default, below zones) ───────────────────────── -->
@@ -43,32 +43,32 @@
         </thead>
         <tbody>
           <tr v-for="g in allGateways" :key="g.id">
-            <td style="font-weight:600">{{ g.name }}</td>
+            <td class="fw-600">{{ g.name }}</td>
             <td><span class="zone-badge"><span class="zone-badge-icon">⊕</span>{{ g.zone_name }}</span></td>
             <td><span class="ip-mono">{{ g.host }}</span></td>
             <td>{{ g.port }}</td>
             <td>{{ g.username || '—' }}</td>
-            <td style="color:var(--text2);font-size:12px">{{ credentialName(g.credential_id) }}</td>
+            <td class="text-muted-sm">{{ credentialName(g.credential_id) }}</td>
             <td>
               <span v-if="testResults[g.id]?.status === 'testing'" class="gw-health gw-health--testing">Testing…</span>
               <span v-else-if="testResults[g.id]?.status === 'ok'" class="gw-health gw-health--ok">● Reachable · {{ testResults[g.id].latency }}ms</span>
               <span v-else-if="testResults[g.id]?.status === 'fail'" class="gw-health gw-health--fail" :title="testResults[g.id].error">● Unreachable</span>
-              <span v-else style="color:var(--text2);font-size:12px">—</span>
+              <span class="text-muted-sm" v-else>—</span>
             </td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" :disabled="testResults[g.id]?.status === 'testing'" @click="testGateway(g)">⚡ Test</button>
                 <button class="btn-pill btn-pill-outline" @click="openEditGateway(g)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeGateway(g)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
+                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeGateway(g)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!allGateways.length && !loadingGateways" style="padding:32px;text-align:center;color:var(--text2)">
+      <div class="empty-cell" v-if="!allGateways.length && !loadingGateways">
         {{ zones.length ? 'No gateways yet — add one with “+ Gateway”.' : 'Create a zone first, then add gateways.' }}
       </div>
-      <div v-if="loadingGateways" style="padding:32px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell" v-if="loadingGateways">Loading…</div>
     </div>
 
     <!-- ── Create / Edit Zone ─────────────────────────────────────────────── -->
@@ -79,13 +79,13 @@
           <div class="form-group"><label class="form-label">Name</label><input v-model="zoneForm.name" class="input" placeholder="e.g. dc-east" /></div>
           <div class="form-group"><label class="form-label">Description</label><input v-model="zoneForm.description" class="input" placeholder="Optional description" /></div>
           <div class="form-group">
-            <label class="form-label">Parent Zone <span style="color:var(--text2);font-weight:400">(optional — for multi-hop ProxyJump chains)</span></label>
+            <label class="form-label">Parent Zone <span class="text-muted-normal">(optional — for multi-hop ProxyJump chains)</span></label>
             <select v-model="zoneForm.parent_zone_id" class="input">
               <option value="">— No Parent (direct) —</option>
               <option v-for="z in parentZoneOptions" :key="z.id" :value="z.id">{{ z.name }}</option>
             </select>
           </div>
-          <div v-if="zoneError" style="color:var(--danger);font-size:12px">{{ zoneError }}</div>
+          <div class="text-danger-sm" v-if="zoneError">{{ zoneError }}</div>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="closeZoneModal">Cancel</button>
@@ -116,7 +116,7 @@
           <!-- Credential — pick existing or create inline (same as Assets) -->
           <div class="section-head">
             <label class="form-label" style="margin-bottom:0">SSH Credential</label>
-            <button class="btn-pill" :class="newCred.show ? 'btn-pill-active' : 'btn-pill-outline'" style="font-size:11px" @click="newCred.show ? resetNewCred() : (newCred.show = true)">{{ newCred.show ? '✕ Cancel' : '+ New Credential' }}</button>
+            <button class="btn-pill text-xs" :class="newCred.show ? 'btn-pill-active' : 'btn-pill-outline'" @click="newCred.show ? resetNewCred() : (newCred.show = true)">{{ newCred.show ? '✕ Cancel' : '+ New Credential' }}</button>
           </div>
 
           <div v-if="newCred.show" class="inline-cred-form">
@@ -128,10 +128,10 @@
             </div>
             <template v-if="newCred.secret_type === 'ssh_key'">
               <div class="form-group"><label class="form-label">Private Key</label><textarea v-model="newCred.private_key" class="input" rows="4" style="font-family:var(--font-mono);font-size:11px" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea></div>
-              <div class="form-group"><label class="form-label">Passphrase <span style="color:var(--text2);font-weight:400">(optional)</span></label><input v-model="newCred.passphrase" type="password" class="input" autocomplete="new-password" /></div>
+              <div class="form-group"><label class="form-label">Passphrase <span class="text-muted-normal">(optional)</span></label><input v-model="newCred.passphrase" type="password" class="input" autocomplete="new-password" /></div>
             </template>
-            <div v-if="newCred.error" style="color:var(--danger);font-size:12px">{{ newCred.error }}</div>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
+            <div class="text-danger-sm" v-if="newCred.error">{{ newCred.error }}</div>
+            <div class="form-actions">
               <button class="btn btn-sm" @click="resetNewCred">Cancel</button>
               <button class="btn btn-sm btn-primary" :disabled="newCred.saving" @click="createInlineCred">{{ newCred.saving ? 'Creating…' : 'Create & Use' }}</button>
             </div>
@@ -144,7 +144,7 @@
             </select>
           </div>
 
-          <div v-if="gatewayError" style="color:var(--danger);font-size:12px">{{ gatewayError }}</div>
+          <div class="text-danger-sm" v-if="gatewayError">{{ gatewayError }}</div>
         </div>
         <div class="modal-footer">
           <button v-if="editingGateway" class="btn" :disabled="testResults[editingGateway.id]?.status === 'testing'" @click="testGateway(editingGateway)" style="margin-right:auto">⚡ Test</button>

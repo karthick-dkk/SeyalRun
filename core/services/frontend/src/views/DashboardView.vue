@@ -83,8 +83,8 @@
               <tr v-for="j in (m?.recent_jobs || [])" :key="j.id" style="cursor:pointer" @click="$router.push(`/jobs/${j.id}`)">
                 <td><span :class="statusBadge(j.status)">{{ j.status }}</span></td>
                 <td>{{ shortName(j.playbook) }}</td>
-                <td style="color:var(--text2)">{{ trigLabel(j.triggered_by) }}</td>
-                <td style="color:var(--text2)">{{ ago(j.ts) }}</td>
+                <td class="text-muted">{{ trigLabel(j.triggered_by) }}</td>
+                <td class="text-muted">{{ ago(j.ts) }}</td>
               </tr>
             </tbody>
           </table>

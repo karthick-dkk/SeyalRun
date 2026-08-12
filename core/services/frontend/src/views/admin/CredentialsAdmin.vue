@@ -12,37 +12,37 @@
         </thead>
         <tbody>
           <tr v-for="c in credentials" :key="c.id" :class="{ 'row-active': activeCredId === c.id }">
-            <td style="font-weight:600">{{ c.name || '—' }}</td>
+            <td class="fw-600">{{ c.name || '—' }}</td>
             <td>{{ c.username }}</td>
             <td><span class="badge badge-blue">{{ c.secret_type }}</span></td>
             <td>
               <span v-if="c.strength_score != null" class="badge" :class="strengthClass(c.strength_score)">{{ strengthLabel(c.strength_score) }}</span>
-              <span v-else style="color:var(--text2)">—</span>
+              <span class="text-muted" v-else>—</span>
             </td>
-            <td style="color:var(--text2)">{{ c.credential_scope }}</td>
+            <td class="text-muted">{{ c.credential_scope }}</td>
             <td>
               <span v-if="c.is_default" class="badge badge-green">Default</span>
               <span v-if="c.is_push_account" class="badge badge-orange" title="Push account for its linked hosts">Push</span>
               <span v-if="c.is_sudo" class="badge badge-blue" title="May escalate via sudo">sudo</span>
-              <span v-if="!c.is_default && !c.is_push_account && !c.is_sudo" style="color:var(--text2)">—</span>
+              <span class="text-muted" v-if="!c.is_default && !c.is_push_account && !c.is_sudo">—</span>
             </td>
             <td>
               <span v-if="c.host_ids?.length" class="badge badge-gray">{{ c.host_ids.length }} host{{ c.host_ids.length > 1 ? 's' : '' }}</span>
-              <span v-else style="color:var(--text2)">—</span>
+              <span class="text-muted" v-else>—</span>
             </td>
             <td>
               <div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">
                 <button class="btn-pill btn-pill-outline" @click="openReveal(c)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg> View</button>
                 <button class="btn-pill btn-pill-outline" @click="openRotation(c)">↻ Rotate</button>
                 <button class="btn-pill btn-pill-outline" @click="openEditCred(c)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeCred(c)">&#128465; Delete</button>
+                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeCred(c)">&#128465; Delete</button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!credentials.length && !loading" style="padding:32px;text-align:center;color:var(--text2)">No credentials yet.</div>
-      <div v-if="loading" style="padding:32px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell" v-if="!credentials.length && !loading">No credentials yet.</div>
+      <div class="empty-cell" v-if="loading">Loading…</div>
     </div>
 
     <!-- Templates card -->
@@ -57,26 +57,26 @@
         </thead>
         <tbody>
           <tr v-for="t in templates" :key="t.id" :class="{ 'row-active': activeTemplateId === t.id }">
-            <td style="font-weight:600">{{ t.name }}</td>
+            <td class="fw-600">{{ t.name }}</td>
             <td><span class="badge badge-blue">{{ t.secret_type }}</span></td>
-            <td style="color:var(--text2)">{{ t.default_username || '—' }}</td>
+            <td class="text-muted">{{ t.default_username || '—' }}</td>
             <td>
               <span v-if="t.push_enabled" class="badge badge-green">Enabled</span>
-              <span v-else style="color:var(--text2)">—</span>
+              <span class="text-muted" v-else>—</span>
             </td>
-            <td style="color:var(--text2)">{{ t.rotation_days ?? '—' }}</td>
-            <td style="color:var(--text2);font-size:12px">{{ t.description || '—' }}</td>
+            <td class="text-muted">{{ t.rotation_days ?? '—' }}</td>
+            <td class="text-muted-sm">{{ t.description || '—' }}</td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openEditTemplate(t)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeTemplate(t)">&#128465; Delete</button>
+                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeTemplate(t)">&#128465; Delete</button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!templates.length && !loadingTemplates" style="padding:32px;text-align:center;color:var(--text2)">No credential templates yet.</div>
-      <div v-if="loadingTemplates" style="padding:32px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell" v-if="!templates.length && !loadingTemplates">No credential templates yet.</div>
+      <div class="empty-cell" v-if="loadingTemplates">Loading…</div>
     </div>
 
     <!-- ── Credential panel ──────────────────────────────────────────────── -->
@@ -157,13 +157,13 @@
         <div class="fp-field">
           <label class="fp-checkbox">
             <input type="checkbox" v-model="credForm.is_sudo" />
-            <span class="fp-checkbox-label">Sudo enabled <span style="color:var(--text2);font-weight:400">— may escalate (runs privileged commands via sudo)</span></span>
+            <span class="fp-checkbox-label">Sudo enabled <span class="text-muted-normal">— may escalate (runs privileged commands via sudo)</span></span>
           </label>
         </div>
         <div class="fp-field">
           <label class="fp-checkbox">
             <input type="checkbox" v-model="credForm.is_push_account" />
-            <span class="fp-checkbox-label">Push account <span style="color:var(--text2);font-weight:400">— use this account to create/manage users on its linked hosts</span></span>
+            <span class="fp-checkbox-label">Push account <span class="text-muted-normal">— use this account to create/manage users on its linked hosts</span></span>
           </label>
         </div>
         <div v-if="credForm.is_push_account && !credForm.is_sudo && credForm.username !== 'root'" style="font-size:11px;color:var(--warn,#d29922);margin:-4px 0 8px">
@@ -290,8 +290,8 @@
           </label>
         </div>
         <div class="fp-field" style="flex-direction:row;gap:16px">
-          <div><div class="fp-label">Last rotated</div><div style="font-size:12px">{{ fmtDate(rotation.policy?.last_rotated_at) }}</div></div>
-          <div><div class="fp-label">Next due</div><div style="font-size:12px">{{ fmtDate(rotation.policy?.next_rotation_due) }}</div></div>
+          <div><div class="fp-label">Last rotated</div><div class="text-sm">{{ fmtDate(rotation.policy?.last_rotated_at) }}</div></div>
+          <div><div class="fp-label">Next due</div><div class="text-sm">{{ fmtDate(rotation.policy?.next_rotation_due) }}</div></div>
         </div>
         <button class="btn btn-sm" :disabled="rotation.savingPolicy" @click="saveRotationPolicy">{{ rotation.savingPolicy ? 'Saving…' : 'Save Policy' }}</button>
 
@@ -303,10 +303,10 @@
         <div v-if="rotation.history.length" class="rot-history">
           <div v-for="h in rotation.history.slice(0,5)" :key="h.id" class="rot-history-row">
             <span>{{ fmtDate(h.rotated_at) }}</span>
-            <span style="color:var(--text2)">{{ h.rotated_by ? 'by user' : 'system' }}</span>
+            <span class="text-muted">{{ h.rotated_by ? 'by user' : 'system' }}</span>
           </div>
         </div>
-        <div v-else style="font-size:12px;color:var(--text2)">No rotations recorded yet.</div>
+        <div class="text-muted-sm" v-else>No rotations recorded yet.</div>
 
         <div v-if="rotation.error" class="fp-error">{{ rotation.error }}</div>
       </div>
