@@ -57,11 +57,13 @@ jobs:
         with:
           context: ./core
           file: ./core/services/${{ matrix.service }}/Dockerfile
-          # frontend is amd64-only: its build runs a Vite/esbuild compile inside
-          # the image, and esbuild's native binary hits an illegal instruction
-          # under QEMU's arm64 emulation (SIGILL, "uncaught target signal 4").
-          # It's a static nginx-served bundle, not arch-sensitive at runtime.
-          platforms: ${{ matrix.service == 'frontend' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          # Every service is multi-arch, frontend included. Its Dockerfile pins
+          # the Vite/esbuild compile to $BUILDPLATFORM so it runs natively
+          # instead of under QEMU arm64 (where esbuild dies with SIGILL); only
+          # the nginx runtime layer is cross-built, and the bundle it serves is
+          # static. Publishing frontend as amd64-only made the whole release
+          # undeployable on ARM64 hosts even though the other ten images were fine.
+          platforms: linux/amd64,linux/arm64
           # Only the frontend reads this (baked into the Vite bundle as VITE_APP_VERSION
           # for the sidebar's release-version display) — harmless no-op build-arg for
           # every other service's Dockerfile, which doesn't declare ARG APP_VERSION.
