@@ -246,7 +246,7 @@
                       <button class="btn btn-sm" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('account_push','Create / push')">＋ Create</button>
                       <button class="btn btn-sm" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('rotate_secret','Rotate secret for')">↻ Rotate</button>
                       <button class="btn btn-sm" style="color:#e3b341" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('disable_account','Disable', true)">⏸ Disable</button>
-                      <button class="btn btn-sm" style="color:var(--danger)" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('remove_account','Remove', true)">🗑 Remove</button>
+                      <button class="btn btn-sm" style="color:var(--danger)" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('remove_account','Remove', true)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Remove</button>
                     </div>
                     <div class="hint-line">Runs against <b>{{ editingAsset.name }}</b>, connecting with a credential linked to this host as the privileged login.</div>
                     <div v-if="pushForm.error" class="err">{{ pushForm.error }}</div>
@@ -461,8 +461,8 @@
               <div style="display:flex;gap:8px">
                 <button class="btn btn-sm" @click="connectSSH(hdlg.host)" :disabled="!hdlg.host?.enabled">⌗ SSH</button>
                 <button v-if="auth.isAdminOrSupport" class="btn btn-sm" @click="editFromDetail">✎ Edit host</button>
-                <button v-if="auth.isAdminOrSupport && !hdlg.host?.zabbix_hostid" class="btn btn-sm" style="color:var(--danger)" @click="deleteAsset(hdlg.host); closeHostDetail()">🗑 Delete</button>
-                <span v-else-if="auth.isAdminOrSupport" class="btn btn-sm" style="opacity:0.4;cursor:not-allowed" title="Zabbix-synced hosts can't be deleted here — remove in Zabbix and re-sync">🗑 Delete</span>
+                <button v-if="auth.isAdminOrSupport && !hdlg.host?.zabbix_hostid" class="btn btn-sm" style="color:var(--danger)" @click="deleteAsset(hdlg.host); closeHostDetail()"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
+                <span v-else-if="auth.isAdminOrSupport" class="btn btn-sm" style="opacity:0.4;cursor:not-allowed" title="Zabbix-synced hosts can't be deleted here — remove in Zabbix and re-sync"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</span>
               </div>
             </div>
 

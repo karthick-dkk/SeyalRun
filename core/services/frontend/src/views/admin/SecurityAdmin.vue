@@ -19,7 +19,7 @@
             <td>
               <div style="display:flex;gap:8px;justify-content:flex-end">
                 <button class="btn-pill btn-pill-outline" @click="openEditGroup(g)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeGroup(g)">🗑</button>
+                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeGroup(g)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
@@ -68,7 +68,7 @@
             <td>
               <div style="display:flex;gap:8px;justify-content:flex-end">
                 <button class="btn-pill btn-pill-outline" @click="openEditFilter(f)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeFilter(f)">🗑</button>
+                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeFilter(f)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
@@ -114,7 +114,7 @@
             <td>
               <div style="display:flex;gap:8px;justify-content:flex-end">
                 <button class="btn-pill btn-pill-outline" @click="openEditAcl(a)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeAcl(a)">🗑</button>
+                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeAcl(a)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
@@ -148,7 +148,7 @@
             </td>
             <td>
               <div style="display:flex;justify-content:flex-end">
-                <button v-if="!t.revoked_at" class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="revokeToken(t)">🗑 Revoke</button>
+                <button v-if="!t.revoked_at" class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="revokeToken(t)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Revoke</button>
               </div>
             </td>
           </tr>

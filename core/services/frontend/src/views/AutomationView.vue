@@ -96,7 +96,7 @@
                     <button class="btn-pill btn-pill-outline" style="font-size:11px" :disabled="!t.enabled" @click="openRunModal(t)">▶ Run</button>
                     <template v-if="auth.isAdminOrSupport">
                       <button class="btn-pill btn-pill-outline" style="font-size:11px" @click="openEdit(t)">✎</button>
-                      <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)">🗑</button>
+                      <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
                     </template>
                   </div>
                 </td>
@@ -136,7 +136,7 @@
               <button class="btn btn-primary btn-sm" :disabled="!t.enabled" @click="openRunModal(t)">▶ Run</button>
               <template v-if="auth.isAdminOrSupport">
                 <button class="btn btn-sm" @click="openEdit(t)">✎ Edit</button>
-                <button class="btn btn-sm" style="color:var(--danger)" @click="deleteTemplate(t)">🗑</button>
+                <button class="btn btn-sm" style="color:var(--danger)" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </template>
             </div>
           </div>
@@ -171,7 +171,7 @@
                 <div style="display:flex;gap:8px;justify-content:flex-end">
                   <button class="btn-pill btn-pill-outline" style="font-size:11px" @click="openRunModal(t)" :disabled="!t.enabled">▶ Run</button>
                   <button class="btn-pill btn-pill-outline" style="font-size:11px" @click="openEditRaw(t)">✎</button>
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)">🗑</button>
+                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
                 </div>
               </td>
             </tr>
@@ -205,7 +205,7 @@
               <td>
                 <div style="display:flex;gap:8px;justify-content:flex-end">
                   <button class="btn-pill btn-pill-outline" style="font-size:11px" @click="openEditSchedule(s)">✎ Edit</button>
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteSchedule(s)">🗑 Delete</button>
+                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteSchedule(s)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
                 </div>
               </td>
             </tr>
