@@ -78,7 +78,7 @@
             <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Roles</div>
             <div style="margin-bottom:14px">
               <span v-for="r in (auth.user?.roles || [])" :key="r" class="badge badge-blue" style="margin-right:4px">{{ r }}</span>
-              <span v-if="!(auth.user?.roles || []).length" style="color:var(--text2);font-size:12px">—</span>
+              <span class="text-muted-sm" v-if="!(auth.user?.roles || []).length">—</span>
             </div>
             <button class="btn btn-primary" style="width:100%;justify-content:center" :disabled="loading" @click="doFinishWizard">{{ loading ? 'Finishing…' : 'Get Started' }}</button>
           </template>

@@ -3,7 +3,7 @@
     <div class="card">
       <div class="card-header">Run remediation from Zabbix</div>
       <div style="padding:20px">
-        <div v-if="loading" style="color:var(--text2)">Resolving problem…</div>
+        <div class="text-muted" v-if="loading">Resolving problem…</div>
 
         <template v-else>
           <div class="zr-row"><span class="zr-k">Host</span><span class="zr-v">{{ host?.name || zbxHost || '—' }}</span></div>

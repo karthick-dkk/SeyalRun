@@ -68,8 +68,12 @@ jobs:
           build-args: |
             APP_VERSION=${{ steps.ver.outputs.version }}
           push: true
+          # :latest only follows a stable release. A pre-release tag
+          # (v2.0.0-beta, -rc1, …) publishes its own version tag and leaves
+          # :latest pointing at the last stable one — otherwise every default
+          # `docker pull` silently moves to pre-release code.
           tags: |
             ${{ env.DOCKERHUB_NAMESPACE }}/seyalrun-${{ matrix.service }}:${{ steps.ver.outputs.version }}
-            ${{ env.DOCKERHUB_NAMESPACE }}/seyalrun-${{ matrix.service }}:latest
+            ${{ !contains(steps.ver.outputs.version, '-') && format('{0}/seyalrun-{1}:latest', env.DOCKERHUB_NAMESPACE, matrix.service) || '' }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}

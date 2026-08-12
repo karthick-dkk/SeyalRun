@@ -12,7 +12,7 @@
         <tbody>
           <tr v-for="j in jobs" :key="j.job_key">
             <td>
-              <div style="font-weight:600">{{ j.display_name }}</div>
+              <div class="fw-600">{{ j.display_name }}</div>
               <div style="font-size:11px;color:var(--text2)">{{ j.description }}</div>
             </td>
             <td>
@@ -24,14 +24,14 @@
                 :title="j.cron_override ? 'Override (default: ' + j.cron_expression + ')' : 'Default schedule'"
               />
             </td>
-            <td style="font-size:12px;color:var(--text2)">{{ fmtDate(j.last_run_at) }}</td>
+            <td class="text-muted-sm">{{ fmtDate(j.last_run_at) }}</td>
             <td>
               <span v-if="j.last_run_status === 'success'" class="badge badge-green">OK</span>
               <span v-else-if="j.last_run_status === 'error'" class="badge badge-red" :title="j.last_run_error">Error</span>
               <span v-else-if="j.last_run_status === 'running'" class="badge badge-yellow">Running</span>
-              <span v-else style="color:var(--text2)">—</span>
+              <span class="text-muted" v-else>—</span>
             </td>
-            <td style="font-size:12px;color:var(--text2)">{{ fmtDate(j.next_run_at) }}</td>
+            <td class="text-muted-sm">{{ fmtDate(j.next_run_at) }}</td>
             <td>
               <label class="hk-switch">
                 <input type="checkbox" :checked="j.enabled" @change="toggle(j)" />
@@ -48,8 +48,8 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="!jobs.length && !loading" style="padding:32px;text-align:center;color:var(--text2)">No housekeeping jobs.</div>
-      <div v-if="loading" style="padding:32px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell" v-if="!jobs.length && !loading">No housekeeping jobs.</div>
+      <div class="empty-cell" v-if="loading">Loading…</div>
     </div>
     <div v-if="error" style="color:var(--danger);font-size:12px;margin-top:8px">{{ error }}</div>
   </div>

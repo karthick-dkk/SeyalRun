@@ -5,7 +5,7 @@
         Authorizations
         <div style="display:flex;align-items:center;gap:10px">
           <span v-if="selectedIds.size" class="bulk-sel-badge">{{ selectedIds.size }} selected</span>
-          <button v-if="selectedIds.size" class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" @click="bulkDelete">Delete Selected</button>
+          <button v-if="selectedIds.size" class="btn btn-sm btn-danger-outline" @click="bulkDelete">Delete Selected</button>
           <button class="btn btn-primary btn-sm" @click="openCreate" :disabled="!!expandedId">+ Authorization</button>
         </div>
       </div>
@@ -138,15 +138,15 @@
               <td>
                 <input type="checkbox" :checked="selectedIds.has(a.id)" @change="toggleRow(a.id)" style="accent-color:#58a6ff;cursor:pointer" />
               </td>
-              <td style="font-weight:600">{{ a.name }}</td>
+              <td class="fw-600">{{ a.name }}</td>
               <td>
                 <template v-if="principalsOf(a).type === 'user'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px">👤 {{ userName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(id) }}</span>
                 </template>
                 <template v-else-if="principalsOf(a).type === 'user_group'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px">👥 {{ userGroupName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(id) }}</span>
                 </template>
-                <span v-else style="color:var(--text2)">—</span>
+                <span class="text-muted" v-else>—</span>
               </td>
               <td>
                 <template v-if="targetsOf(a).type === 'host'">
@@ -155,16 +155,16 @@
                 <template v-else-if="targetsOf(a).type === 'host_group'">
                   <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray" style="margin:1px">&#128193; {{ hostGroupName(id) }}</span>
                 </template>
-                <span v-else style="color:var(--text2)">—</span>
+                <span class="text-muted" v-else>—</span>
               </td>
-              <td style="font-size:12px">
+              <td class="text-sm">
                 <template v-if="credsOf(a).length">
                   <span v-for="id in credsOf(a)" :key="id" class="badge badge-gray" style="margin:1px">{{ credentialName(id) }}</span>
                 </template>
-                <span v-else style="color:var(--text2)">any</span>
+                <span class="text-muted" v-else>any</span>
               </td>
-              <td style="font-size:12px">{{ (a.actions||[]).join(', ') }}</td>
-              <td style="font-size:12px;color:var(--text2)">
+              <td class="text-sm">{{ (a.actions||[]).join(', ') }}</td>
+              <td class="text-muted-sm">
                 <div v-if="a.date_start">From {{ formatDate(a.date_start) }}</div>
                 <div v-if="a.date_expired">Until {{ formatDate(a.date_expired) }}</div>
                 <div v-if="!a.date_start && !a.date_expired">Always</div>
@@ -177,7 +177,7 @@
                 <span v-else class="badge badge-gray">{{ a.status || (a.enabled ? 'Active' : 'Disabled') }}</span>
               </td>
               <td>
-                <div style="display:flex;gap:8px;justify-content:flex-end">
+                <div class="form-actions">
                   <template v-if="a.status === 'pending_approval'">
                     <button
                       class="btn-pill btn-pill-outline" style="color:var(--accent2);border-color:var(--accent2)"
@@ -185,10 +185,10 @@
                       :title="a.requested_by === auth.user?.id ? 'You requested this — a different admin must approve it' : ''"
                       @click="approve(a)"
                     >✓ Approve</button>
-                    <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" :disabled="!!expandedId" @click="reject(a)">✕ Reject</button>
+                    <button class="btn-pill btn-pill-outline btn-danger-outline" :disabled="!!expandedId" @click="reject(a)">✕ Reject</button>
                   </template>
                   <button class="btn-pill btn-pill-outline" :disabled="!!expandedId" @click="openEdit(a)">✎ Edit</button>
-                  <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" :disabled="!!expandedId" @click="remove(a)">✕</button>
+                  <button class="btn-pill btn-pill-outline btn-danger-outline" :disabled="!!expandedId" @click="remove(a)">✕</button>
                 </div>
               </td>
             </tr>
@@ -295,8 +295,8 @@
           </template>
         </tbody>
       </table>
-      <div v-if="!authorizations.length && !loading && expandedId !== '__new__'" style="padding:32px;text-align:center;color:var(--text2)">No authorizations yet.</div>
-      <div v-if="loading" style="padding:32px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell" v-if="!authorizations.length && !loading && expandedId !== '__new__'">No authorizations yet.</div>
+      <div class="empty-cell" v-if="loading">Loading…</div>
     </div>
   </div>
 </template>

@@ -30,19 +30,19 @@
       <!-- ── Tabs ──────────────────────────────────────────────────────────── -->
       <div v-if="serviceAvailable" class="auto-tabs">
         <button :class="['auto-tab', { active: autoTab === 'playbooks' }]" @click="autoTab = 'playbooks'">
-          <span>📜</span> Playbooks &amp; Scripts
+          <span class="auto-tab-icon" v-html="TAB_ICONS.playbooks"></span> Playbooks &amp; Scripts
           <span v-if="playbookTemplates.length" class="tab-badge">{{ playbookTemplates.length }}</span>
         </button>
         <button v-if="auth.isAdminOrSupport" :class="['auto-tab', { active: autoTab === 'templates' }]" @click="autoTab = 'templates'">
-          <span>⚙</span> All Templates
+          <span class="auto-tab-icon" v-html="TAB_ICONS.templates"></span> All Templates
           <span v-if="allTemplates.length" class="tab-badge">{{ allTemplates.length }}</span>
         </button>
         <button v-if="auth.isAdminOrSupport" :class="['auto-tab', { active: autoTab === 'schedules' }]" @click="autoTab = 'schedules'">
-          <span>📅</span> Schedules
+          <span class="auto-tab-icon" v-html="TAB_ICONS.schedules"></span> Schedules
           <span v-if="schedules.length" class="tab-badge">{{ schedules.length }}</span>
         </button>
         <button :class="['auto-tab', { active: autoTab === 'runs' }]" @click="autoTab = 'runs'; loadRuns()">
-          <span>▦</span> Recent Runs
+          <span class="auto-tab-icon" v-html="TAB_ICONS.runs"></span> Recent Runs
         </button>
       </div>
 
@@ -66,7 +66,7 @@
         </div>
 
         <div v-if="!playbookTemplates.length" class="cards-empty">
-          <div style="font-size:28px;margin-bottom:10px">📜</div>
+          <div style="font-size:28px;margin-bottom:10px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H17a2 2 0 0 1 2 2v12.5a2.5 2.5 0 0 1-2.5 2.5H7a3 3 0 0 1-3-3z"/><path d="M8 7.5h7M8 11h7M8 14.5h4"/></svg></div>
           <div>No playbooks or scripts yet.</div>
           <div v-if="auth.isAdminOrSupport" style="margin-top:8px"><button class="btn btn-primary" @click="openCreate">+ Create your first template</button></div>
         </div>
@@ -82,21 +82,21 @@
             </thead>
             <tbody>
               <tr v-for="t in filteredPlaybookTemplates" :key="t.id">
-                <td style="font-weight:600"><span class="row-type-icon" v-html="actionTypeIcon(t.action_type)" /> {{ t.name }}
+                <td><span class="row-type-icon fw-600" v-html="actionTypeIcon(t.action_type)" /> {{ t.name }}
                   <span v-if="t.default_params?.use_sudo" class="badge badge-orange" style="font-size:9px;margin-left:4px">sudo</span>
                   <span v-if="t.quick_action" class="badge badge-blue" style="font-size:9px;margin-left:4px">Quick Action</span>
                 </td>
                 <td><span class="badge" :class="actionTypeBadgeClass(t.action_type)" style="font-size:10px">{{ actionTypeLabel(t.action_type) }}</span></td>
                 <td style="color:var(--text2);font-size:13px">{{ projectName(t.project_id) || '—' }}</td>
-                <td style="color:var(--text2);font-size:12px">{{ t.script_content ? `${t.script_content.split('\n').length} lines` : '—' }}</td>
-                <td style="color:var(--text2);font-size:12px">{{ userName(t.created_by) || '—' }}</td>
-                <td><span v-if="t.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span v-else style="color:var(--text2);font-size:12px">Disabled</span></td>
+                <td class="text-muted-sm">{{ t.script_content ? `${t.script_content.split('\n').length} lines` : '—' }}</td>
+                <td class="text-muted-sm">{{ userName(t.created_by) || '—' }}</td>
+                <td><span v-if="t.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
                 <td>
                   <div style="display:flex;gap:6px;justify-content:flex-end">
-                    <button class="btn-pill btn-pill-outline" style="font-size:11px" :disabled="!t.enabled" @click="openRunModal(t)">▶ Run</button>
+                    <button class="btn-pill btn-pill-outline text-xs" :disabled="!t.enabled" @click="openRunModal(t)">▶ Run</button>
                     <template v-if="auth.isAdminOrSupport">
-                      <button class="btn-pill btn-pill-outline" style="font-size:11px" @click="openEdit(t)">✎</button>
-                      <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)">🗑</button>
+                      <button class="btn-pill btn-pill-outline text-xs" @click="openEdit(t)">✎</button>
+                      <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
                     </template>
                   </div>
                 </td>
@@ -124,7 +124,7 @@
             <div class="pb-details">
               <div v-if="t.script_content" class="pb-detail-row">
                 <span class="pb-detail-label">Content</span>
-                <span class="pb-detail-val" style="color:var(--text2)">{{ t.action_type === 'bash_script' ? 'Bash script' : 'Inline YAML' }} ({{ t.script_content.split('\n').length }} lines)</span>
+                <span class="pb-detail-val text-muted">{{ t.action_type === 'bash_script' ? 'Bash script' : 'Inline YAML' }} ({{ t.script_content.split('\n').length }} lines)</span>
               </div>
               <div v-if="t.default_params?.imported_from" class="pb-detail-row"><span class="pb-detail-label">Source</span><a :href="t.default_params.imported_from" target="_blank" rel="noopener" class="pb-detail-val" style="color:var(--accent2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;display:inline-block;vertical-align:bottom">{{ t.default_params.imported_from }}</a></div>
               <div v-if="t.credential_id" class="pb-detail-row"><span class="pb-detail-label">Credential</span><span class="pb-detail-val">{{ credName(t.credential_id) }}</span></div>
@@ -136,7 +136,7 @@
               <button class="btn btn-primary btn-sm" :disabled="!t.enabled" @click="openRunModal(t)">▶ Run</button>
               <template v-if="auth.isAdminOrSupport">
                 <button class="btn btn-sm" @click="openEdit(t)">✎ Edit</button>
-                <button class="btn btn-sm" style="color:var(--danger)" @click="deleteTemplate(t)">🗑</button>
+                <button class="btn btn-sm text-danger" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </template>
             </div>
           </div>
@@ -161,23 +161,23 @@
           </thead>
           <tbody>
             <tr v-for="t in allTemplates" :key="t.id">
-              <td style="font-weight:600">{{ t.name }}</td>
+              <td class="fw-600">{{ t.name }}</td>
               <td><span class="badge" :class="actionTypeBadgeClass(t.action_type)" style="font-size:10px">{{ t.action_type }}</span></td>
               <td style="color:var(--text2);font-size:13px">{{ projectName(t.project_id) || '—' }}</td>
               <td style="font-size:13px">{{ credName(t.credential_id) || '—' }}</td>
-              <td><span v-if="t.quick_action" class="badge badge-blue" style="font-size:10px">Yes</span><span v-else style="color:var(--text2);font-size:12px">—</span></td>
-              <td><span v-if="t.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span v-else style="color:var(--text2);font-size:12px">Disabled</span></td>
+              <td><span v-if="t.quick_action" class="badge badge-blue" style="font-size:10px">Yes</span><span class="text-muted-sm" v-else>—</span></td>
+              <td><span v-if="t.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
               <td>
-                <div style="display:flex;gap:8px;justify-content:flex-end">
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px" @click="openRunModal(t)" :disabled="!t.enabled">▶ Run</button>
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px" @click="openEditRaw(t)">✎</button>
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)">🗑</button>
+                <div class="form-actions">
+                  <button class="btn-pill btn-pill-outline text-xs" @click="openRunModal(t)" :disabled="!t.enabled">▶ Run</button>
+                  <button class="btn-pill btn-pill-outline text-xs" @click="openEditRaw(t)">✎</button>
+                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteTemplate(t)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
-        <div v-if="!allTemplates.length" style="padding:32px;text-align:center;color:var(--text2)">No job templates yet.</div>
+        <div class="empty-cell" v-if="!allTemplates.length">No job templates yet.</div>
       </div>
 
       <!-- ══════════════════════════════════════════════════════════════════ -->
@@ -197,21 +197,21 @@
           </thead>
           <tbody>
             <tr v-for="s in schedules" :key="s.id">
-              <td style="font-weight:600">{{ s.name }}</td>
+              <td class="fw-600">{{ s.name }}</td>
               <td style="font-size:13px">{{ templateName(s.job_template_id) || '—' }}</td>
               <td><code style="font-size:12px;color:#58a6ff">{{ s.cron_expression }}</code></td>
-              <td style="font-size:12px;color:var(--text2)">{{ s.next_run_at ? new Date(s.next_run_at).toLocaleString() : '—' }}</td>
-              <td><span v-if="s.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span v-else style="color:var(--text2);font-size:12px">Disabled</span></td>
+              <td class="text-muted-sm">{{ s.next_run_at ? new Date(s.next_run_at).toLocaleString() : '—' }}</td>
+              <td><span v-if="s.enabled" style="color:#3fb950;font-size:12px">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
               <td>
-                <div style="display:flex;gap:8px;justify-content:flex-end">
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px" @click="openEditSchedule(s)">✎ Edit</button>
-                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteSchedule(s)">🗑 Delete</button>
+                <div class="form-actions">
+                  <button class="btn-pill btn-pill-outline text-xs" @click="openEditSchedule(s)">✎ Edit</button>
+                  <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteSchedule(s)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
-        <div v-if="!schedules.length" style="padding:32px;text-align:center;color:var(--text2)">No schedules yet.</div>
+        <div class="empty-cell" v-if="!schedules.length">No schedules yet.</div>
       </div>
 
       <!-- ══════════════════════════════════════════════════════════════════ -->
@@ -236,20 +236,20 @@
           <tbody>
             <tr v-for="r in runs" :key="r.id" style="cursor:pointer" @click="$router.push(`/jobs/${r.id}`)">
               <td style="font-weight:500">{{ r.job_template_name || templateName(r.job_template_id) || '—' }}</td>
-              <td><span class="badge badge-gray" style="font-size:11px">{{ r.action_type || '—' }}</span></td>
-              <td style="font-size:12px;color:var(--text2)">{{ triggeredByLabel(r) }}</td>
-              <td style="font-size:12px;color:var(--text2)" :title="runHostsTitle(r)">{{ runHostsLabel(r) }}</td>
-              <td style="font-size:12px;color:var(--text2)">{{ runCredentialLabel(r) }}</td>
+              <td><span class="badge badge-gray text-xs">{{ r.action_type || '—' }}</span></td>
+              <td class="text-muted-sm">{{ triggeredByLabel(r) }}</td>
+              <td class="text-muted-sm" :title="runHostsTitle(r)">{{ runHostsLabel(r) }}</td>
+              <td class="text-muted-sm">{{ runCredentialLabel(r) }}</td>
               <td><span class="run-status-badge" :class="`run-status--${r.status}`">{{ r.status }}</span></td>
-              <td style="font-size:12px;color:var(--text2)">{{ r.started_at ? new Date(r.started_at).toLocaleString() : '—' }}</td>
-              <td style="font-size:12px;color:var(--text2)">{{ runDuration(r) }}</td>
+              <td class="text-muted-sm">{{ r.started_at ? new Date(r.started_at).toLocaleString() : '—' }}</td>
+              <td class="text-muted-sm">{{ runDuration(r) }}</td>
               <td>
-                <button class="btn-pill btn-pill-outline" style="font-size:11px" @click.stop="$router.push(`/jobs/${r.id}`)">View</button>
+                <button class="btn-pill btn-pill-outline text-xs" @click.stop="$router.push(`/jobs/${r.id}`)">View</button>
               </td>
             </tr>
           </tbody>
         </table>
-        <div v-if="!runs.length" style="padding:32px;text-align:center;color:var(--text2)">No recent runs.</div>
+        <div class="empty-cell" v-if="!runs.length">No recent runs.</div>
       </div>
 
     </div><!-- /page -->
@@ -267,7 +267,7 @@
         <div class="modal-body">
           <!-- Subject account: WHAT gets created / managed (account ops only) -->
           <div v-if="isAccountOp" class="form-group subject-box">
-            <label class="form-label">Account to {{ accountVerb }} <span style="color:var(--text2);font-weight:400">— the user managed on each host</span></label>
+            <label class="form-label">Account to {{ accountVerb }} <span class="text-muted-normal">— the user managed on each host</span></label>
             <select v-model="runDlg.subjectCred" class="input">
               <option value="">{{ runDlg.template?.subject_credential_id ? '— Use template default —' : 'Select an account credential…' }}</option>
               <option v-for="c in allCredentials" :key="c.id" :value="c.id">{{ c.name }}{{ c.username ? ' → user “' + c.username + '”' : '' }}</option>
@@ -279,8 +279,8 @@
           </div>
 
           <div v-if="runDlg.template?.action_type === 'chain'" class="form-group" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px">
-            <div style="font-size:13px;font-weight:600;margin-bottom:6px">🔗 {{ (runDlg.template.chain_steps || []).length }} step{{ (runDlg.template.chain_steps || []).length === 1 ? '' : 's' }}</div>
-            <div style="font-size:12px;color:var(--text2)">Each step runs against its own already-configured hosts and credential — nothing to select here.</div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7l-1.5 1.5"/><path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5"/></svg> {{ (runDlg.template.chain_steps || []).length }} step{{ (runDlg.template.chain_steps || []).length === 1 ? '' : 's' }}</div>
+            <div class="text-muted-sm">Each step runs against its own already-configured hosts and credential — nothing to select here.</div>
           </div>
           <div v-else class="run-grid">
             <!-- ── Targets column ─────────────────────────────────────────── -->
@@ -295,9 +295,9 @@
 
               <!-- Hosts: checkbox list with filter + select-all -->
               <div v-if="runDlg.targetMode === 'hosts'" class="form-group">
-                <label class="form-label">Hosts <span style="color:var(--text2);font-weight:400">(none = template defaults)</span></label>
+                <label class="form-label">Hosts <span class="text-muted-normal">(none = template defaults)</span></label>
                 <input v-model="runDlg.hostFilter" class="input" placeholder="Filter hosts…" style="margin-bottom:8px" />
-                <div v-if="!allHosts.length" style="font-size:12px;color:var(--text2)">No hosts available.</div>
+                <div class="text-muted-sm" v-if="!allHosts.length">No hosts available.</div>
                 <div v-else class="chk-list chk-list--tall">
                   <label class="chk-row chk-row--head">
                     <input type="checkbox" :checked="allFilteredSelected" @change="toggleAllHosts" />
@@ -306,7 +306,7 @@
                   </label>
                   <label v-for="h in filteredHosts" :key="h.id" class="chk-row">
                     <input type="checkbox" :value="h.id" v-model="runDlg.targetHostIds" />
-                    <span style="flex:1">{{ h.name }}</span>
+                    <span class="flex-1">{{ h.name }}</span>
                     <span style="font-size:11px;color:var(--text2)">{{ h.ip }}</span>
                   </label>
                   <div v-if="!filteredHosts.length" style="padding:10px;font-size:12px;color:var(--text2)">No hosts match “{{ runDlg.hostFilter }}”.</div>
@@ -316,11 +316,11 @@
               <!-- Host Groups: checkbox list -->
               <div v-else class="form-group">
                 <label class="form-label">Host Groups</label>
-                <div v-if="!allHostGroups.length" style="font-size:12px;color:var(--text2)">No host groups defined.</div>
+                <div class="text-muted-sm" v-if="!allHostGroups.length">No host groups defined.</div>
                 <div v-else class="chk-list chk-list--tall">
                   <label v-for="g in allHostGroups" :key="g.id" class="chk-row">
                     <input type="checkbox" :value="g.id" v-model="runDlg.targetGroups" />
-                    <span style="flex:1">{{ g.name }}</span>
+                    <span class="flex-1">{{ g.name }}</span>
                     <span style="font-size:11px;color:var(--text2)">{{ groupHostCount(g.id) }} host{{ groupHostCount(g.id) === 1 ? '' : 's' }}</span>
                   </label>
                 </div>
@@ -332,7 +332,7 @@
             <!-- ── Connection credential column (the login used to reach hosts) ── -->
             <div class="run-col">
               <div class="form-group">
-                <label class="form-label">Connection login <span style="color:var(--text2);font-weight:400">— how SeyalRun signs in (needs root/sudo)</span></label>
+                <label class="form-label">Connection login <span class="text-muted-normal">— how SeyalRun signs in (needs root/sudo)</span></label>
                 <div class="radio-row">
                   <label class="radio-opt" :class="{ active: runDlg.credMode === 'default' }"><input type="radio" v-model="runDlg.credMode" value="default" /> Default</label>
                   <label class="radio-opt" :class="{ active: runDlg.credMode === 'all' }"><input type="radio" v-model="runDlg.credMode" value="all" /> One for all</label>
@@ -345,11 +345,11 @@
               <div v-if="runDlg.credMode === 'all'" class="form-group">
                 <label class="form-label">Credential for all hosts</label>
                 <input v-if="allCredentials.length > 6" v-model="runDlg.credFilter" class="input" placeholder="Filter credentials…" style="margin-bottom:8px" />
-                <div v-if="!allCredentials.length" style="font-size:12px;color:var(--text2)">No credentials available (admin-managed).</div>
+                <div class="text-muted-sm" v-if="!allCredentials.length">No credentials available (admin-managed).</div>
                 <div v-else class="chk-list chk-list--tall">
                   <label v-for="c in filteredCreds" :key="c.id" class="chk-row">
                     <input type="checkbox" :checked="runDlg.credAll === c.id" @change="runDlg.credAll = (runDlg.credAll === c.id ? '' : c.id)" />
-                    <span style="flex:1">{{ c.name }}</span>
+                    <span class="flex-1">{{ c.name }}</span>
                     <span style="font-size:11px;color:var(--text2)">{{ c.username || '' }}</span>
                   </label>
                 </div>
@@ -358,7 +358,7 @@
               <!-- Per-host credential: checkbox toggle per host + credential picker -->
               <div v-if="runDlg.credMode === 'per_host'" class="form-group">
                 <label class="form-label">Credential per host</label>
-                <div v-if="!resolvedTargetHosts.length" style="font-size:12px;color:var(--text2)">Select targets first.</div>
+                <div class="text-muted-sm" v-if="!resolvedTargetHosts.length">Select targets first.</div>
                 <div v-else class="chk-list chk-list--tall">
                   <div v-for="h in resolvedTargetHosts" :key="h.id" class="ph-row">
                     <span class="ph-host">{{ h.name }}</span>
@@ -374,7 +374,7 @@
 
           <template v-if="runDlg.template?.action_type !== 'chain' && runDlg.template?.survey_schema?.fields?.length">
             <div v-for="f in runDlg.template.survey_schema.fields" :key="f.name" class="form-group" style="margin-top:8px">
-              <label class="form-label">{{ f.prompt || f.name }} <span style="color:var(--danger)">*</span></label>
+              <label class="form-label">{{ f.prompt || f.name }} <span class="text-danger">*</span></label>
               <select v-if="f.type === 'dropdown'" v-model="runDlg.variableValues[f.name]" class="input">
                 <option v-for="opt in (f.options || [])" :key="opt" :value="opt">{{ opt }}</option>
               </select>
@@ -384,7 +384,7 @@
             </div>
           </template>
           <div v-else-if="runDlg.template?.action_type !== 'chain'" class="form-group" style="margin-top:8px">
-            <label class="form-label">Extra Variables <span style="color:var(--text2);font-weight:400">(JSON, optional)</span></label>
+            <label class="form-label">Extra Variables <span class="text-muted-normal">(JSON, optional)</span></label>
             <textarea
               v-model="runDlg.extraVars"
               class="input code-input"
@@ -397,7 +397,7 @@
           <div v-if="runDlg.template?.action_type === 'ansible_playbook'" class="form-group" style="margin-top:8px">
             <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
               <input type="checkbox" v-model="runDlg.dryRun" style="accent-color:#58a6ff" />
-              Dry run <span style="color:var(--text2);font-weight:400">(--check --diff — simulates without applying changes)</span>
+              Dry run <span class="text-muted-normal">(--check --diff — simulates without applying changes)</span>
             </label>
           </div>
           <div v-if="runDlg.template?.survey_schema?.confirmation_enabled" class="confirm-gate">
@@ -439,17 +439,17 @@
           </div>
           <div class="inline-form-row">
             <div class="form-group" style="flex:2">
-              <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+              <label class="form-label">Name <span class="text-danger">*</span></label>
               <input v-model="editDlg.form.name" class="input" :placeholder="editDlg.form.action_type === 'bash_script' ? 'e.g. Restart nginx' : 'e.g. Deploy App Stack'" />
             </div>
-            <div class="form-group" style="flex:1">
-              <label class="form-label">Project <span style="color:var(--danger)">*</span></label>
+            <div class="form-group flex-1">
+              <label class="form-label">Project <span class="text-danger">*</span></label>
               <select v-model="editDlg.form.project_id" class="input">
                 <option value="">— Select Project —</option>
                 <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
               <div style="display:flex;gap:6px;margin-top:6px">
-                <input v-model="newProjectName" class="input" placeholder="New project name…" style="font-size:12px" @keyup.enter.prevent="createProject" />
+                <input v-model="newProjectName" class="input text-sm" placeholder="New project name…" @keyup.enter.prevent="createProject" />
                 <button class="btn btn-sm" :disabled="!newProjectName.trim() || creatingProject" @click="createProject">{{ creatingProject ? '…' : '+ Add' }}</button>
               </div>
               <div v-if="projectError" class="err">{{ projectError }}</div>
@@ -462,14 +462,14 @@
 
           <!-- ── Settings (credential / targets / sudo / quick action / status) ── -->
           <div class="inline-form-row">
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Execution Credential</label>
               <select v-model="editDlg.form.credential_id" class="input">
                 <option value="">— None —</option>
                 <option v-for="c in allCredentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.username }})</option>
               </select>
             </div>
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Default Target Hosts</label>
               <AsyncPicker v-model="editDlg.form.targetHosts" :search-fn="searchHosts" placeholder="Select default hosts…" />
             </div>
@@ -487,41 +487,41 @@
             </div>
           </div>
           <div class="inline-form-row">
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label"><input type="checkbox" v-model="editDlg.form.quick_action" style="margin-right:6px;accent-color:#58a6ff" />Quick Action button on host cards</label>
             </div>
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Status</label>
               <select v-model="editDlg.form.enabled" class="input"><option :value="true">Active</option><option :value="false">Disabled</option></select>
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">Timeout (seconds) <span style="color:var(--text2);font-weight:400">— optional, can only tighten the platform ceiling ({{ platformTimeoutCeiling }}s), never exceed it</span></label>
+            <label class="form-label">Timeout (seconds) <span class="text-muted-normal">— optional, can only tighten the platform ceiling ({{ platformTimeoutCeiling }}s), never exceed it</span></label>
             <input v-model.number="editDlg.form.timeoutSeconds" type="number" min="1" class="input" placeholder="e.g. 900 (blank = platform default)" />
           </div>
           <div class="inline-form-row">
-            <div class="form-group" style="flex:1">
-              <label class="form-label">Retry on failure <span style="color:var(--text2);font-weight:400">(0 = no retries)</span></label>
+            <div class="form-group flex-1">
+              <label class="form-label">Retry on failure <span class="text-muted-normal">(0 = no retries)</span></label>
               <input v-model.number="editDlg.form.retryCount" type="number" min="0" max="10" class="input" />
             </div>
-            <div class="form-group" style="flex:1" v-if="editDlg.form.retryCount > 0">
+            <div class="form-group flex-1" v-if="editDlg.form.retryCount > 0">
               <label class="form-label">Retry delay (seconds)</label>
               <input v-model.number="editDlg.form.retryDelaySeconds" type="number" min="1" class="input" />
             </div>
-            <div class="form-group" style="flex:1" v-if="editDlg.form.action_type === 'bash_script'">
-              <label class="form-label">Max parallel hosts <span style="color:var(--text2);font-weight:400">(1 = sequential)</span></label>
+            <div class="form-group flex-1" v-if="editDlg.form.action_type === 'bash_script'">
+              <label class="form-label">Max parallel hosts <span class="text-muted-normal">(1 = sequential)</span></label>
               <input v-model.number="editDlg.form.maxParallel" type="number" min="1" class="input" />
             </div>
-            <div class="form-group" style="flex:1" v-else>
-              <label class="form-label">Forks <span style="color:var(--text2);font-weight:400">(blank = Ansible default, 5)</span></label>
+            <div class="form-group flex-1" v-else>
+              <label class="form-label">Forks <span class="text-muted-normal">(blank = Ansible default, 5)</span></label>
               <input v-model.number="editDlg.form.forks" type="number" min="1" class="input" placeholder="5" />
             </div>
           </div>
           <div class="inline-form-row">
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label"><input type="checkbox" v-model="editDlg.form.requiresApproval" style="margin-right:6px;accent-color:#58a6ff" />Requires approval before running</label>
             </div>
-            <div class="form-group" style="flex:1" v-if="editDlg.form.requiresApproval">
+            <div class="form-group flex-1" v-if="editDlg.form.requiresApproval">
               <label class="form-label">Approver role</label>
               <select v-model="editDlg.form.approverRole" class="input">
                 <option value="admin">Admin or above</option>
@@ -543,10 +543,10 @@
                validation regex with a live tester. ─────────────────────────────────── -->
           <div class="form-group">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-              <label class="form-label" style="margin:0">Runtime Variables <span style="color:var(--text2);font-weight:400">— asked for at Run time</span></label>
+              <label class="form-label" style="margin:0">Runtime Variables <span class="text-muted-normal">— asked for at Run time</span></label>
               <button type="button" class="btn btn-sm" @click="addSurveyField">+ Add Variable</button>
             </div>
-            <div v-if="!editDlg.form.surveyFields.length" style="font-size:12px;color:var(--text2)">
+            <div class="text-muted-sm" v-if="!editDlg.form.surveyFields.length">
               None — {{ editDlg.form.action_type === 'bash_script' ? 'the script runs with the Options/Arguments above, if any.' : 'the playbook runs with no extra vars beyond what’s configured here.' }}
             </div>
             <div v-for="(f, i) in editDlg.form.surveyFields" :key="i" class="survey-field-row">
@@ -574,11 +574,11 @@
                   <input v-model="f.default" class="input" placeholder="optional" />
                 </div>
                 <div v-else class="form-group" style="flex:0 0 260px">
-                  <label class="form-label">Options <span style="color:var(--text2);font-weight:400">(comma-separated; first is the default)</span></label>
+                  <label class="form-label">Options <span class="text-muted-normal">(comma-separated; first is the default)</span></label>
                   <input v-model="f.options" class="input" placeholder="e.g. staging, production" />
                 </div>
                 <div v-if="f.type === 'string'" class="form-group" style="flex:0 0 320px">
-                  <label class="form-label">Input validation rule <span style="color:var(--text2);font-weight:400">(regex, optional)</span></label>
+                  <label class="form-label">Input validation rule <span class="text-muted-normal">(regex, optional)</span></label>
                   <div style="display:flex;gap:6px">
                     <input v-model="f.validation" class="input" placeholder="e.g. ^[0-9.]+$" />
                     <button type="button" class="btn btn-sm" @click="f._testing = !f._testing">Test user input</button>
@@ -596,7 +596,7 @@
           <div class="form-group">
             <label class="form-label"><input type="checkbox" v-model="editDlg.form.confirmationEnabled" style="margin-right:6px;accent-color:#58a6ff" />Enable confirmation</label>
             <div v-if="editDlg.form.confirmationEnabled" style="margin-top:8px;display:flex;gap:6px;align-items:flex-start">
-              <textarea v-model="editDlg.form.confirmationText" class="input" rows="2" placeholder="e.g. This restarts prod nginx — proceed?" style="flex:1"></textarea>
+              <textarea v-model="editDlg.form.confirmationText" class="input flex-1" rows="2" placeholder="e.g. This restarts prod nginx — proceed?"></textarea>
               <button type="button" class="btn btn-sm" @click="confirmTesting = !confirmTesting">Test confirmation</button>
             </div>
             <div v-if="confirmTesting && editDlg.form.confirmationEnabled" class="confirm-preview">
@@ -652,12 +652,12 @@
     <div v-if="chainDlg.visible" class="modal-overlay" @click.self="chainDlg.visible = false">
       <div class="modal modal--lg">
         <div class="modal-header">
-          <div style="font-size:15px;font-weight:700">🔗 {{ chainDlg.isEdit ? 'Edit Chain' : 'New Chain' }}</div>
+          <div style="font-size:15px;font-weight:700"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7l-1.5 1.5"/><path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5"/></svg> {{ chainDlg.isEdit ? 'Edit Chain' : 'New Chain' }}</div>
           <button class="btn btn-sm btn-icon" @click="chainDlg.visible = false">✕</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+            <label class="form-label">Name <span class="text-danger">*</span></label>
             <input v-model="chainDlg.form.name" class="input" placeholder="e.g. Provision + Configure + Verify" />
           </div>
           <div class="form-group">
@@ -665,20 +665,20 @@
             <input v-model="chainDlg.form.description" class="input" placeholder="What this chain does, optional" />
           </div>
           <div class="form-group">
-            <label class="form-label">Project <span style="color:var(--danger)">*</span></label>
+            <label class="form-label">Project <span class="text-danger">*</span></label>
             <select v-model="chainDlg.form.project_id" class="input">
               <option value="">— Select Project —</option>
               <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
             <div style="display:flex;gap:6px;margin-top:6px">
-              <input v-model="newProjectName" class="input" placeholder="New project name…" style="font-size:12px" @keyup.enter.prevent="createProject" />
+              <input v-model="newProjectName" class="input text-sm" placeholder="New project name…" @keyup.enter.prevent="createProject" />
               <button class="btn btn-sm" :disabled="!newProjectName.trim() || creatingProject" @click="createProject">{{ creatingProject ? '…' : '+ Add' }}</button>
             </div>
             <div v-if="projectError" class="err">{{ projectError }}</div>
           </div>
 
           <div class="form-group" style="margin-top:8px">
-            <label class="form-label">Steps <span style="color:var(--text2);font-weight:400">— runs top to bottom, each step is an existing playbook/script run with its own configured hosts &amp; credential</span></label>
+            <label class="form-label">Steps <span class="text-muted-normal">— runs top to bottom, each step is an existing playbook/script run with its own configured hosts &amp; credential</span></label>
             <div v-if="!chainDlg.form.steps.length" style="font-size:12px;color:var(--text2);padding:10px 0">No steps yet — add one below.</div>
             <div v-for="(step, i) in chainDlg.form.steps" :key="i" class="chain-step-row">
               <span class="chain-step-num">{{ i + 1 }}</span>
@@ -687,8 +687,8 @@
               <label class="chain-step-cof" title="If this step fails, keep running the remaining steps instead of stopping the chain">
                 <input type="checkbox" v-model="step.continue_on_failure" /> Continue on failure
               </label>
-              <button class="btn-pill btn-pill-outline" style="font-size:11px" :disabled="i === 0" @click="moveChainStep(i, -1)">↑</button>
-              <button class="btn-pill btn-pill-outline" style="font-size:11px" :disabled="i === chainDlg.form.steps.length - 1" @click="moveChainStep(i, 1)">↓</button>
+              <button class="btn-pill btn-pill-outline text-xs" :disabled="i === 0" @click="moveChainStep(i, -1)">↑</button>
+              <button class="btn-pill btn-pill-outline text-xs" :disabled="i === chainDlg.form.steps.length - 1" @click="moveChainStep(i, 1)">↓</button>
               <button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="chainDlg.form.steps.splice(i, 1)">✕</button>
             </div>
           </div>
@@ -739,18 +739,18 @@
         </div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
           <div class="form-group">
-            <label class="form-label">Schedule Name <span style="color:var(--danger)">*</span></label>
+            <label class="form-label">Schedule Name <span class="text-danger">*</span></label>
             <input v-model="schedDlg.form.name" class="input" placeholder="e.g. Nightly Deploy" />
           </div>
           <div class="form-group">
-            <label class="form-label">Job Template <span style="color:var(--danger)">*</span></label>
+            <label class="form-label">Job Template <span class="text-danger">*</span></label>
             <select v-model="schedDlg.form.job_template_id" class="input">
               <option value="">— Select Template —</option>
               <option v-for="t in allTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Cron Expression <span style="color:var(--danger)">*</span></label>
+            <label class="form-label">Cron Expression <span class="text-danger">*</span></label>
             <input v-model="schedDlg.form.cron_expression" class="input" placeholder="0 2 * * *" />
             <div style="font-size:12px;color:var(--text2);margin-top:4px">{{ cronHuman(schedDlg.form.cron_expression) }}</div>
           </div>
@@ -846,6 +846,16 @@ const allHostGroups  = ref<any[]>([])
 // already used by JobRunsListView/JobRunView for "triggered by" and now "created by".
 const allUsers        = ref<any[]>([])
 
+// Tab icons. Defined here rather than inline in the template because v-html
+// binds a JS expression — a raw SVG literal in the attribute is not one, and
+// the Vue compiler rejects it.
+const TAB_ICONS = {
+  playbooks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H17a2 2 0 0 1 2 2v12.5a2.5 2.5 0 0 1-2.5 2.5H7a3 3 0 0 1-3-3z"/><path d="M8 7.5h7M8 11h7M8 14.5h4"/></svg>',
+  templates: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.6v2.2M12 19.2v2.2M21.4 12h-2.2M4.8 12H2.6M18.6 5.4l-1.6 1.6M7 17l-1.6 1.6M18.6 18.6 17 17M7 7 5.4 5.4"/></svg>',
+  schedules: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/></svg>',
+  runs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18.5" cy="18" r="2.5"/></svg>',
+}
+
 // ── Playbooks & Scripts toolbar (search / project filter / view mode) ─────────
 const templateSearch      = ref('')
 const templateProjectFilter = ref('')
@@ -872,21 +882,24 @@ const userMap     = computed(() => new Map(allUsers.value.map(u => [u.id, u.user
 function projectName(id: string | null): string { return id ? (projectMap.value.get(id)?.name || id) : '' }
 function templateName(id: string | null): string { return id ? (templateMap.value.get(id)?.name || id) : '' }
 function credName(id: string | null): string { return id ? (credMap.value.get(id)?.name || id) : '' }
-function userName(id: string | null): string { return id ? (userMap.value.get(id) || id) : '' }
+function userName(id: string | null): string {
+  if (!id) return ''
+  return userMap.value.get(id) || 'deleted user'
+}
 
 function actionTypeBadgeClass(t: string): string {
   return { ansible_playbook: 'badge-green', bash_script: 'badge-blue', chain: 'badge-orange', account_push: 'badge-orange', rotate_secret: 'badge-red' }[t] || 'badge-blue'
 }
 // Ported from the standalone Jobs page (JobRunsListView.vue) when its list moved into
-// this tab — resolves the actual username instead of just showing "👤 User".
+// this tab — resolves the actual username instead of just showing a generic "User" label.
 function triggeredByLabel(run: any): string {
   if (run.triggered_by_kind === 'user' && run.triggered_by_user_id) {
-    return '👤 ' + userName(run.triggered_by_user_id)
+    return userName(run.triggered_by_user_id)
   }
   const tb = run.triggered_by || ''
-  if (tb.startsWith('schedule:')) return '📅 Schedule'
-  if (tb.startsWith('zabbix_event:')) return '🔔 Zabbix'
-  if (tb.startsWith('manual_trigger:')) return '🖱 Manual'
+  if (tb.startsWith('schedule:')) return 'Schedule'
+  if (tb.startsWith('zabbix_event:')) return 'Zabbix'
+  if (tb.startsWith('manual_trigger:')) return 'Manual'
   return tb || '—'
 }
 function runHostsLabel(run: any): string {
@@ -1555,6 +1568,8 @@ onMounted(async () => {
   display: flex; gap: 4px; margin-bottom: 20px;
   border-bottom: 2px solid var(--border); padding-bottom: 0;
 }
+.auto-tab-icon { display: inline-flex; width: 15px; height: 15px; }
+.auto-tab-icon :deep(svg) { width: 100%; height: 100%; }
 .auto-tab {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 18px; font-size: 13px; font-weight: 600;

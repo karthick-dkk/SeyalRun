@@ -12,21 +12,21 @@
         </thead>
         <tbody>
           <tr v-for="g in commandGroups" :key="g.id">
-            <td style="font-weight:600">{{ g.name }}</td>
+            <td class="fw-600">{{ g.name }}</td>
             <td><span class="badge badge-blue">{{ g.match_type }}</span></td>
-            <td style="font-size:12px;color:var(--text2)">{{ (g.patterns || []).join(', ') || '—' }}</td>
-            <td style="color:var(--text2)">{{ g.description || '—' }}</td>
+            <td class="text-muted-sm">{{ (g.patterns || []).join(', ') || '—' }}</td>
+            <td class="text-muted">{{ g.description || '—' }}</td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openEditGroup(g)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeGroup(g)">🗑</button>
+                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeGroup(g)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!commandGroups.length && !loadingGroups" style="padding:24px;text-align:center;color:var(--text2)">No command groups yet.</div>
-      <div v-if="loadingGroups" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell-sm" v-if="!commandGroups.length && !loadingGroups">No command groups yet.</div>
+      <div class="empty-cell-sm" v-if="loadingGroups">Loading…</div>
     </div>
 
     <!-- ── Command Filters ─────────────────────────────────────────────── -->
@@ -45,17 +45,17 @@
         </thead>
         <tbody>
           <tr v-for="f in commandFilters" :key="f.id">
-            <td style="font-weight:600">{{ f.name }}</td>
+            <td class="fw-600">{{ f.name }}</td>
             <td>{{ commandGroupName(f.command_group_id) }}</td>
             <td>
-              <span v-if="f.user_id" class="badge badge-blue">👤 {{ userName(f.user_id) }}</span>
-              <span v-else-if="f.user_group_id" class="badge badge-blue">👥 {{ userGroupName(f.user_group_id) }}</span>
-              <span v-else style="color:var(--text2)">Any</span>
+              <span v-if="f.user_id" class="badge badge-blue"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(f.user_id) }}</span>
+              <span v-else-if="f.user_group_id" class="badge badge-blue"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(f.user_group_id) }}</span>
+              <span class="text-muted" v-else>Any</span>
             </td>
             <td>
-              <span v-if="f.host_id" class="badge badge-gray">🖥 {{ hostName(f.host_id) }}</span>
-              <span v-else-if="f.host_group_id" class="badge badge-gray">📂 {{ hostGroupName(f.host_group_id) }}</span>
-              <span v-else style="color:var(--text2)">Any</span>
+              <span v-if="f.host_id" class="badge badge-gray"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg> {{ hostName(f.host_id) }}</span>
+              <span v-else-if="f.host_group_id" class="badge badge-gray"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h3.8l2 2.4H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> {{ hostGroupName(f.host_group_id) }}</span>
+              <span class="text-muted" v-else>Any</span>
             </td>
             <td>
               <span :class="['badge', actionBadgeClass(f.action)]">{{ f.action }}</span>
@@ -66,16 +66,16 @@
               <span v-else class="badge badge-gray">Disabled</span>
             </td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openEditFilter(f)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeFilter(f)">🗑</button>
+                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeFilter(f)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!commandFilters.length && !loadingFilters" style="padding:24px;text-align:center;color:var(--text2)">No command filters yet.</div>
-      <div v-if="loadingFilters" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell-sm" v-if="!commandFilters.length && !loadingFilters">No command filters yet.</div>
+      <div class="empty-cell-sm" v-if="loadingFilters">Loading…</div>
     </div>
 
     <!-- ── Login ACLs ──────────────────────────────────────────────────── -->
@@ -93,18 +93,18 @@
         </thead>
         <tbody>
           <tr v-for="a in loginAcls" :key="a.id">
-            <td style="font-weight:600">{{ a.name }}</td>
+            <td class="fw-600">{{ a.name }}</td>
             <td>
-              <span v-if="a.user_id" class="badge badge-blue">👤 {{ userName(a.user_id) }}</span>
-              <span v-else-if="a.user_group_id" class="badge badge-blue">👥 {{ userGroupName(a.user_group_id) }}</span>
-              <span v-else style="color:var(--text2)">Any</span>
+              <span v-if="a.user_id" class="badge badge-blue"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(a.user_id) }}</span>
+              <span v-else-if="a.user_group_id" class="badge badge-blue"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(a.user_group_id) }}</span>
+              <span class="text-muted" v-else>Any</span>
             </td>
-            <td style="font-size:12px;color:var(--text2)">{{ a.ip_cidr || 'Any' }}</td>
-            <td style="font-size:12px;color:var(--text2)">
+            <td class="text-muted-sm">{{ a.ip_cidr || 'Any' }}</td>
+            <td class="text-muted-sm">
               <span v-if="a.time_start || a.time_end">{{ a.time_start || '00:00' }} – {{ a.time_end || '23:59' }}</span>
               <span v-else>Any</span>
             </td>
-            <td style="font-size:12px;color:var(--text2)">{{ daysLabel(a.days_of_week) }}</td>
+            <td class="text-muted-sm">{{ daysLabel(a.days_of_week) }}</td>
             <td><span :class="['badge', actionBadgeClass(a.action)]">{{ a.action }}</span></td>
             <td>{{ a.priority }}</td>
             <td>
@@ -112,16 +112,16 @@
               <span v-else class="badge badge-gray">Disabled</span>
             </td>
             <td>
-              <div style="display:flex;gap:8px;justify-content:flex-end">
+              <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openEditAcl(a)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="removeAcl(a)">🗑</button>
+                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeAcl(a)" aria-label="Delete" title="Delete"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg></button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!loginAcls.length && !loadingAcls" style="padding:24px;text-align:center;color:var(--text2)">No login ACLs yet.</div>
-      <div v-if="loadingAcls" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell-sm" v-if="!loginAcls.length && !loadingAcls">No login ACLs yet.</div>
+      <div class="empty-cell-sm" v-if="loadingAcls">Loading…</div>
     </div>
 
     <!-- ── Personal Access Tokens ──────────────────────────────────────── -->
@@ -136,26 +136,26 @@
         </thead>
         <tbody>
           <tr v-for="t in apiTokens" :key="t.id">
-            <td style="font-weight:600">{{ t.name }}</td>
+            <td class="fw-600">{{ t.name }}</td>
             <td><span class="ip-mono">{{ t.token_prefix }}…</span></td>
-            <td style="font-size:12px">{{ (t.scopes || []).join(', ') }}</td>
-            <td style="font-size:12px;color:var(--text2)">{{ t.expires_at ? formatDate(t.expires_at) : 'Never' }}</td>
-            <td style="font-size:12px;color:var(--text2)">{{ t.last_used_at ? formatDate(t.last_used_at) : 'Never' }}</td>
-            <td style="font-size:12px;color:var(--text2)">{{ formatDate(t.created_at) }}</td>
+            <td class="text-sm">{{ (t.scopes || []).join(', ') }}</td>
+            <td class="text-muted-sm">{{ t.expires_at ? formatDate(t.expires_at) : 'Never' }}</td>
+            <td class="text-muted-sm">{{ t.last_used_at ? formatDate(t.last_used_at) : 'Never' }}</td>
+            <td class="text-muted-sm">{{ formatDate(t.created_at) }}</td>
             <td>
               <span v-if="t.revoked_at" class="badge badge-gray">Revoked</span>
               <span v-else class="badge badge-green">Active</span>
             </td>
             <td>
               <div style="display:flex;justify-content:flex-end">
-                <button v-if="!t.revoked_at" class="btn-pill btn-pill-outline" style="color:var(--danger);border-color:var(--danger)" @click="revokeToken(t)">🗑 Revoke</button>
+                <button v-if="!t.revoked_at" class="btn-pill btn-pill-outline btn-danger-outline" @click="revokeToken(t)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Revoke</button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="!apiTokens.length && !loadingTokens" style="padding:24px;text-align:center;color:var(--text2)">No personal access tokens yet.</div>
-      <div v-if="loadingTokens" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+      <div class="empty-cell-sm" v-if="!apiTokens.length && !loadingTokens">No personal access tokens yet.</div>
+      <div class="empty-cell-sm" v-if="loadingTokens">Loading…</div>
     </div>
 
     <!-- ═══ Modals ═══════════════════════════════════════════════════════ -->
@@ -178,7 +178,7 @@
             <label class="form-label">Patterns (one per line)</label>
             <textarea v-model="groupForm.patternsText" class="input" rows="5" placeholder="rm -rf /*&#10;:(){ :|:& };:&#10;dd if=/dev/zero"></textarea>
           </div>
-          <div v-if="groupError" style="color:var(--danger);font-size:12px">{{ groupError }}</div>
+          <div class="text-danger-sm" v-if="groupError">{{ groupError }}</div>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="closeGroupModal">Cancel</button>
@@ -225,7 +225,7 @@
           </div>
 
           <div style="display:flex;gap:12px">
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Action</label>
               <select v-model="filterForm.action" class="input">
                 <option value="allow">allow</option>
@@ -233,7 +233,7 @@
                 <option value="confirm">confirm</option>
               </select>
             </div>
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Priority</label>
               <input v-model.number="filterForm.priority" type="number" class="input" />
             </div>
@@ -247,7 +247,7 @@
             </select>
           </div>
 
-          <div v-if="filterError" style="color:var(--danger);font-size:12px">{{ filterError }}</div>
+          <div class="text-danger-sm" v-if="filterError">{{ filterError }}</div>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="closeFilterModal">Cancel</button>
@@ -277,11 +277,11 @@
           <div class="form-group"><label class="form-label">IP CIDR (optional)</label><input v-model="aclForm.ip_cidr" class="input" placeholder="e.g. 10.0.0.0/24" /></div>
 
           <div style="display:flex;gap:12px">
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Time Start (optional)</label>
               <input v-model="aclForm.time_start" type="time" class="input" />
             </div>
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Time End (optional)</label>
               <input v-model="aclForm.time_end" type="time" class="input" />
             </div>
@@ -297,14 +297,14 @@
           </div>
 
           <div style="display:flex;gap:12px">
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Action</label>
               <select v-model="aclForm.action" class="input">
                 <option value="allow">allow</option>
                 <option value="deny">deny</option>
               </select>
             </div>
-            <div class="form-group" style="flex:1">
+            <div class="form-group flex-1">
               <label class="form-label">Priority</label>
               <input v-model.number="aclForm.priority" type="number" class="input" />
             </div>
@@ -318,7 +318,7 @@
             </select>
           </div>
 
-          <div v-if="aclError" style="color:var(--danger);font-size:12px">{{ aclError }}</div>
+          <div class="text-danger-sm" v-if="aclError">{{ aclError }}</div>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="closeAclModal">Cancel</button>
@@ -342,7 +342,7 @@
             </div>
           </div>
           <div class="form-group"><label class="form-label">Expires (optional)</label><input v-model="tokenForm.expires_at" type="datetime-local" class="input" /></div>
-          <div v-if="tokenError" style="color:var(--danger);font-size:12px">{{ tokenError }}</div>
+          <div class="text-danger-sm" v-if="tokenError">{{ tokenError }}</div>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="closeTokenModal">Cancel</button>

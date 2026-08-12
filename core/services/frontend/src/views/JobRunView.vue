@@ -11,10 +11,10 @@
           <span v-if="run.params?._dry_run" class="badge" style="font-size:11px;color:var(--warn);border-color:rgba(210,153,34,0.4);background:rgba(210,153,34,0.08)" title="Ran with --check --diff — no changes were applied">DRY RUN</span>
           <template v-if="run.status === 'pending_approval'">
             <button v-if="canApprove" class="btn btn-sm" style="color:var(--accent)" :disabled="approving" @click="approveRun">Approve</button>
-            <button v-if="canApprove" class="btn btn-sm" style="color:var(--danger)" :disabled="approving" @click="rejectRun">Reject</button>
-            <span v-if="!canApprove" style="font-size:12px;color:var(--text2)">Waiting for approval</span>
+            <button v-if="canApprove" class="btn btn-sm text-danger" :disabled="approving" @click="rejectRun">Reject</button>
+            <span class="text-muted-sm" v-if="!canApprove">Waiting for approval</span>
           </template>
-          <button v-else-if="['pending','running'].includes(run.status)" class="btn btn-sm" style="color:var(--danger)" @click="cancelRun">Cancel</button>
+          <button v-else-if="['pending','running'].includes(run.status)" class="btn btn-sm text-danger" @click="cancelRun">Cancel</button>
           <button v-else class="btn btn-sm" :disabled="rerunning" @click="rerun">{{ rerunning ? 'Re-running…' : '↻ Re-run' }}</button>
           <button class="btn btn-sm" @click="router.push('/jobs')">← Job Runs</button>
         </div>
@@ -23,17 +23,17 @@
       <div v-if="run" class="card" style="margin-bottom:16px">
         <div class="card-header" style="font-size:13px">Run Details</div>
         <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;font-size:13px">
-          <div><span style="color:var(--text2)">Template:</span> {{ run.job_template_name || run.job_template_id }}</div>
-          <div><span style="color:var(--text2)">Action:</span> {{ run.action_type || '—' }}</div>
-          <div><span style="color:var(--text2)">Triggered by:</span> {{ triggeredByLabel }}</div>
-          <div v-if="isAccountOp" style="grid-column:1/-1"><span style="color:var(--text2)">Account (subject):</span> {{ subjectLabel }}</div>
-          <div><span style="color:var(--text2)">Connection login:</span> {{ credentialLabel }}</div>
-          <div style="grid-column:1/-1"><span style="color:var(--text2)">Hosts:</span> {{ hostsLabel }}</div>
-          <div><span style="color:var(--text2)">Run ID:</span> <code style="font-size:11px">{{ run.id }}</code></div>
-          <div><span style="color:var(--text2)">Started:</span> {{ run.started_at ? new Date(run.started_at).toLocaleString() : '—' }}</div>
-          <div><span style="color:var(--text2)">Duration:</span> {{ durationLabel }}</div>
-          <div v-if="run.exit_code != null"><span style="color:var(--text2)">Exit code:</span> {{ run.exit_code }}</div>
-          <div v-if="run.status === 'rejected' && run.params?._rejection_reason" style="grid-column:1/-1"><span style="color:var(--text2)">Rejection reason:</span> {{ run.params._rejection_reason }}</div>
+          <div><span class="text-muted">Template:</span> {{ run.job_template_name || run.job_template_id }}</div>
+          <div><span class="text-muted">Action:</span> {{ run.action_type || '—' }}</div>
+          <div><span class="text-muted">Triggered by:</span> {{ triggeredByLabel }}</div>
+          <div v-if="isAccountOp" style="grid-column:1/-1"><span class="text-muted">Account (subject):</span> {{ subjectLabel }}</div>
+          <div><span class="text-muted">Connection login:</span> {{ credentialLabel }}</div>
+          <div style="grid-column:1/-1"><span class="text-muted">Hosts:</span> {{ hostsLabel }}</div>
+          <div><span class="text-muted">Run ID:</span> <code class="text-xs">{{ run.id }}</code></div>
+          <div><span class="text-muted">Started:</span> {{ run.started_at ? new Date(run.started_at).toLocaleString() : '—' }}</div>
+          <div><span class="text-muted">Duration:</span> {{ durationLabel }}</div>
+          <div v-if="run.exit_code != null"><span class="text-muted">Exit code:</span> {{ run.exit_code }}</div>
+          <div v-if="run.status === 'rejected' && run.params?._rejection_reason" style="grid-column:1/-1"><span class="text-muted">Rejection reason:</span> {{ run.params._rejection_reason }}</div>
         </div>
       </div>
 
@@ -47,7 +47,7 @@
               <td>{{ i + 1 }}</td>
               <td>{{ s.job_template_name || s.job_template_id }}</td>
               <td><span :class="statusClass(s.status)">{{ s.status }}</span></td>
-              <td style="color:var(--text2);font-size:12px">{{ stepDuration(s) }}</td>
+              <td class="text-muted-sm">{{ stepDuration(s) }}</td>
               <td><router-link :to="`/jobs/${s.id}`" class="btn btn-sm">View →</router-link></td>
             </tr>
           </tbody>
@@ -127,7 +127,7 @@ const triggeredByLabel = computed(() => {
   const r = run.value
   if (!r) return '—'
   if (r.triggered_by_kind === 'user' && r.triggered_by_user_id) {
-    return '👤 ' + (userMap.value[r.triggered_by_user_id] || r.triggered_by_user_id)
+    return (userMap.value[r.triggered_by_user_id] || r.triggered_by_user_id)
   }
   return r.triggered_by || '—'
 })

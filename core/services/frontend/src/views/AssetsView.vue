@@ -9,7 +9,7 @@
           <div class="page-subtitle">{{ filtered.length }} of {{ hosts.length }} host{{ hosts.length === 1 ? '' : 's' }}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button v-if="auth.isAdminOrSupport && selectedHostIds.size" class="btn" style="color:var(--danger);border-color:var(--danger)" @click="bulkDeleteHosts">
+          <button v-if="auth.isAdminOrSupport && selectedHostIds.size" class="btn btn-danger-outline" @click="bulkDeleteHosts">
             ✕ Delete {{ selectedHostIds.size }} selected
           </button>
           <button v-if="auth.isAdminOrSupport" class="btn btn-primary" @click="openCreateAsset">+ Asset</button>
@@ -18,8 +18,8 @@
             {{ syncPending ? 'Syncing…' : 'Zabbix Sync' }}
           </button>
           <span v-if="lastSynced" style="font-size:11px;color:var(--text2);white-space:nowrap">synced {{ fmtSyncTime(lastSynced) }}</span>
-          <button class="btn" style="font-size:12px" @click="exportHostsCsv" title="Export all hosts to CSV (no user or credential data included)">⇩ Export CSV</button>
-          <button v-if="auth.isAdminOrSupport" class="btn" style="font-size:12px" :disabled="csvImporting" @click="csvFileInput?.click()" title="Import hosts from CSV — never deletes existing hosts">
+          <button class="btn text-sm" @click="exportHostsCsv" title="Export all hosts to CSV (no user or credential data included)">⇩ Export CSV</button>
+          <button v-if="auth.isAdminOrSupport" class="btn text-sm" :disabled="csvImporting" @click="csvFileInput?.click()" title="Import hosts from CSV — never deletes existing hosts">
             {{ csvImporting ? 'Importing…' : '⇧ Import CSV' }}
           </button>
           <input ref="csvFileInput" type="file" accept=".csv,text/csv" style="display:none" @change="handleCsvFile" />
@@ -45,7 +45,7 @@
 
       <!-- ── Hosts table ──────────────────────────────────────────────────── -->
       <div class="card" style="margin-top:0">
-        <div v-if="loading" style="padding:32px;text-align:center;color:var(--text2)">Loading…</div>
+        <div class="empty-cell" v-if="loading">Loading…</div>
         <table v-else class="table">
           <thead>
             <tr>
@@ -96,15 +96,15 @@
                 </div>
               </td>
               <td><span class="ip-mono">{{ h.ip }}</span></td>
-              <td><span class="ip-mono" style="font-size:12px">{{ h.port || 22 }}</span></td>
-              <td style="color:var(--text2)">{{ h.os_type === 'windows' ? 'Windows' : 'Linux' }}</td>
+              <td><span class="ip-mono text-sm">{{ h.port || 22 }}</span></td>
+              <td class="text-muted">{{ h.os_type === 'windows' ? 'Windows' : 'Linux' }}</td>
               <td>
                 <span v-if="zoneName(h)" class="zone-badge"><span class="zone-badge-icon">⊕</span>{{ zoneName(h) }}</span>
-                <span v-else style="color:var(--text2);font-size:12px">—</span>
+                <span class="text-muted-sm" v-else>—</span>
               </td>
               <td v-if="auth.isAdminOrSupport">
                 <span v-for="g in groupNames(h)" :key="g" class="badge badge-blue" style="margin-right:4px">{{ g }}</span>
-                <span v-if="!groupNames(h).length" style="color:var(--text2);font-size:12px">—</span>
+                <span class="text-muted-sm" v-if="!groupNames(h).length">—</span>
               </td>
               <td v-if="auth.isAdminOrSupport" class="td-center">
                 <button class="count-link" :class="{ 'count-link--zero': !hostAuthzMap.get(h.id)?.length }" @click="openUsersDrawer(h)">
@@ -123,7 +123,7 @@
                 <span v-else class="status-off">Inactive</span>
               </td>
               <td v-if="auth.isAdminOrSupport">
-                <div style="display:flex;gap:8px;justify-content:flex-end">
+                <div class="form-actions">
                   <button class="btn-icon" title="Edit" @click="openEditAsset(h)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
                   <button v-if="!h.zabbix_hostid" class="btn-icon btn-icon-danger" title="Delete" @click="deleteAsset(h)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
                   <span v-else class="btn-icon" style="opacity:0.35;cursor:not-allowed" title="Zabbix-synced hosts can't be deleted here — remove in Zabbix and re-sync"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></span>
@@ -132,7 +132,7 @@
             </tr>
           </tbody>
         </table>
-        <div v-if="!filtered.length && !loading" style="padding:32px;text-align:center;color:var(--text2)">No hosts found.</div>
+        <div class="empty-cell" v-if="!filtered.length && !loading">No hosts found.</div>
         <div style="padding:10px 16px;font-size:13px;color:var(--text2);font-family:var(--font-mono);border-top:1px solid var(--border)">
           {{ hosts.length }} total &nbsp;·&nbsp; {{ hosts.filter(h=>h.enabled).length }} active &nbsp;·&nbsp; {{ hosts.filter(h=>!h.enabled).length }} inactive
         </div>
@@ -167,7 +167,7 @@
                     <label class="form-label">Host Groups</label>
                     <AsyncPicker v-model="assetForm.groups" :search-fn="searchHostGroups" placeholder="Search host groups…" />
                     <div style="display:flex;gap:6px;margin-top:6px">
-                      <input v-model="newGroupName" class="input" placeholder="New host group name…" style="font-size:12px" @keyup.enter.prevent="createGroup" />
+                      <input v-model="newGroupName" class="input text-sm" placeholder="New host group name…" @keyup.enter.prevent="createGroup" />
                       <button class="btn btn-sm" :disabled="!newGroupName.trim() || creatingGroup" @click="createGroup">{{ creatingGroup ? '…' : '+ Add' }}</button>
                     </div>
                     <div v-if="groupError" class="err">{{ groupError }}</div>
@@ -199,7 +199,7 @@
                 <!-- SSH credentials -->
                 <div class="section-head">
                   <div class="asset-form-section-label" style="margin-bottom:0">SSH Credentials</div>
-                  <button class="btn-pill" :class="newCred.show ? 'btn-pill-active' : 'btn-pill-outline'" style="font-size:11px" @click="newCred.show ? resetNewCred() : (newCred.show = true)">{{ newCred.show ? '✕ Cancel' : '+ New Credential' }}</button>
+                  <button class="btn-pill text-xs" :class="newCred.show ? 'btn-pill-active' : 'btn-pill-outline'" @click="newCred.show ? resetNewCred() : (newCred.show = true)">{{ newCred.show ? '✕ Cancel' : '+ New Credential' }}</button>
                 </div>
 
                 <!-- inline create credential -->
@@ -212,10 +212,10 @@
                   </div>
                   <template v-if="newCred.secret_type === 'ssh_key'">
                     <div class="form-group"><label class="form-label">Private Key</label><textarea v-model="newCred.private_key" class="input" rows="4" style="font-family:var(--font-mono);font-size:11px" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea></div>
-                    <div class="form-group"><label class="form-label">Passphrase <span style="color:var(--text2);font-weight:400">(optional)</span></label><input v-model="newCred.passphrase" type="password" class="input" autocomplete="new-password" /></div>
+                    <div class="form-group"><label class="form-label">Passphrase <span>(optional)</span></label><input v-model="newCred.passphrase" type="password" class="input text-muted-normal" autocomplete="new-password" /></div>
                   </template>
                   <div v-if="newCred.error" class="err">{{ newCred.error }}</div>
-                  <div style="display:flex;gap:8px;justify-content:flex-end">
+                  <div class="form-actions">
                     <button class="btn btn-sm" @click="resetNewCred">Cancel</button>
                     <button class="btn btn-sm btn-primary" :disabled="newCred.saving" @click="createInlineCred">{{ newCred.saving ? 'Creating…' : 'Create & Link' }}</button>
                   </div>
@@ -246,7 +246,7 @@
                       <button class="btn btn-sm" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('account_push','Create / push')">＋ Create</button>
                       <button class="btn btn-sm" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('rotate_secret','Rotate secret for')">↻ Rotate</button>
                       <button class="btn btn-sm" style="color:#e3b341" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('disable_account','Disable', true)">⏸ Disable</button>
-                      <button class="btn btn-sm" style="color:var(--danger)" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('remove_account','Remove', true)">🗑 Remove</button>
+                      <button class="btn btn-sm text-danger" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('remove_account','Remove', true)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Remove</button>
                     </div>
                     <div class="hint-line">Runs against <b>{{ editingAsset.name }}</b>, connecting with a credential linked to this host as the privileged login.</div>
                     <div v-if="pushForm.error" class="err">{{ pushForm.error }}</div>
@@ -256,7 +256,7 @@
               </div>
             </div>
 
-            <div v-if="assetError" class="err" style="margin-top:12px">{{ assetError }}</div>
+            <div v-if="assetError" class="err mt-12">{{ assetError }}</div>
           </div>
           <div class="side-footer">
             <button class="btn" @click="closeAssetDrawer">Cancel</button>
@@ -293,57 +293,57 @@
                     <td style="font-size:13px">
                       <span v-if="a.user_id">{{ userById.get(a.user_id)?.username || a.user_id }}</span>
                       <span v-else-if="a.user_group_id"><span class="badge badge-blue" style="margin-right:4px;font-size:10px">Group</span>{{ userGroupById.get(a.user_group_id)?.name || a.user_group_id }}</span>
-                      <span v-else style="color:var(--text2)">—</span>
+                      <span class="text-muted" v-else>—</span>
                     </td>
                     <td><span v-for="act in a.actions" :key="act" class="badge badge-blue" style="margin-right:3px;font-size:10px">{{ act }}</span></td>
-                    <td style="font-size:12px"><span v-if="a.credential_id">{{ credById.get(a.credential_id)?.name || '…' }}</span><span v-else style="color:var(--text2)">any</span></td>
-                    <td><span v-if="a.enabled" style="color:#3fb950;font-size:12px">✓</span><span v-else style="color:var(--text2);font-size:12px">—</span></td>
-                    <td><div style="display:flex;gap:5px"><button class="btn-pill btn-pill-outline" style="font-size:11px" @click="startEditAuthz(a)">✎ Edit</button><button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteAuthz(a)">✕</button></div></td>
+                    <td class="text-sm"><span v-if="a.credential_id">{{ credById.get(a.credential_id)?.name || '…' }}</span><span class="text-muted" v-else>any</span></td>
+                    <td><span v-if="a.enabled" style="color:#3fb950;font-size:12px">✓</span><span class="text-muted-sm" v-else>—</span></td>
+                    <td><div style="display:flex;gap:5px"><button class="btn-pill btn-pill-outline text-xs" @click="startEditAuthz(a)">✎ Edit</button><button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteAuthz(a)">✕</button></div></td>
                   </tr>
                   <!-- Inline edit row -->
                   <tr v-else class="inline-edit-row"><td colspan="6"><div class="inline-form">
                     <div class="inline-form-row">
-                      <div class="form-group" style="flex:1"><label class="form-label">Rule Name</label><input v-model="udlg.form.name" class="input" /></div>
+                      <div class="form-group flex-1"><label class="form-label">Rule Name</label><input v-model="udlg.form.name" class="input" /></div>
                       <div class="form-group" style="min-width:120px"><label class="form-label">Target</label><select v-model="udlg.form.targetMode" class="input"><option value="user">User</option><option value="group">Group</option></select></div>
-                      <div class="form-group" style="flex:1"><label class="form-label">{{ udlg.form.targetMode === 'user' ? 'User' : 'Group' }}</label>
+                      <div class="form-group flex-1"><label class="form-label">{{ udlg.form.targetMode === 'user' ? 'User' : 'Group' }}</label>
                         <select v-if="udlg.form.targetMode === 'user'" v-model="udlg.form.user_id" class="input"><option value="">— select —</option><option v-for="u in allUsers" :key="u.id" :value="u.id">{{ u.username }}</option></select>
                         <select v-else v-model="udlg.form.user_group_id" class="input"><option value="">— select —</option><option v-for="g in allUserGroups" :key="g.id" :value="g.id">{{ g.name }}</option></select>
                       </div>
                     </div>
                     <div class="inline-form-row">
-                      <div class="form-group" style="flex:1"><label class="form-label">Allowed Actions</label>
+                      <div class="form-group flex-1"><label class="form-label">Allowed Actions</label>
                         <div class="actions-check-row"><label v-for="act in KNOWN_ACTIONS" :key="act" class="act-check"><input type="checkbox" :value="act" v-model="udlg.form.actions" />{{ act }}</label></div>
                       </div>
-                      <div class="form-group" style="flex:1"><label class="form-label">Credential (optional)</label>
+                      <div class="form-group flex-1"><label class="form-label">Credential (optional)</label>
                         <select v-model="udlg.form.credential_id" class="input"><option value="">— Any —</option><option v-for="c in allCredentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.username }})</option></select>
                       </div>
                       <div class="form-group" style="min-width:80px"><label class="form-label">Enabled</label><select v-model="udlg.form.enabled" class="input"><option :value="true">Yes</option><option :value="false">No</option></select></div>
                     </div>
-                    <div v-if="udlg.formError" style="color:var(--danger);font-size:12px">{{ udlg.formError }}</div>
-                    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" @click="cancelAuthzEdit">Cancel</button><button class="btn btn-primary" :disabled="udlg.saving" @click="saveAuthz">{{ udlg.saving ? 'Saving…' : 'Save' }}</button></div>
+                    <div class="text-danger-sm" v-if="udlg.formError">{{ udlg.formError }}</div>
+                    <div><button class="btn form-actions" @click="cancelAuthzEdit">Cancel</button><button class="btn btn-primary" :disabled="udlg.saving" @click="saveAuthz">{{ udlg.saving ? 'Saving…' : 'Save' }}</button></div>
                   </div></td></tr>
                 </template>
                 <!-- Add new row -->
                 <tr v-if="udlg.showAdd" class="inline-edit-row"><td colspan="6"><div class="inline-form">
                   <div class="inline-form-row">
-                    <div class="form-group" style="flex:1"><label class="form-label">Rule Name</label><input v-model="udlg.form.name" class="input" placeholder="e.g. dev-ssh-access" /></div>
+                    <div class="form-group flex-1"><label class="form-label">Rule Name</label><input v-model="udlg.form.name" class="input" placeholder="e.g. dev-ssh-access" /></div>
                     <div class="form-group" style="min-width:120px"><label class="form-label">Target</label><select v-model="udlg.form.targetMode" class="input"><option value="user">User</option><option value="group">Group</option></select></div>
-                    <div class="form-group" style="flex:1"><label class="form-label">{{ udlg.form.targetMode === 'user' ? 'User' : 'Group' }}</label>
+                    <div class="form-group flex-1"><label class="form-label">{{ udlg.form.targetMode === 'user' ? 'User' : 'Group' }}</label>
                       <select v-if="udlg.form.targetMode === 'user'" v-model="udlg.form.user_id" class="input"><option value="">— select —</option><option v-for="u in allUsers" :key="u.id" :value="u.id">{{ u.username }}</option></select>
                       <select v-else v-model="udlg.form.user_group_id" class="input"><option value="">— select —</option><option v-for="g in allUserGroups" :key="g.id" :value="g.id">{{ g.name }}</option></select>
                     </div>
                   </div>
                   <div class="inline-form-row">
-                    <div class="form-group" style="flex:1"><label class="form-label">Allowed Actions</label>
+                    <div class="form-group flex-1"><label class="form-label">Allowed Actions</label>
                       <div class="actions-check-row"><label v-for="act in KNOWN_ACTIONS" :key="act" class="act-check"><input type="checkbox" :value="act" v-model="udlg.form.actions" />{{ act }}</label></div>
                     </div>
-                    <div class="form-group" style="flex:1"><label class="form-label">Credential</label>
+                    <div class="form-group flex-1"><label class="form-label">Credential</label>
                       <select v-model="udlg.form.credential_id" class="input"><option value="">— Any —</option><option v-for="c in allCredentials" :key="c.id" :value="c.id">{{ c.name }} ({{ c.username }})</option></select>
                     </div>
                     <div class="form-group" style="min-width:80px"><label class="form-label">Enabled</label><select v-model="udlg.form.enabled" class="input"><option :value="true">Yes</option><option :value="false">No</option></select></div>
                   </div>
-                  <div v-if="udlg.formError" style="color:var(--danger);font-size:12px">{{ udlg.formError }}</div>
-                  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" @click="cancelAuthzEdit">Cancel</button><button class="btn btn-primary" :disabled="udlg.saving" @click="saveAuthz">{{ udlg.saving ? 'Saving…' : 'Add Rule' }}</button></div>
+                  <div class="text-danger-sm" v-if="udlg.formError">{{ udlg.formError }}</div>
+                  <div><button class="btn form-actions" @click="cancelAuthzEdit">Cancel</button><button class="btn btn-primary" :disabled="udlg.saving" @click="saveAuthz">{{ udlg.saving ? 'Saving…' : 'Add Rule' }}</button></div>
                 </div></td></tr>
                 <tr v-if="!dialogAuthzList.length && !udlg.showAdd"><td colspan="6" style="text-align:center;color:var(--text2);padding:24px;font-size:13px">No access rules for this host.</td></tr>
               </tbody>
@@ -455,28 +455,28 @@
 
               <div v-if="quickTemplates.length" class="hd-section-label">Automation</div>
               <div v-if="quickTemplates.length" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-                <button v-for="t in quickTemplates" :key="t.id" class="btn-pill btn-pill-outline" style="font-size:11px" @click="runQuickAction(t, hdlg.host)">▶ {{ t.name }}</button>
+                <button v-for="t in quickTemplates" :key="t.id" class="btn-pill btn-pill-outline text-xs" @click="runQuickAction(t, hdlg.host)">▶ {{ t.name }}</button>
               </div>
 
               <div style="display:flex;gap:8px">
                 <button class="btn btn-sm" @click="connectSSH(hdlg.host)" :disabled="!hdlg.host?.enabled">⌗ SSH</button>
                 <button v-if="auth.isAdminOrSupport" class="btn btn-sm" @click="editFromDetail">✎ Edit host</button>
-                <button v-if="auth.isAdminOrSupport && !hdlg.host?.zabbix_hostid" class="btn btn-sm" style="color:var(--danger)" @click="deleteAsset(hdlg.host); closeHostDetail()">🗑 Delete</button>
-                <span v-else-if="auth.isAdminOrSupport" class="btn btn-sm" style="opacity:0.4;cursor:not-allowed" title="Zabbix-synced hosts can't be deleted here — remove in Zabbix and re-sync">🗑 Delete</span>
+                <button v-if="auth.isAdminOrSupport && !hdlg.host?.zabbix_hostid" class="btn btn-sm text-danger" @click="deleteAsset(hdlg.host); closeHostDetail()"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
+                <span v-else-if="auth.isAdminOrSupport" class="btn btn-sm" style="opacity:0.4;cursor:not-allowed" title="Zabbix-synced hosts can't be deleted here — remove in Zabbix and re-sync"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</span>
               </div>
             </div>
 
             <!-- Sessions -->
             <div v-else-if="hdlg.tab==='sessions'">
-              <div v-if="hdlg.sessionsLoading" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+              <div class="empty-cell-sm" v-if="hdlg.sessionsLoading">Loading…</div>
               <table v-else-if="hdlg.sessions.length" class="table" style="margin:0">
                 <thead><tr><th>User</th><th>Client IP</th><th>Started</th><th>Ended</th><th>Status</th></tr></thead>
                 <tbody>
                   <tr v-for="s in hdlg.sessions" :key="s.id">
                     <td style="font-size:13px">{{ s.username || '—' }}</td>
-                    <td class="ip-mono" style="font-size:12px">{{ s.client_ip || '—' }}</td>
-                    <td style="font-size:12px;color:var(--text2)">{{ fmtTs(s.started_at) }}</td>
-                    <td style="font-size:12px;color:var(--text2)">{{ s.ended_at ? fmtTs(s.ended_at) : '—' }}</td>
+                    <td class="ip-mono text-sm">{{ s.client_ip || '—' }}</td>
+                    <td class="text-muted-sm">{{ fmtTs(s.started_at) }}</td>
+                    <td class="text-muted-sm">{{ s.ended_at ? fmtTs(s.ended_at) : '—' }}</td>
                     <td><span class="badge" :class="sessionBadge(s.status)">{{ s.status }}</span></td>
                   </tr>
                 </tbody>
@@ -486,10 +486,10 @@
 
             <!-- Activity -->
             <div v-else>
-              <div v-if="hdlg.activityLoading" style="padding:24px;text-align:center;color:var(--text2)">Loading…</div>
+              <div class="empty-cell-sm" v-if="hdlg.activityLoading">Loading…</div>
               <div v-else-if="hdlg.activity.length" class="hd-activity">
                 <div v-for="(ev, i) in hdlg.activity" :key="i" class="hd-act-row" :class="{ 'hd-act-row--click': ev.runId }" @click="ev.runId && router.push(`/jobs/${ev.runId}`)">
-                  <span class="hd-act-icon">{{ ev.icon }}</span>
+                  
                   <div style="flex:1;min-width:0">
                     <div class="hd-act-label">{{ ev.label }}</div>
                     <div class="hd-act-sub">{{ ev.sub }}</div>
@@ -568,7 +568,7 @@ async function loadHostActivity() {
     ])
     const auditItems = (aud || [])
       .filter((l: any) => l.resource_id === hid || (l.details && JSON.stringify(l.details).includes(hid)))
-      .map((l: any) => ({ icon: '📝', ts: l.created_at, label: l.action, sub: l.username || '' }))
+      .map((l: any) => ({ ts: l.created_at, label: l.action, sub: l.username || '' }))
     const runItems = (runs || [])
       .filter((r: any) => (r.target_host_ids || []).includes(hid))
       .map((r: any) => ({ icon: '⚙', ts: r.started_at, label: `${r.job_template_name || 'job'} — ${r.status}`, sub: r.action_type || '', runId: r.id }))

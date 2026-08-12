@@ -64,7 +64,7 @@
 
       <div class="menu-status">
         <span v-if="activeSessionCount" class="conn-badge">{{ activeSessionCount }} connected</span>
-        <button v-if="!auth.isKiosk" class="menu-capture" :disabled="!focusedPane?.session" @click="editSnip" title="Capture screen (Ctrl/Cmd+S)">📷 Capture</button>
+        <button v-if="!auth.isKiosk" class="menu-capture" :disabled="!focusedPane?.session" @click="editSnip" title="Capture screen (Ctrl/Cmd+S)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2L8 5h8l1.5 2h2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.5" r="3.2"/></svg> Capture</button>
         <button class="menu-close" @click="() => window.close()" title="Close Window">✕</button>
       </div>
     </header>
