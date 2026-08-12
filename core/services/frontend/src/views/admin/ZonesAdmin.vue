@@ -32,7 +32,7 @@
     </div>
 
     <!-- ── Gateways (shown by default, below zones) ───────────────────────── -->
-    <div class="card" style="margin-top:16px">
+    <div class="card u-mt-16">
       <div class="card-header">
         Gateways
         <button class="btn btn-primary btn-sm" :disabled="!zones.length" @click="openCreateGateway()">+ Gateway</button>
@@ -115,7 +115,7 @@
 
           <!-- Credential — pick existing or create inline (same as Assets) -->
           <div class="section-head">
-            <label class="form-label" style="margin-bottom:0">SSH Credential</label>
+            <label class="form-label u-mb-0">SSH Credential</label>
             <button class="btn-pill text-xs" :class="newCred.show ? 'btn-pill-active' : 'btn-pill-outline'" @click="newCred.show ? resetNewCred() : (newCred.show = true)">{{ newCred.show ? '✕ Cancel' : '+ New Credential' }}</button>
           </div>
 

@@ -3,12 +3,12 @@
     <div class="card">
       <div class="card-header">
         Zabbix Trigger Bindings
-        <div style="display:flex;gap:8px">
+        <div class="u-d-flex_gap-8">
           <button class="btn btn-sm" @click="openFromProblem">⚡ From Live Problem</button>
           <button class="btn btn-primary btn-sm" @click="openCreate">+ Trigger Binding</button>
         </div>
       </div>
-      <div style="padding:10px 16px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">
+      <div class="u-borderbottom-1solidborder_c-text2_fs-12_p-1016">
         Each binding maps a Zabbix trigger/event to a SeyalRun job template. When Zabbix fires a
         matching event via the webhook, a job run is automatically dispatched. Use the
         <strong>Manual Trigger</strong> button to also run it on-demand. Global-script wiring
@@ -78,13 +78,13 @@
           </select>
 
           <div style="display:flex;gap:16px;margin-top:16px">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <label class="u-ai-center_cur-pointer_d-flex_gap-8">
               <input type="checkbox" v-model="modal.post_result_to_zabbix" />
-              <span class="form-label" style="margin:0">Post result back to Zabbix</span>
+              <span class="form-label u-m-0">Post result back to Zabbix</span>
             </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <label class="u-ai-center_cur-pointer_d-flex_gap-8">
               <input type="checkbox" v-model="modal.enabled" />
-              <span class="form-label" style="margin:0">Enabled</span>
+              <span class="form-label u-m-0">Enabled</span>
             </label>
           </div>
         </div>
@@ -134,7 +134,7 @@
             </div>
           </template>
           <template v-else-if="run.mode === 'default'">
-            <div v-if="run.hostLoading" style="font-size:13px;color:var(--text2)">Resolving host from Zabbix…</div>
+            <div class="u-c-text2_fs-13" v-if="run.hostLoading">Resolving host from Zabbix…</div>
             <div class="text-danger-sm" v-else-if="run.hostError">{{ run.hostError }}</div>
             <div v-else-if="run.resolvedHost" style="font-size:13px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius)">
               <strong>{{ run.resolvedHost.name }}</strong>

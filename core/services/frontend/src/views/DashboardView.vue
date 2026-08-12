@@ -6,7 +6,7 @@
           <div class="page-title">Dashboard</div>
           <div class="page-subtitle">Welcome back, {{ auth.user?.username }}</div>
         </div>
-        <button class="btn btn-icon" title="Refresh" @click="load"><svg style="width:14px;height:14px;display:block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg></button>
+        <button class="btn btn-icon" title="Refresh" @click="load"><svg class="u-d-block_h-14_w-14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg></button>
       </div>
 
       <!-- ── Stat row ─────────────────────────────────────────────────────── -->
@@ -51,7 +51,7 @@
            legend for bars that were not there — roughly 230px of the landing
            page's most prominent block spent saying "No activity data." The
            frame and legend now render only when there is something to plot. -->
-      <div class="card" style="margin-bottom:16px">
+      <div class="card u-mb-16">
         <div class="card-header">7-Day Activity</div>
         <template v-if="hasActivity">
           <div class="chart">
@@ -74,10 +74,10 @@
       </div>
 
       <!-- ── Recent Jobs + Top Playbooks ──────────────────────────────────── -->
-      <div class="grid-2" style="margin-bottom:16px">
+      <div class="grid-2 u-mb-16">
         <div class="card">
           <div class="card-header">Recent Jobs <router-link to="/jobs" class="hdr-link">All Jobs →</router-link></div>
-          <table class="table" style="font-size:13px">
+          <table class="table u-fs-13">
             <thead><tr><th>Status</th><th>Playbook</th><th>Triggered</th><th>When</th></tr></thead>
             <tbody>
               <tr v-for="j in (m?.recent_jobs || [])" :key="j.id" style="cursor:pointer" @click="$router.push(`/jobs/${j.id}`)">
@@ -93,7 +93,7 @@
 
         <div class="card">
           <div class="card-header">Top Playbooks</div>
-          <table class="table" style="font-size:13px">
+          <table class="table u-fs-13">
             <thead><tr><th>Playbook</th><th class="r">Runs</th></tr></thead>
             <tbody>
               <tr v-for="p in (m?.top_playbooks || [])" :key="p.name">
@@ -220,7 +220,10 @@ function jobActor(triggeredBy: string): string {
   if (!triggeredBy) return 'system'
   if (!triggeredBy.startsWith('user:')) return 'system'
   const userId = triggeredBy.slice(5)
-  return userMap.value[userId] || userId
+  // Falling back to the raw id printed a 36-character UUID in the ACTOR column,
+  // which tells the reader nothing. It happens whenever the account is gone —
+  // the same case AutomationView hit after the identity re-baseline.
+  return userMap.value[userId] || 'deleted user'
 }
 function shortName(n: string) { return n && n.length > 26 ? n.slice(0, 24) + '…' : (n || '—') }
 

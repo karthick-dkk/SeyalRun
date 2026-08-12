@@ -13,8 +13,8 @@
       <div class="card">
         <div class="card-body">
           <template v-if="mfaPending">
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px">Verify your identity</div>
-            <div style="color:var(--text2);font-size:12px;margin-bottom:16px">
+            <div class="u-c-text_fw-600_mb-4">Verify your identity</div>
+            <div class="u-c-text2_fs-12_mb-16">
               <template v-if="mfaMethod === 'email'">Enter the 6-digit code we emailed you.</template>
               <template v-else>Enter the 6-digit code from your authenticator app.</template>
             </div>
@@ -22,8 +22,8 @@
               <label class="form-label">Code</label>
               <input v-model="mfaCode" class="input" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6" @keydown.enter="doVerifyMfa" autofocus />
             </div>
-            <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
-            <button class="btn btn-primary" style="width:100%;justify-content:center" @click="doVerifyMfa" :disabled="loading">
+            <div class="u-c-danger_fs-12_mb-12" v-if="error">{{ error }}</div>
+            <button class="btn btn-primary u-jc-center_w-100pc" @click="doVerifyMfa" :disabled="loading">
               {{ loading ? 'Verifying…' : 'Verify' }}
             </button>
             <button v-if="mfaMethod === 'email'" class="btn" style="width:100%;justify-content:center;margin-top:8px" @click="doResend" :disabled="resending">
@@ -31,8 +31,8 @@
             </button>
           </template>
           <template v-else-if="mfaSetupRequired">
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px">Set up multi-factor authentication</div>
-            <div style="color:var(--text2);font-size:12px;margin-bottom:16px">
+            <div class="u-c-text_fw-600_mb-4">Set up multi-factor authentication</div>
+            <div class="u-c-text2_fs-12_mb-16">
               Your group requires MFA before you can continue. Choose a method below.
             </div>
             <div class="fp-toggle-group" style="margin-bottom:14px">
@@ -41,7 +41,7 @@
             </div>
             <template v-if="enrollMethod === 'totp'">
               <template v-if="!totpSecret">
-                <button class="btn btn-primary" style="width:100%;justify-content:center" :disabled="loading" @click="startTotpSetup">{{ loading ? 'Generating…' : 'Generate QR Code' }}</button>
+                <button class="btn btn-primary u-jc-center_w-100pc" :disabled="loading" @click="startTotpSetup">{{ loading ? 'Generating…' : 'Generate QR Code' }}</button>
               </template>
               <template v-else>
                 <div style="display:flex;justify-content:center;margin-bottom:10px">
@@ -51,21 +51,21 @@
                   <label class="form-label">Code from your app</label>
                   <input v-model="enrollCode" class="input" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6" @keydown.enter="confirmEnroll" />
                 </div>
-                <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
-                <button class="btn btn-primary" style="width:100%;justify-content:center" :disabled="saving || !enrollCode" @click="confirmEnroll">{{ saving ? 'Verifying…' : 'Enable & Continue' }}</button>
+                <div class="u-c-danger_fs-12_mb-12" v-if="error">{{ error }}</div>
+                <button class="btn btn-primary u-jc-center_w-100pc" :disabled="saving || !enrollCode" @click="confirmEnroll">{{ saving ? 'Verifying…' : 'Enable & Continue' }}</button>
               </template>
             </template>
             <template v-else>
               <template v-if="!emailCodeSent">
-                <button class="btn btn-primary" style="width:100%;justify-content:center" :disabled="loading" @click="startEmailSetup">{{ loading ? 'Sending…' : 'Send Code to My Email' }}</button>
+                <button class="btn btn-primary u-jc-center_w-100pc" :disabled="loading" @click="startEmailSetup">{{ loading ? 'Sending…' : 'Send Code to My Email' }}</button>
               </template>
               <template v-else>
                 <div class="form-group">
                   <label class="form-label">Code from your email</label>
                   <input v-model="enrollCode" class="input" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6" @keydown.enter="confirmEnroll" />
                 </div>
-                <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
-                <div style="display:flex;gap:8px">
+                <div class="u-c-danger_fs-12_mb-12" v-if="error">{{ error }}</div>
+                <div class="u-d-flex_gap-8">
                   <button class="btn" :disabled="loading" @click="startEmailSetup">Resend</button>
                   <button class="btn btn-primary" style="flex:1;justify-content:center" :disabled="saving || !enrollCode" @click="confirmEnroll">{{ saving ? 'Verifying…' : 'Enable & Continue' }}</button>
                 </div>
@@ -73,18 +73,18 @@
             </template>
           </template>
           <template v-else-if="showWizardSummary">
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px">Welcome to SeyalRun</div>
-            <div style="color:var(--text2);font-size:12px;margin-bottom:16px">You're all set. Here's a quick summary of your access.</div>
+            <div class="u-c-text_fw-600_mb-4">Welcome to SeyalRun</div>
+            <div class="u-c-text2_fs-12_mb-16">You're all set. Here's a quick summary of your access.</div>
             <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Roles</div>
             <div style="margin-bottom:14px">
               <span v-for="r in (auth.user?.roles || [])" :key="r" class="badge badge-blue" style="margin-right:4px">{{ r }}</span>
               <span class="text-muted-sm" v-if="!(auth.user?.roles || []).length">—</span>
             </div>
-            <button class="btn btn-primary" style="width:100%;justify-content:center" :disabled="loading" @click="doFinishWizard">{{ loading ? 'Finishing…' : 'Get Started' }}</button>
+            <button class="btn btn-primary u-jc-center_w-100pc" :disabled="loading" @click="doFinishWizard">{{ loading ? 'Finishing…' : 'Get Started' }}</button>
           </template>
           <template v-else-if="mustChange">
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px">Set a new password</div>
-            <div style="color:var(--text2);font-size:12px;margin-bottom:16px">
+            <div class="u-c-text_fw-600_mb-4">Set a new password</div>
+            <div class="u-c-text2_fs-12_mb-16">
               You signed in with the default password. Choose a new one (min 8
               characters) before continuing — nothing else works until you do.
             </div>
@@ -96,8 +96,8 @@
               <label class="form-label">Confirm new password</label>
               <input v-model="confirmPassword" type="password" autocomplete="new-password" class="input" placeholder="Confirm new password" @keydown.enter="doChangePassword" />
             </div>
-            <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
-            <button class="btn btn-primary" style="width:100%;justify-content:center" @click="doChangePassword" :disabled="loading">
+            <div class="u-c-danger_fs-12_mb-12" v-if="error">{{ error }}</div>
+            <button class="btn btn-primary u-jc-center_w-100pc" @click="doChangePassword" :disabled="loading">
               {{ loading ? 'Saving…' : 'Change Password & Continue' }}
             </button>
           </template>
@@ -110,8 +110,8 @@
               <label class="form-label">Password</label>
               <input v-model="password" type="password" name="password" autocomplete="current-password" class="input" placeholder="Password" @keydown.enter="doLogin" />
             </div>
-            <div v-if="error" style="color:var(--danger);font-size:12px;margin-bottom:12px">{{ error }}</div>
-            <button class="btn btn-primary" style="width:100%;justify-content:center" @click="doLogin" :disabled="loading">
+            <div class="u-c-danger_fs-12_mb-12" v-if="error">{{ error }}</div>
+            <button class="btn btn-primary u-jc-center_w-100pc" @click="doLogin" :disabled="loading">
               {{ loading ? 'Signing in…' : 'Sign In' }}
             </button>
           </template>

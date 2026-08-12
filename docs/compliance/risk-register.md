@@ -85,6 +85,29 @@ log is presented as evidence.
 rather than a verification.** Any future claim that the chain verifies must cite
 `verify_chain()` output, never a row count.
 
+## R-11 — Authorizations grant sftp/upload/download, which nothing enforces
+
+**Severity: High.** PCI DSS Req 7.1 / SOC 2 CC6.
+
+`AuthorizationsAdmin.vue:312` offers `['ssh', 'sftp', 'upload', 'download']` as
+grantable actions on a host. A grep across `identity-service` and
+`terminal-service` finds **no implementation for sftp, upload or download** —
+the product has no file-transfer capability at all. The grant is stored and
+audited and enforces nothing.
+
+This is worse than an absent feature. An access review, or an assessor reading
+`za_authorization` rows, would see "user X may download from host Y" and
+conclude file transfer is a controlled operation. It is not controlled; it does
+not exist. The stated access model and the enforced one disagree.
+
+Not portable from the legacy tree: `modules/jumpserver-legacy/` implements only
+recording and resize in its terminal, so SFTP has to be built.
+
+**Remediation.** Either implement the actions (see
+[terminal-parity-plan.md](terminal-parity-plan.md), Increment 1 — SFTP gated by
+these exact grants, one chained audit row per operation) or remove them from
+the Authorizations UI. They must not remain as advertised-but-unenforced.
+
 ## R-10 — Most audit records carried no success/failure indication — CLOSED
 
 **Severity: Medium.** PCI DSS Req 10.2.2. **Closed**: all 41 `log_action` call

@@ -3,7 +3,7 @@
     <div class="page">
       <div class="card" style="max-width:560px;margin:0 auto">
         <div class="card-header">Security — Multi-Factor Authentication</div>
-        <div style="padding:18px">
+        <div class="u-p-18">
           <template v-if="status.method">
             <div class="mfa-status">
               <span class="badge badge-green">● MFA enabled — {{ status.method === 'totp' ? 'Authenticator app' : 'Email OTP' }}</span>
@@ -35,18 +35,18 @@
           </template>
 
           <template v-else-if="!auth.can('security.mfa')">
-            <div style="font-size:13px;color:var(--text2)">
+            <div class="u-c-text2_fs-13">
               Your role does not allow enrolling in MFA. Ask a superadmin to grant the "Allow MFA enrollment" permission on your role.
             </div>
           </template>
 
           <template v-else>
-            <div style="font-size:12px;color:var(--text2);margin-bottom:16px">
+            <div class="u-c-text2_fs-12_mb-16">
               MFA is not enabled. Choose a method — an authenticator app (Google
               Authenticator, Authy, ...) or a one-time code emailed to you.
             </div>
 
-            <div class="fp-toggle-group" style="margin-bottom:16px">
+            <div class="fp-toggle-group u-mb-16">
               <button :class="['fp-toggle', enrollMethod === 'totp' && 'active']" @click="enrollMethod = 'totp'; resetEnroll()">Authenticator App</button>
               <button :class="['fp-toggle', enrollMethod === 'email' && 'active']" @click="enrollMethod = 'email'; resetEnroll()">Email OTP</button>
             </div>

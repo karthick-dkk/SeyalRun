@@ -20,27 +20,27 @@
         </div>
       </div>
 
-      <div v-if="run" class="card" style="margin-bottom:16px">
-        <div class="card-header" style="font-size:13px">Run Details</div>
+      <div v-if="run" class="card u-mb-16">
+        <div class="card-header u-fs-13">Run Details</div>
         <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;font-size:13px">
           <div><span class="text-muted">Template:</span> {{ run.job_template_name || run.job_template_id }}</div>
           <div><span class="text-muted">Action:</span> {{ run.action_type || '—' }}</div>
           <div><span class="text-muted">Triggered by:</span> {{ triggeredByLabel }}</div>
-          <div v-if="isAccountOp" style="grid-column:1/-1"><span class="text-muted">Account (subject):</span> {{ subjectLabel }}</div>
+          <div class="u-gcol-1--1" v-if="isAccountOp"><span class="text-muted">Account (subject):</span> {{ subjectLabel }}</div>
           <div><span class="text-muted">Connection login:</span> {{ credentialLabel }}</div>
-          <div style="grid-column:1/-1"><span class="text-muted">Hosts:</span> {{ hostsLabel }}</div>
+          <div class="u-gcol-1--1"><span class="text-muted">Hosts:</span> {{ hostsLabel }}</div>
           <div><span class="text-muted">Run ID:</span> <code class="text-xs">{{ run.id }}</code></div>
           <div><span class="text-muted">Started:</span> {{ run.started_at ? new Date(run.started_at).toLocaleString() : '—' }}</div>
           <div><span class="text-muted">Duration:</span> {{ durationLabel }}</div>
           <div v-if="run.exit_code != null"><span class="text-muted">Exit code:</span> {{ run.exit_code }}</div>
-          <div v-if="run.status === 'rejected' && run.params?._rejection_reason" style="grid-column:1/-1"><span class="text-muted">Rejection reason:</span> {{ run.params._rejection_reason }}</div>
+          <div class="u-gcol-1--1" v-if="run.status === 'rejected' && run.params?._rejection_reason"><span class="text-muted">Rejection reason:</span> {{ run.params._rejection_reason }}</div>
         </div>
       </div>
 
-      <div v-if="run?.action_type === 'chain'" class="card" style="margin-bottom:16px">
-        <div class="card-header" style="font-size:13px">Chain Steps</div>
+      <div v-if="run?.action_type === 'chain'" class="card u-mb-16">
+        <div class="card-header u-fs-13">Chain Steps</div>
         <div v-if="!chainSteps.length" style="padding:14px 16px;font-size:12px;color:var(--text2)">Steps haven't started yet…</div>
-        <table v-else class="table" style="margin:0">
+        <table v-else class="table u-m-0">
           <thead><tr><th style="width:36px">#</th><th>Template</th><th>Status</th><th>Duration</th><th></th></tr></thead>
           <tbody>
             <tr v-for="(s, i) in chainSteps" :key="s.id">
@@ -55,7 +55,7 @@
       </div>
 
       <div class="card">
-        <div class="card-header" style="font-size:13px">
+        <div class="card-header u-fs-13">
           Output Log
           <div style="display:flex;align-items:center;gap:14px">
             <button class="btn btn-sm" :disabled="!lines.length" @click="copyOutput" :title="copyError || (copied ? 'Copied!' : 'Copy output')">

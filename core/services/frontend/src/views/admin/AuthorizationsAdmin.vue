@@ -28,7 +28,7 @@
         <tbody>
           <!-- New-rule expand row at top -->
           <tr v-if="expandedId === '__new__'" class="expand-row">
-            <td colspan="9" style="padding:0">
+            <td class="u-p-0" colspan="9">
               <div class="expand-form" @keydown.esc.stop="closeExpand" @keydown.enter.exact.stop.prevent="save">
                 <div class="expand-form-head">
                   <span>Add Authorization</span>
@@ -99,8 +99,9 @@
                         <div class="eg-field">
                           <label class="eg-label">Allowed Actions</label>
                           <div class="act-check-row">
-                            <label v-for="act in availableActions" :key="act" class="act-check">
-                              <input type="checkbox" :value="act" v-model="form.actions" />{{ act }}
+                            <label v-for="act in availableActions" :key="act" class="act-check"
+                                   :class="{ 'act-check--unenforced': !actionEnforced(act) }" :title="actionHint(act)">
+                              <input type="checkbox" :value="act" v-model="form.actions" :disabled="!actionEnforced(act)" />{{ act }}<span v-if="!actionEnforced(act)" class="act-na">not enforced</span>
                             </label>
                           </div>
                         </div>
@@ -122,7 +123,7 @@
                 </div>
                 <div class="expand-footer">
                   <span class="eg-hint">Enter to save · Esc to cancel</span>
-                  <div style="display:flex;gap:8px">
+                  <div class="u-d-flex_gap-8">
                     <button class="btn" @click="closeExpand">Cancel</button>
                     <button class="btn btn-primary" @click="save" :disabled="saving">{{ saving ? 'Saving…' : 'Create' }}</button>
                   </div>
@@ -141,25 +142,25 @@
               <td class="fw-600">{{ a.name }}</td>
               <td>
                 <template v-if="principalsOf(a).type === 'user'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue u-m-1"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(id) }}</span>
                 </template>
                 <template v-else-if="principalsOf(a).type === 'user_group'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue" style="margin:1px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue u-m-1"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>—</span>
               </td>
               <td>
                 <template v-if="targetsOf(a).type === 'host'">
-                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray" style="margin:1px">&#128187; {{ hostName(id) }}</span>
+                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray u-m-1">&#128187; {{ hostName(id) }}</span>
                 </template>
                 <template v-else-if="targetsOf(a).type === 'host_group'">
-                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray" style="margin:1px">&#128193; {{ hostGroupName(id) }}</span>
+                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray u-m-1">&#128193; {{ hostGroupName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>—</span>
               </td>
               <td class="text-sm">
                 <template v-if="credsOf(a).length">
-                  <span v-for="id in credsOf(a)" :key="id" class="badge badge-gray" style="margin:1px">{{ credentialName(id) }}</span>
+                  <span v-for="id in credsOf(a)" :key="id" class="badge badge-gray u-m-1">{{ credentialName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>any</span>
               </td>
@@ -195,7 +196,7 @@
 
             <!-- Inline edit expand row -->
             <tr v-else class="expand-row">
-              <td colspan="9" style="padding:0">
+              <td class="u-p-0" colspan="9">
                 <div class="expand-form" @keydown.esc.stop="closeExpand" @keydown.enter.exact.stop.prevent="save">
                   <div class="expand-form-head">
                     <span>Edit — {{ a.name }}</span>
@@ -266,8 +267,9 @@
                           <div class="eg-field">
                             <label class="eg-label">Allowed Actions</label>
                             <div class="act-check-row">
-                              <label v-for="act in availableActions" :key="act" class="act-check">
-                                <input type="checkbox" :value="act" v-model="form.actions" />{{ act }}
+                              <label v-for="act in availableActions" :key="act" class="act-check"
+                                     :class="{ 'act-check--unenforced': !actionEnforced(act) }" :title="actionHint(act)">
+                                <input type="checkbox" :value="act" v-model="form.actions" :disabled="!actionEnforced(act)" />{{ act }}<span v-if="!actionEnforced(act)" class="act-na">not enforced</span>
                               </label>
                             </div>
                           </div>
@@ -284,7 +286,7 @@
                   </div>
                   <div class="expand-footer">
                     <span class="eg-hint">Enter to save · Esc to cancel</span>
-                    <div style="display:flex;gap:8px">
+                    <div class="u-d-flex_gap-8">
                       <button class="btn" @click="closeExpand">Cancel</button>
                       <button class="btn btn-primary" @click="save" :disabled="saving">{{ saving ? 'Saving…' : 'Save Changes' }}</button>
                     </div>
@@ -309,7 +311,17 @@ import { useAuthStore } from '@/stores/auth'
 
 const { confirm } = useConfirm()
 const auth = useAuthStore()
+// R-11: sftp/upload/download are grantable here but nothing in the product
+// implements file transfer, so granting one enforces nothing. Until the SFTP
+// work lands (docs/compliance/terminal-parity-plan.md, Increment 1) they are
+// shown disabled and labelled, rather than silently offered — an access review
+// must not be able to report a control that does not exist.
 const availableActions = ['ssh', 'sftp', 'upload', 'download']
+const UNENFORCED_ACTIONS = ['sftp', 'upload', 'download']
+function actionEnforced(a: string) { return !UNENFORCED_ACTIONS.includes(a) }
+function actionHint(a: string) {
+  return actionEnforced(a) ? '' : 'Not yet enforced — file transfer is not implemented, so this grant has no effect'
+}
 
 const authorizations = ref<any[]>([])
 const users          = ref<any[]>([])
@@ -640,4 +652,6 @@ onMounted(load)
 }
 .act-check:hover { border-color: var(--accent2); }
 .act-check input { accent-color: var(--accent2); cursor: pointer; }
+.act-check--unenforced { opacity: 0.55; cursor: not-allowed; }
+.act-na { margin-left: 5px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--warn); border: 1px solid var(--warn); border-radius: 8px; padding: 0 5px; }
 </style>

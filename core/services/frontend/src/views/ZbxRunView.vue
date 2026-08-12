@@ -21,7 +21,7 @@
               </button>
             </div>
             <div v-if="!host" class="zr-error">This Zabbix host isn't linked to a SeyalRun host — sync hosts first.</div>
-            <button class="btn btn-primary" style="margin-top:16px"
+            <button class="btn btn-primary u-mt-16"
                     :disabled="running || !selected || !host" @click="run">
               {{ running ? 'Starting…' : '▶ Run remediation' }}
             </button>
@@ -38,7 +38,7 @@
       </div>
     </div>
 
-    <div v-if="startedRunId" class="card" style="margin-top:16px">
+    <div v-if="startedRunId" class="card u-mt-16">
       <div class="card-header">Output</div>
       <pre class="zr-out">{{ outputText || '(waiting for output…)' }}</pre>
     </div>

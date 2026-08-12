@@ -13,7 +13,7 @@
           <tr v-for="j in jobs" :key="j.job_key">
             <td>
               <div class="fw-600">{{ j.display_name }}</div>
-              <div style="font-size:11px;color:var(--text2)">{{ j.description }}</div>
+              <div class="u-c-text2_fs-11">{{ j.description }}</div>
             </td>
             <td>
               <input

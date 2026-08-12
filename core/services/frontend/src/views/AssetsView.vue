@@ -23,7 +23,7 @@
             {{ csvImporting ? 'Importing…' : '⇧ Import CSV' }}
           </button>
           <input ref="csvFileInput" type="file" accept=".csv,text/csv" style="display:none" @change="handleCsvFile" />
-          <button class="btn btn-icon" @click="load" title="Refresh"><svg style="width:14px;height:14px;display:block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg></button>
+          <button class="btn btn-icon" @click="load" title="Refresh"><svg class="u-d-block_h-14_w-14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg></button>
         </div>
       </div>
       <div v-if="csvImportError" style="color:var(--danger);font-size:13px;padding:10px 14px;background:rgba(248,81,73,0.08);border-radius:6px;border:1px solid rgba(248,81,73,0.3);margin-bottom:12px">{{ csvImportError }}</div>
@@ -44,7 +44,7 @@
       </div>
 
       <!-- ── Hosts table ──────────────────────────────────────────────────── -->
-      <div class="card" style="margin-top:0">
+      <div class="card u-mt-0">
         <div class="empty-cell" v-if="loading">Loading…</div>
         <table v-else class="table">
           <thead>
@@ -163,7 +163,7 @@
                   <div class="form-group"><label class="form-label">Platform</label><select v-model="assetForm.os_type" class="input"><option value="linux">Linux</option><option value="windows">Windows</option></select></div>
                   <div class="form-group"><label class="form-label">Zone (ProxyJump)</label><select v-model="assetForm.zone_id" class="input"><option value="">— No Zone —</option><option v-for="z in zones" :key="z.id" :value="z.id">{{ z.name }}</option></select></div>
                   <div class="form-group"><label class="form-label">Status</label><select v-model="assetForm.enabled" class="input"><option :value="true">Active</option><option :value="false">Inactive</option></select></div>
-                  <div class="form-group" style="grid-column:1 / -1">
+                  <div class="form-group u-gcol-1--1">
                     <label class="form-label">Host Groups</label>
                     <AsyncPicker v-model="assetForm.groups" :search-fn="searchHostGroups" placeholder="Search host groups…" />
                     <div style="display:flex;gap:6px;margin-top:6px">
@@ -172,15 +172,15 @@
                     </div>
                     <div v-if="groupError" class="err">{{ groupError }}</div>
                   </div>
-                  <div class="form-group" style="grid-column:1 / -1"><label class="form-label">Expires</label><input v-model="assetForm.date_expired" type="date" class="input" title="Leave blank for no expiry" /></div>
+                  <div class="form-group u-gcol-1--1"><label class="form-label">Expires</label><input v-model="assetForm.date_expired" type="date" class="input" title="Leave blank for no expiry" /></div>
                 </div>
               </div>
 
               <!-- RIGHT: users + credentials + push -->
               <div class="edit-col">
                 <!-- Allowed users -->
-                <div class="section-head" style="margin-top:0">
-                  <div class="asset-form-section-label" style="margin-bottom:0">Allowed Users</div>
+                <div class="section-head u-mt-0">
+                  <div class="asset-form-section-label u-mb-0">Allowed Users</div>
                   <span v-if="assetForm.allowedUserIds.length" class="pill-count">{{ assetForm.allowedUserIds.length }} selected</span>
                 </div>
                 <input v-model="userFilter" class="input" placeholder="Search users…" style="font-size:12px;margin-bottom:6px" />
@@ -198,7 +198,7 @@
 
                 <!-- SSH credentials -->
                 <div class="section-head">
-                  <div class="asset-form-section-label" style="margin-bottom:0">SSH Credentials</div>
+                  <div class="asset-form-section-label u-mb-0">SSH Credentials</div>
                   <button class="btn-pill text-xs" :class="newCred.show ? 'btn-pill-active' : 'btn-pill-outline'" @click="newCred.show ? resetNewCred() : (newCred.show = true)">{{ newCred.show ? '✕ Cancel' : '+ New Credential' }}</button>
                 </div>
 
@@ -235,7 +235,7 @@
                 <!-- Account operations on this host -->
                 <template v-if="editingAsset">
                   <div class="section-head">
-                    <div class="asset-form-section-label" style="margin-bottom:0">Account Operations → Host</div>
+                    <div class="asset-form-section-label u-mb-0">Account Operations → Host</div>
                   </div>
                   <div v-if="hasOpTemplates" class="push-box">
                     <select v-model="pushForm.subjectCredId" class="input" style="font-size:12px;width:100%">
@@ -278,27 +278,27 @@
               <span style="font-size:15px">Access Rules</span>
               <span style="font-size:12px;color:var(--text2);margin-left:10px">{{ udlg.host?.name }}</span>
             </div>
-            <div style="display:flex;gap:8px">
+            <div class="u-d-flex_gap-8">
               <button class="btn btn-primary btn-sm" :disabled="udlg.showAdd || !!udlg.editingId" @click="startAddAuthz">+ Add Rule</button>
               <button class="btn btn-sm btn-icon" @click="closeUsersDrawer">✕</button>
             </div>
           </div>
-          <div class="side-body" style="padding:0">
-            <table class="table" style="margin:0">
+          <div class="side-body u-p-0">
+            <table class="table u-m-0">
               <thead><tr><th>Rule Name</th><th>User / Group</th><th>Actions</th><th>Credential</th><th>On</th><th style="width:120px"></th></tr></thead>
               <tbody>
                 <template v-for="a in dialogAuthzList" :key="a.id">
                   <tr v-if="udlg.editingId !== a.id">
                     <td style="font-weight:500;font-size:13px">{{ a.name }}</td>
-                    <td style="font-size:13px">
+                    <td class="u-fs-13">
                       <span v-if="a.user_id">{{ userById.get(a.user_id)?.username || a.user_id }}</span>
                       <span v-else-if="a.user_group_id"><span class="badge badge-blue" style="margin-right:4px;font-size:10px">Group</span>{{ userGroupById.get(a.user_group_id)?.name || a.user_group_id }}</span>
                       <span class="text-muted" v-else>—</span>
                     </td>
                     <td><span v-for="act in a.actions" :key="act" class="badge badge-blue" style="margin-right:3px;font-size:10px">{{ act }}</span></td>
                     <td class="text-sm"><span v-if="a.credential_id">{{ credById.get(a.credential_id)?.name || '…' }}</span><span class="text-muted" v-else>any</span></td>
-                    <td><span v-if="a.enabled" style="color:#3fb950;font-size:12px">✓</span><span class="text-muted-sm" v-else>—</span></td>
-                    <td><div style="display:flex;gap:5px"><button class="btn-pill btn-pill-outline text-xs" @click="startEditAuthz(a)">✎ Edit</button><button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" @click="deleteAuthz(a)">✕</button></div></td>
+                    <td><span class="u-c-3fb950_fs-12" v-if="a.enabled">✓</span><span class="text-muted-sm" v-else>—</span></td>
+                    <td><div style="display:flex;gap:5px"><button class="btn-pill btn-pill-outline text-xs" @click="startEditAuthz(a)">✎ Edit</button><button class="btn-pill btn-pill-outline u-bc-danger_c-danger_fs-11" @click="deleteAuthz(a)">✕</button></div></td>
                   </tr>
                   <!-- Inline edit row -->
                   <tr v-else class="inline-edit-row"><td colspan="6"><div class="inline-form">
@@ -345,7 +345,7 @@
                   <div class="text-danger-sm" v-if="udlg.formError">{{ udlg.formError }}</div>
                   <div><button class="btn form-actions" @click="cancelAuthzEdit">Cancel</button><button class="btn btn-primary" :disabled="udlg.saving" @click="saveAuthz">{{ udlg.saving ? 'Saving…' : 'Add Rule' }}</button></div>
                 </div></td></tr>
-                <tr v-if="!dialogAuthzList.length && !udlg.showAdd"><td colspan="6" style="text-align:center;color:var(--text2);padding:24px;font-size:13px">No access rules for this host.</td></tr>
+                <tr v-if="!dialogAuthzList.length && !udlg.showAdd"><td class="u-c-text2_fs-13_p-24_ta-center" colspan="6">No access rules for this host.</td></tr>
               </tbody>
             </table>
           </div>
@@ -365,25 +365,25 @@
               <span style="font-size:15px">Credentials</span>
               <span style="font-size:12px;color:var(--text2);margin-left:10px">{{ cdlg.host?.name }}</span>
             </div>
-            <div style="display:flex;gap:8px">
+            <div class="u-d-flex_gap-8">
               <button class="btn btn-primary btn-sm" :disabled="cdlg.showAttach" @click="cdlg.showAttach=true;cdlg.selectedCredIds=[];cdlg.attachError=''">+ Attach</button>
               <button class="btn btn-sm btn-icon" @click="closeCredsDrawer">✕</button>
             </div>
           </div>
           <div class="side-body">
             <!-- Attached credentials list -->
-            <table v-if="dialogCredList.length" class="table" style="margin-bottom:16px">
+            <table v-if="dialogCredList.length" class="table u-mb-16">
               <thead><tr><th>Name</th><th>Username</th><th>Type</th><th style="width:90px"></th></tr></thead>
               <tbody>
                 <tr v-for="c in dialogCredList" :key="c.id">
                   <td style="font-weight:500;font-size:13px">{{ c.name }}</td>
                   <td style="font-size:13px;font-family:var(--font-mono)">{{ c.username }}</td>
-                  <td><span class="badge badge-blue" style="font-size:10px">{{ c.secret_type }}</span></td>
-                  <td><button class="btn-pill btn-pill-outline" style="font-size:11px;color:var(--danger);border-color:var(--danger)" :disabled="cdlg.unlinkingId === c.id" @click="unlinkCred(c)">{{ cdlg.unlinkingId === c.id ? '…' : '✕ Unlink' }}</button></td>
+                  <td><span class="badge badge-blue u-fs-10">{{ c.secret_type }}</span></td>
+                  <td><button class="btn-pill btn-pill-outline u-bc-danger_c-danger_fs-11" :disabled="cdlg.unlinkingId === c.id" @click="unlinkCred(c)">{{ cdlg.unlinkingId === c.id ? '…' : '✕ Unlink' }}</button></td>
                 </tr>
               </tbody>
             </table>
-            <div v-else-if="!cdlg.showAttach" style="text-align:center;color:var(--text2);padding:24px;font-size:13px">No credentials attached.</div>
+            <div class="u-c-text2_fs-13_p-24_ta-center" v-else-if="!cdlg.showAttach">No credentials attached.</div>
 
             <!-- Multi-select attach panel -->
             <div v-if="cdlg.showAttach">
@@ -458,7 +458,7 @@
                 <button v-for="t in quickTemplates" :key="t.id" class="btn-pill btn-pill-outline text-xs" @click="runQuickAction(t, hdlg.host)">▶ {{ t.name }}</button>
               </div>
 
-              <div style="display:flex;gap:8px">
+              <div class="u-d-flex_gap-8">
                 <button class="btn btn-sm" @click="connectSSH(hdlg.host)" :disabled="!hdlg.host?.enabled">⌗ SSH</button>
                 <button v-if="auth.isAdminOrSupport" class="btn btn-sm" @click="editFromDetail">✎ Edit host</button>
                 <button v-if="auth.isAdminOrSupport && !hdlg.host?.zabbix_hostid" class="btn btn-sm text-danger" @click="deleteAsset(hdlg.host); closeHostDetail()"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Delete</button>
@@ -469,11 +469,11 @@
             <!-- Sessions -->
             <div v-else-if="hdlg.tab==='sessions'">
               <div class="empty-cell-sm" v-if="hdlg.sessionsLoading">Loading…</div>
-              <table v-else-if="hdlg.sessions.length" class="table" style="margin:0">
+              <table v-else-if="hdlg.sessions.length" class="table u-m-0">
                 <thead><tr><th>User</th><th>Client IP</th><th>Started</th><th>Ended</th><th>Status</th></tr></thead>
                 <tbody>
                   <tr v-for="s in hdlg.sessions" :key="s.id">
-                    <td style="font-size:13px">{{ s.username || '—' }}</td>
+                    <td class="u-fs-13">{{ s.username || '—' }}</td>
                     <td class="ip-mono text-sm">{{ s.client_ip || '—' }}</td>
                     <td class="text-muted-sm">{{ fmtTs(s.started_at) }}</td>
                     <td class="text-muted-sm">{{ s.ended_at ? fmtTs(s.ended_at) : '—' }}</td>
@@ -481,7 +481,7 @@
                   </tr>
                 </tbody>
               </table>
-              <div v-else style="padding:24px;text-align:center;color:var(--text2);font-size:13px">No SSH sessions recorded for this host.</div>
+              <div class="u-c-text2_fs-13_p-24_ta-center" v-else>No SSH sessions recorded for this host.</div>
             </div>
 
             <!-- Activity -->
@@ -497,7 +497,7 @@
                   <span class="hd-act-ts">{{ fmtTs(ev.ts) }}</span>
                 </div>
               </div>
-              <div v-else style="padding:24px;text-align:center;color:var(--text2);font-size:13px">No recent activity for this host.</div>
+              <div class="u-c-text2_fs-13_p-24_ta-center" v-else>No recent activity for this host.</div>
             </div>
           </div>
         </div>

@@ -5,7 +5,7 @@
         Integration
         <button class="btn btn-sm" @click="load">Refresh</button>
       </div>
-      <div style="padding:18px">
+      <div class="u-p-18">
         <div class="text-muted" v-if="loading">Loading…</div>
         <template v-else>
           <div class="int-grid">
@@ -42,9 +42,9 @@
     </div>
 
     <!-- Superadmin-only: edit the Zabbix integration settings -->
-    <div v-if="auth.isSuperAdmin" class="card" style="margin-top:16px">
+    <div v-if="auth.isSuperAdmin" class="card u-mt-16">
       <div class="card-header">Zabbix Settings <span class="badge badge-blue">superadmin</span></div>
-      <div style="padding:18px">
+      <div class="u-p-18">
         <div class="fp-field">
           <label class="fp-label">Zabbix Console URL <span class="hint">(the "Open Zabbix" link / header button)</span></label>
           <input v-model="form.zabbix_console_url" class="fp-input" placeholder="https://zabbix.example.com" />
@@ -68,9 +68,9 @@
     </div>
 
     <!-- ── Zabbix UI wiring (copy-paste global scripts) ──────────────────── -->
-    <div class="card" style="margin-top:16px">
+    <div class="card u-mt-16">
       <div class="card-header">Connect from the Zabbix UI</div>
-      <div style="padding:10px 16px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">
+      <div class="u-borderbottom-1solidborder_c-text2_fs-12_p-1016">
         Add these as <strong>global scripts</strong> in Zabbix (Alerts → Scripts, or Administration → Scripts).
         They appear in the host / problem context menus. Set a Zabbix macro
         <code>{$SEYALRUN_HMAC}</code> = your webhook HMAC secret for the one-click option.
@@ -95,7 +95,7 @@
           <div style="font-size:12px;color:var(--text2);margin:4px 0">Parameters:</div>
           <div class="zs-code"><code>{{ webhookParams }}</code><button class="btn-pill btn-pill-outline" @click="copy(webhookParams)">Copy</button></div>
           <div style="font-size:12px;color:var(--text2);margin:8px 0 4px">Script:</div>
-          <div class="zs-code"><pre style="margin:0">{{ webhookScript }}</pre><button class="btn-pill btn-pill-outline" @click="copy(webhookScript)">Copy</button></div>
+          <div class="zs-code"><pre class="u-m-0">{{ webhookScript }}</pre><button class="btn-pill btn-pill-outline" @click="copy(webhookScript)">Copy</button></div>
         </div>
 
         <div class="zs-block" style="border-color:#1f6feb55">
@@ -107,7 +107,7 @@
           <div style="font-size:12px;color:var(--text);margin:4px 0"><strong>A · One script per playbook</strong> — set <code>binding</code> to a fixed name below. Name each Zabbix script after the playbook; the operator picks from the menu.</div>
           <div style="font-size:12px;color:var(--text);margin:8px 0 4px"><strong>B · One script, dropdown</strong> — set parameter <code>binding</code> = <code>&#123;MANUALINPUT&#125;</code>, then in the script's <em>Advanced configuration</em> enable <em>User input → Dropdown</em> and paste these options:</div>
           <div class="zs-code"><code>{{ bindingNames || '(create a binding first)' }}</code><button class="btn-pill btn-pill-outline" @click="copy(bindingNames)">Copy</button></div>
-          <div class="zs-desc" style="margin-top:8px">
+          <div class="zs-desc u-mt-8">
             Only enabled bindings are runnable — an unknown name is rejected (<code>no_binding</code>).
             Manage bindings on the <router-link to="/admin/trigger-bindings" style="color:var(--accent2)">Trigger Bindings</router-link> page.
           </div>
