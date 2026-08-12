@@ -31,7 +31,7 @@ services:
 
   identity-service:
     build:
-      context: .
+      context: ./core
       dockerfile: services/identity-service/Dockerfile
     restart: unless-stopped
     env_file: .env
@@ -53,7 +53,7 @@ services:
 
   inventory-service:
     build:
-      context: .
+      context: ./core
       dockerfile: services/inventory-service/Dockerfile
     restart: unless-stopped
     env_file: .env
@@ -72,7 +72,7 @@ services:
 
   terminal-service:
     build:
-      context: .
+      context: ./core
       dockerfile: services/terminal-service/Dockerfile
     restart: unless-stopped
     env_file: .env
@@ -98,7 +98,7 @@ services:
 
   recording-service:
     build:
-      context: .
+      context: ./core
       dockerfile: services/recording-service/Dockerfile
     restart: unless-stopped
     env_file: .env
@@ -122,7 +122,7 @@ services:
 
   api-gateway:
     build:
-      context: .
+      context: ./core
       dockerfile: services/api-gateway/Dockerfile
     restart: unless-stopped
     env_file: .env
@@ -157,8 +157,14 @@ services:
 
   frontend:
     build:
-      context: .
+      context: ./core
       dockerfile: services/frontend/Dockerfile
+      # Without this the Dockerfile's own `ARG APP_VERSION=dev` default wins and
+      # the sidebar reads "vdev" in every source-built deployment — including
+      # staging, and anything installed via install.sh. "Which version is this?"
+      # is not a cosmetic question on a system that has to produce audit evidence.
+      args:
+        APP_VERSION: ${SEYALRUN_VERSION:-dev}
     restart: unless-stopped
     networks: [seyalrun_net]
     read_only: true
@@ -174,7 +180,7 @@ services:
 
   edge-proxy:
     build:
-      context: .
+      context: ./core
       dockerfile: services/edge-proxy/Dockerfile
     restart: unless-stopped
     # CSP frame-ancestors is always 'self' plus these EXTRA origins (default none).
@@ -182,6 +188,15 @@ services:
     # unquoted host source) to allow the embedded dashboard to iframe this app. Never "*".
     environment:
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
+      # Upstream scheme and verification, substituted into the nginx template.
+      # They must always be defined: envsubst replaces an unset variable with an
+      # empty string, which would produce "://upstream" and fail to start.
+      # docker-compose.internal-tls.yml flips these to https / on.
+      INTERNAL_PROTO: ${INTERNAL_PROTO:-http}
+      INTERNAL_PROXY_SSL_VERIFY: ${INTERNAL_PROXY_SSL_VERIFY:-off}
+      # Port the HTTP->HTTPS redirect points at. Must track the host side of the
+      # 8443 mapping below, or plain-HTTP visitors are redirected to a dead port.
+      PUBLIC_HTTPS_PORT: ${EDGE_HTTPS_PORT:-8443}
     networks: [seyalrun_net]
     # NOT read_only: the nginx entrypoint renders the CSP template into
     # /etc/nginx/conf.d at boot (envsubst), which needs a writable conf.d owned by
@@ -212,7 +227,7 @@ services:
 
   automation-service:
     build:
-      context: .
+      context: ./core
       dockerfile: services/automation-service/Dockerfile
     restart: unless-stopped
     env_file: .env
@@ -239,7 +254,7 @@ services:
 
   zabbix-integration-service:
     build:
-      context: .
+      context: ./core
       dockerfile: services/zabbix-integration-service/Dockerfile
     restart: unless-stopped
     env_file: .env
@@ -263,7 +278,7 @@ services:
 
   metrics-service:
     build:
-      context: .
+      context: ./core
       dockerfile: services/metrics-service/Dockerfile
     restart: unless-stopped
     env_file: .env

@@ -1,0 +1,147 @@
+---
+# Zabbix 7.0 LTS — Docker Compose (ARM64 / aarch64)
+# All images use ubuntu-7.0-latest tag — ARM64 multi-arch supported
+#
+# Deploy: docker compose -f compose.zabbix.yml up -d
+# Web UI:  http://192.168.64.8  (admin / zabbix)
+
+services:
+  zabbix-mysql:
+    image: mysql:8.0
+    container_name: zbx_mysql
+    platform: linux/arm64
+    restart: unless-stopped
+    command:
+      - mysqld
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin
+      - --log_bin_trust_function_creators=1
+    environment:
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${ZABBIX_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${ZABBIX_DB_ROOT_PASSWORD}
+    volumes:
+      - zbx_mysql_data:/var/lib/mysql
+    networks:
+      - zbx_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "root", "--password=${ZABBIX_DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  zabbix-server:
+    image: zabbix/zabbix-server-mysql:ubuntu-7.0-latest
+    container_name: zbx_server
+    platform: linux/arm64
+    restart: unless-stopped
+    depends_on:
+      zabbix-mysql:
+        condition: service_healthy
+    environment:
+      DB_SERVER_HOST: zabbix-mysql
+      DB_SERVER_PORT: "3306"
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${ZABBIX_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${ZABBIX_DB_ROOT_PASSWORD}
+      ZBX_JAVAGATEWAY_ENABLE: "true"
+      ZBX_JAVAGATEWAY: zabbix-java-gateway
+      ZBX_JAVAGATEWAYPORT: "10052"
+      ZBX_STARTJAVAPOLLERS: "5"
+      ZBX_CACHESIZE: 256M
+      ZBX_HISTORYCACHESIZE: 64M
+      ZBX_TRENDCACHESIZE: 64M
+      ZBX_VALUECACHESIZE: 64M
+    ports:
+      - "10051:10051"    # Zabbix server trapper
+    volumes:
+      - zbx_server_data:/var/lib/zabbix
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - zbx_net
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 20000
+        hard: 40000
+    healthcheck:
+      test: ["CMD-SHELL", "zabbix_server -R config_cache_reload || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-mysql:ubuntu-7.0-latest
+    container_name: zbx_web
+    platform: linux/arm64
+    restart: unless-stopped
+    depends_on:
+      zabbix-mysql:
+        condition: service_healthy
+      zabbix-server:
+        condition: service_started
+    environment:
+      ZBX_SERVER_HOST: zabbix-server
+      ZBX_SERVER_PORT: "10051"
+      DB_SERVER_HOST: zabbix-mysql
+      DB_SERVER_PORT: "3306"
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${ZABBIX_DB_PASSWORD}
+      PHP_TZ: Asia/Kolkata
+      ZBX_SERVER_NAME: "SeyalRun Monitoring"
+    ports:
+      - "80:8080"        # Map host 80 to container 8080 (nginx-unprivileged)
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - zbx_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  zabbix-agent:
+    image: zabbix/zabbix-agent:ubuntu-7.0-latest
+    container_name: zbx_agent
+    platform: linux/arm64
+    restart: unless-stopped
+    depends_on:
+      - zabbix-server
+    environment:
+      ZBX_HOSTNAME: zabbix-server-host
+      ZBX_SERVER_HOST: zabbix-server
+      ZBX_SERVER_PORT: "10051"
+      ZBX_PASSIVE_ALLOW: "true"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - zbx_net
+    pid: host    # Required for agent to collect host metrics
+
+  zabbix-java-gateway:
+    image: zabbix/zabbix-java-gateway:ubuntu-7.0-latest
+    container_name: zbx_java_gw
+    platform: linux/arm64
+    restart: unless-stopped
+    networks:
+      - zbx_net
+
+networks:
+  zbx_net:
+    name: zbx_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+volumes:
+  zbx_mysql_data:
+  zbx_server_data:

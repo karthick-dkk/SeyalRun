@@ -1,0 +1,276 @@
+# SeyalRun — security risk register
+
+Open gaps against PCI DSS / SOC 2, with the code that causes them. Companion to
+[control-mapping.md](control-mapping.md).
+
+This register exists to be shown to an assessor. An accepted, documented risk is
+defensible; the same risk found undocumented is a finding about the process, not
+just the code.
+
+Severity reflects exploitability in a deployed system, not how hard it is to fix.
+
+---
+
+## R-1 — No encryption between internal services — CLOSED
+
+**Severity: High.** PCI DSS Req 4. **Closed** by `docker-compose.internal-tls.yml` + `ops/gen-internal-tls.sh`, verified on staging: plaintext HTTP to an internal port is refused, HTTPS via the internal CA succeeds, and a client without that CA is rejected (so verification is genuinely enforced, not merely configured). Enabling it is sticky — `_staging-bootstrap.sh` re-adds the overlay whenever the CA exists, so a redeploy cannot silently drop back to plaintext.
+
+Residual: the edge-proxy→frontend hop is still HTTP (static assets only; that container is nginx, not uvicorn, so it has no issued certificate), and this is one-way TLS — client authentication remains the signed X-Service-Token.
+
+Original finding:
+
+**Severity: High.** PCI DSS Req 4.
+
+TLS terminates at edge-proxy; every hop behind it is plaintext HTTP
+(`core/services/api-gateway/app/config.py:28-36`, and every `proxy_pass` in
+`core/services/edge-proxy/templates/default.conf.template`). Service tokens,
+decrypted credentials returned by `/internal/credentials/{id}/secret`, and live
+session data all cross the Docker bridge network in the clear. Anyone with
+packet capture on the host, or a container on the same network, can read them.
+
+Mitigating: only edge-proxy publishes a port, and every internal endpoint
+requires a signed `X-Service-Token`. So this is a confidentiality gap against a
+host-level or container-level attacker, not a remote one.
+
+**Remediation.** Issue per-service certificates from a small internal CA created
+at install time in `docker-init/`, and have each service terminate TLS itself.
+A full service mesh is disproportionate for a Compose-first product.
+
+**Measured scope** (counted, not estimated) — this is why it is a project rather
+than a patch, and why it must land as one atomic change: a half-converted mesh
+is mixed http/https and simply does not run.
+
+| Surface | Count | Change |
+|---|---|---|
+| `http://` upstreams in `services/*/app/config.py` | 25 | → `https://` |
+| `httpx.AsyncClient(...)` constructions | 52 | pass the internal CA bundle as `verify` |
+| Dockerfile `CMD` uvicorn invocations | 10 | add `--ssl-keyfile` / `--ssl-certfile` |
+| compose healthchecks using `urllib.request` over http | 10 | → https against the CA |
+| edge-proxy `proxy_pass` directives | 4 | → https upstreams |
+
+Plus: CA generation in `docker-init/`, per-service cert issuance keyed by the
+compose service name (which is the DNS name the certs must match), volume mounts
+for key/cert/CA, and a rotation path for the CA itself.
+
+Recommended sequencing: generate the CA and certs first and mount them while
+everything still speaks http (inert, no behaviour change), then flip one
+service's listener plus its callers and healthcheck together, verify on staging,
+and repeat. That keeps every step reversible instead of one large cutover.
+
+**How the scope above collapsed.** Measuring the mechanisms rather than assuming
+them removed nearly all of that table, and both findings were verified before any
+code was written: uvicorn accepts `UVICORN_SSL_KEYFILE`/`UVICORN_SSL_CERTFILE`
+from the environment (so no Dockerfile edits), and httpx honours `SSL_CERT_FILE`
+despite naming certifi in its default path (so none of the 52 client sites were
+touched). The trust bundle carries the public roots alongside the internal CA,
+because pointing at the internal CA alone would break every outbound call to S3,
+Elasticsearch and webhooks. Net application code changed: **none**.
+
+## R-9 — Pre-fix audit rows are permanently unverifiable
+
+**Severity: High.** PCI DSS Req 10.5.
+
+Until 2026-08-09, `log_action` hashed `session_id` and `result` into the entry
+payload but never persisted those columns, so `verify_chain()` reported
+"contents were altered" for any row carrying either. Measured on staging: 84 of
+90 rows unverifiable. Fixed, with `tests/test_audit_payload_persistence.py`
+comparing hashed fields against persisted fields so it cannot recur.
+
+Rows written before the fix **cannot be repaired** — the hashed values were never
+stored and the 022 immutability trigger blocks UPDATE. Any environment carrying
+pre-fix rows must be re-baselined with a fresh identity database before its audit
+log is presented as evidence.
+
+**This went unnoticed because the evidence collected was a count of hashed rows
+rather than a verification.** Any future claim that the chain verifies must cite
+`verify_chain()` output, never a row count.
+
+## R-10 — Most audit records carried no success/failure indication — CLOSED
+
+**Severity: Medium.** PCI DSS Req 10.2.2. **Closed**: all 41 `log_action` call
+sites across `core/services` now record an outcome, classified individually at
+the call site. `tests/test_audit_result_indication.py` fails the build on any
+new call site that omits one.
+
+Found by re-baselining staging and then *reading* the fresh chain rather than
+only verifying it. The first three rows were:
+
+```
+seq 1  login_failed  failure
+seq 2  login_failed  failure
+seq 3  login         (null)
+```
+
+Failures recorded an outcome; the success beside them recorded nothing.
+Measured: **48 of 64** call sites passed no `result`, so the column was null on
+the majority of the log and outcome could not be filtered or reported on
+uniformly.
+
+Two of the 41 are denials rather than successes — both `login_denied_ip` sites,
+each followed immediately by `raise HTTPException(403)`. They record
+`result="failure"`. The rest sit after the operation they describe (several
+after `session.commit()`) and record `result="success"`.
+
+**The fix that was deliberately NOT made**, and the test says so: defaulting
+`result` to `"success"` inside `log_action`. A failure path that forgot to pass
+`"failure"` would then positively assert success, which is worse than a null.
+
+A second, quieter half of the same gap: `AuditLogOut` never exposed `result`,
+`session_id` or `seq`. All three are stored on the row and bound into the entry
+hash, so the values existed, were hashed, and were invisible to every API
+consumer — including this product's own Audit Logs page, which is why the fix
+above appeared to do nothing until the schema was corrected too.
+
+Verified end to end on staging: a host create and delete issued through the API
+produced `host.create`/`success` and `host.delete`/`success`, forwarded from
+inventory-service, and `verify_chain()` returned ok over 13 rows.
+
+## R-2 — Session end is not audited — CLOSED
+
+**Severity: Medium.** PCI DSS Req 10.2. **Closed**: `session.end` is emitted from the disconnect/idle path with a reason and `duration_seconds`, so the length of privileged access is now chained.
+
+Original finding:
+
+`terminal-service/app/ws/terminal.py:309,372` sets `ended_at` on normal
+disconnect and idle timeout without writing an audit row. Only explicit API
+termination (`session.terminate`) is audited. Session **duration** — how long
+privileged access was actually held — is therefore not in the tamper-evident
+chain.
+
+**Remediation.** Emit `session.end` with a reason (`disconnect`, `idle_timeout`,
+`terminated`) and duration from both paths.
+
+## R-3 — Automation job execution is not audited — CLOSED
+
+**Severity: High.** PCI DSS Req 10.2. **Closed**: `job.start` and `job.finish` are emitted from `runner.execute()` with executor, template, target hosts, exit code and attempt count.
+
+Original finding:
+
+`grep log_action core/services/automation-service` returns nothing. Jobs run
+commands as privileged accounts on managed hosts — including `rotate_secret`,
+`account_push`, `disable_account` and `remove_account`, which change access
+itself — and none of it reaches the audit chain. `credential.secret_issued` now
+records that a job *obtained* a credential, which is a partial compensating
+control, but not what the job then did with it.
+
+**Remediation.** Audit job submit / start / finish with the executor name,
+target hosts and exit status, mirroring `terminal-service/app/audit.py`.
+
+## R-4 — Recording access is unaudited (integrity now protected)
+
+**Severity: Medium.** **Partially closed**: a SHA-256 digest is now taken at ingest and re-checked by `/internal/recordings/{id}/verify`, so tampering is detectable. Playback and presigned-URL issuance are still unaudited — that half remains open.
+
+Original finding:
+
+**Severity: Medium.** SOC 2 CC7; PCI DSS Req 10.5.
+
+Session recordings (`ZARecording`) carry no hash, checksum or signature, so a
+recording can be altered or replaced without detection — while the audit log
+that *references* it is tamper-evident. Playback and presigned-URL issuance
+(`recording-service/app/storage.py:102`, 3600 s TTL) write no audit row, so
+"who watched this privileged session" is unanswerable.
+
+**Remediation.** Store a SHA-256 over the frame payload at write time, verify on
+read, and audit playback/presign.
+
+## R-5 — The database does not prevent audit tampering — CLOSED
+
+**Severity: Medium.** **Closed**: append-only triggers on Postgres and MySQL reject UPDATE/DELETE (identity-service `022_audit_immutability`), and the chain columns are now in `schema.sql` as well as Alembic, so a migration-less install is no longer chain-less. Residual: a superuser can disable the trigger.
+
+Original finding:
+
+**Severity: Medium.** PCI DSS Req 10.5.
+
+`za_audit_logs` has no `REVOKE UPDATE/DELETE`, no immutability trigger, and the
+application's DB role can freely modify it. The hash chain makes tampering
+*detectable* — proven by `core/tests/test_audit_chain.py` — but nothing makes it
+*impossible*, and detection only happens when someone runs `/audit/verify`.
+
+Also: `core/schema/postgres/schema.sql:144-156` and the MySQL equivalent do not
+contain `seq`, `prev_hash` or `entry_hash` at all. Those columns arrive only via
+Alembic migration `008_audit_hash_chain.py`, nullable and with no backfill. A
+deployment built from `schema.sql` without running migrations has an audit table
+with **no chain columns**, and rows written before the migration have null
+hashes.
+
+**Remediation.** `REVOKE UPDATE, DELETE ON za_audit_logs` from the application
+role, add an `ON UPDATE/DELETE` rule or trigger, fold the chain columns into
+`schema.sql`, and schedule `/audit/verify` rather than relying on manual runs.
+
+## R-6 — KEK rotation cannot rotate the primary credential vault — CLOSED
+
+**Severity: High.** **Closed**: rotation now rewraps `wrapped_dek` for envelope rows and re-encrypts `secret_ciphertext` only for legacy rows, with `DRY_RUN` reporting counts per mode.
+
+Original finding:
+
+**Severity: High.** PCI DSS Req 3.6/3.7.
+
+`ops/rotate_vault_key.py:37-45` reads every `za_credentials.secret_ciphertext`
+and calls `decrypt_secret(ciphertext, old_kek)`. That is only correct for the
+legacy single-KEK rows. Envelope rows — which are the actual PAM vault, per
+`inventory-service/app/vault.py:67-73` — encrypt the secret under a random
+per-row DEK, and the KEK only wraps that DEK in `wrapped_dek`, a column the
+script never selects or writes.
+
+**Verified failure mode** (measured, not inferred): decrypting an envelope
+ciphertext with the KEK raises `InvalidTag`, because AES-GCM authenticates. So
+the script *crashes on the first envelope row* rather than silently mis-rotating,
+and because `commit()` is after the loop the transaction rolls back. There is no
+silent corruption and no partial rotation — the operator gets a loud failure.
+
+The control failure is therefore capability, not integrity: **KEK rotation for
+the primary credential store is not possible with the shipped tooling.** An
+organisation that must rotate after a suspected key compromise cannot do so.
+
+Compounding: ciphertexts carry no key-version or algorithm marker
+(`core/libs/dbcore/crypto.py`), so rows cannot be classified by encryption mode
+without trial decryption.
+
+**Remediation.** Rewrap `wrapped_dek` under the new KEK in the same transaction
+(the DEK itself need not change, which is the point of the hierarchy — only small
+blobs are rewritten, not every credential). Add a `--dry-run` reporting row counts
+per encryption mode, write an audit row for the rotation, and add a key-version
+prefix to the ciphertext format.
+
+## R-7 — Audit forwarding from satellite services is best-effort
+
+**Severity: Medium.** PCI DSS Req 10.
+
+identity-service owns the chain; terminal-service and inventory-service forward
+over HTTP. A dropped forward is not a missing log line — the entry never
+receives a sequence number, so `verify_chain()` cannot detect its absence. The
+chain stays internally consistent while being incomplete.
+
+Partially remediated: forwarders now check response status and log at error
+level, and `critical=True` fail-closes credential egress
+(`core/tests/test_audit_failclosed.py`). Routine events remain best-effort by
+design, to avoid identity-service availability taking down every request.
+
+**Remediation.** Durable local spool with retry, so an entry survives an
+identity-service outage instead of being lost.
+
+## R-8 — No lock on the audit chain for non-Postgres/MySQL engines
+
+**Severity: Low.** Only the two supported engines are covered; the `else` branch
+in `identity-service/app/audit.py:46` yields without taking any lock. Low today
+because no third engine is supported — it becomes High the moment one is added.
+
+**Remediation.** Fail closed on an unrecognised engine rather than proceeding
+unlocked.
+
+---
+
+## Out of scope: `modules/jumpserver-legacy/`
+
+Quarantined, not wired into the core stack, slated for deletion as the Phase 2
+port lands. Two critical flaws found there were fixed rather than deferred
+(missing signature verification on launch-token, `ProxyCommand` shell injection
+in playbook-studio). Known remaining issues in that tree:
+
+- `/launch-tokens` mints tokens with no authentication.
+- SSH host key verification disabled — `known_hosts: None`
+  (`ssh_terminal.py:122,137`) and `StrictHostKeyChecking=no`. Enabling it is not
+  a drop-in change: no `known_hosts` is populated, so it needs a trust-on-first-use
+  or provisioning path, which belongs with the `SessionBroker` implementation.
+
+Neither is reachable from a `core`-only deployment.

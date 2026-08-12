@@ -1,0 +1,119 @@
+---
+# SeyalRun Sidecar Services — Docker Compose
+# Deploy: docker compose -f compose.sidecars.yml up -d
+# Platform: linux/arm64 (Server 1 is aarch64)
+
+x-sidecar-common: &sidecar-common
+  restart: unless-stopped
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - pravesh_net
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "50m"
+      max-file: "5"
+  tmpfs:
+    - /tmp
+    - /run/certs
+
+services:
+  automation-bridge:
+    <<: *sidecar-common
+    image: seyalrun/automation-bridge:latest
+    container_name: ab_service
+    platform: linux/arm64
+    ports:
+      - "127.0.0.1:8001:8001"    # Only localhost — accessed via Nginx
+    volumes:
+      - /playbooks:/playbooks:rw  # rw: playbook-studio writes studio/{uuid}.yml
+      - ab_jobs:/tmp/ab-jobs      # ansible-runner job artifacts
+    environment:
+      AB_LOG_LEVEL: "WARNING"
+      AB_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/1"
+      AB_JUMPSERVER_API_URL: "http://${INFRA_HOST:-192.168.250.1}"
+      AB_JUMPSERVER_API_KEY: "${JUMPSERVER_API_KEY}"
+      AB_PLAYBOOKS_DIR: "/playbooks"
+      GIT_SHA: "${GIT_SHA:-unknown}"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  zbx-sync:
+    <<: *sidecar-common
+    image: seyalrun/zbx-sync:latest
+    container_name: zbx_sync
+    platform: linux/arm64
+    ports:
+      - "127.0.0.1:8002:8002"
+    environment:
+      ZS_LOG_LEVEL: "WARNING"
+      ZS_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/2"
+      ZS_JUMPSERVER_API_URL: "http://${INFRA_HOST:-192.168.250.1}"
+      ZS_JUMPSERVER_API_KEY: "${JUMPSERVER_API_KEY}"
+      ZS_ZABBIX_API_URL: "http://${ZABBIX_HOST:-192.168.64.8}"
+      ZS_ZABBIX_API_TOKEN: "${ZABBIX_API_TOKEN}"
+      ZS_SYNC_INTERVAL_MINUTES: "5"
+      GIT_SHA: "${GIT_SHA:-unknown}"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  launch-token:
+    <<: *sidecar-common
+    image: seyalrun/launch-token:latest
+    container_name: launch_token
+    platform: linux/arm64
+    ports:
+      - "127.0.0.1:8003:8003"
+    environment:
+      LT_LOG_LEVEL: "WARNING"
+      LT_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/3"
+      LT_JWT_PRIVATE_KEY_PATH: "/run/certs/jwt-private.pem"
+      LT_JWT_TOKEN_TTL_SECONDS: "60"
+      GIT_SHA: "${GIT_SHA:-unknown}"
+    volumes:
+      - jwt_certs:/run/certs:ro
+    healthcheck:
+      test: ["CMD", "python", "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  webhook-receiver:
+    <<: *sidecar-common
+    image: seyalrun/webhook-receiver:latest
+    container_name: webhook_recv
+    platform: linux/arm64
+    ports:
+      - "127.0.0.1:8004:8004"
+    environment:
+      WR_LOG_LEVEL: "WARNING"
+      WR_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/4"
+      WR_WEBHOOK_HMAC_SECRET: "${WEBHOOK_HMAC_SECRET}"
+      WR_ZBX_SYNC_URL: "http://zbx_sync:8002"
+      GIT_SHA: "${GIT_SHA:-unknown}"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  pravesh_net:
+    external: true
+    name: jms_net    # Share JumpServer's existing Docker network
+
+volumes:
+  ab_jobs:
+  jwt_certs:

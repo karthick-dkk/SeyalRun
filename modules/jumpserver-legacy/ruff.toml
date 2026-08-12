@@ -1,0 +1,22 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "N", "S", "UP", "B"]
+ignore = [
+    # FastAPI: Depends() / Query() in function defaults is the standard pattern
+    "B008",
+    # Broad except clauses are intentional in async WS/SSH handlers
+    "S110",  # try-except-pass
+    "S112",  # try-except-continue
+    # /tmp usage is intentional for ephemeral Ansible playbook files
+    "S108",
+    # Internal HTTP calls to JumpServer don't need verify= (self-signed certs expected)
+    "S501",
+    # assert used in tests and internal invariants only
+    "S101",
+    # subprocess calls go through fixed command lists, not shell=True
+    "S603",
+    # Line-length: allow up to 120 chars in practice (formatter target is 100)
+    "E501",
+]

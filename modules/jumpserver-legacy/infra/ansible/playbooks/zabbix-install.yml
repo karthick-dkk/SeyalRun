@@ -1,0 +1,113 @@
+---
+# Playbook: zabbix-install.yml
+# Deploys Zabbix 7.0 LTS via Docker Compose on Server 2 (ARM64 Ubuntu 24.04)
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.ini playbooks/zabbix-install.yml \
+#     --ask-vault-pass --limit zabbix
+
+- name: Deploy Zabbix 7.0 LTS (Docker, ARM64)
+  hosts: zabbix
+  become: true
+  gather_facts: true
+
+  vars:
+    zabbix_deploy_dir: /opt/zabbix
+    zabbix_db_password: "{{ vault_zabbix_db_password | default('Zabbix@Lab2024!') }}"
+    zabbix_db_root_password: "{{ vault_zabbix_db_root_password | default('ZabbixRoot@Lab2024!') }}"
+
+  tasks:
+    - name: Verify ARM64 architecture
+      ansible.builtin.assert:
+        that: ansible_architecture == "aarch64"
+        fail_msg: "ARM64 required. Got: {{ ansible_architecture }}"
+
+    - name: Verify Ubuntu 24.04
+      ansible.builtin.assert:
+        that: ansible_distribution == "Ubuntu"
+        fail_msg: "Ubuntu required. Got: {{ ansible_distribution }}"
+
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - docker-compose-plugin
+          - python3-pip
+        state: present
+        update_cache: true
+
+    - name: Create Zabbix deployment directory
+      ansible.builtin.file:
+        path: "{{ zabbix_deploy_dir }}"
+        state: directory
+        owner: root
+        group: docker
+        mode: "0750"
+
+    - name: Deploy docker-compose.yml
+      ansible.builtin.copy:
+        src: "../../../docker/compose.zabbix.yml"
+        dest: "{{ zabbix_deploy_dir }}/docker-compose.yml"
+        mode: "0640"
+
+    - name: Deploy .env file with secrets
+      ansible.builtin.copy:
+        dest: "{{ zabbix_deploy_dir }}/.env"
+        content: |
+          ZABBIX_DB_PASSWORD={{ zabbix_db_password }}
+          ZABBIX_DB_ROOT_PASSWORD={{ zabbix_db_root_password }}
+        mode: "0600"
+        owner: root
+        group: root
+
+    - name: Pull Zabbix 7.0 LTS images (ARM64)
+      community.docker.docker_image:
+        name: "{{ item }}"
+        source: pull
+      loop:
+        - mysql:8.0
+        - zabbix/zabbix-server-mysql:ubuntu-7.0-latest
+        - zabbix/zabbix-web-nginx-mysql:ubuntu-7.0-latest
+        - zabbix/zabbix-agent:ubuntu-7.0-latest
+        - zabbix/zabbix-java-gateway:ubuntu-7.0-latest
+
+    - name: Start Zabbix stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ zabbix_deploy_dir }}"
+        state: present
+        pull: missing
+
+    - name: Wait for MySQL to be healthy
+      ansible.builtin.command:
+        cmd: >
+          docker exec zbx_mysql
+          mysqladmin ping -h localhost -u root --password={{ zabbix_db_root_password }}
+      register: mysql_ping
+      until: mysql_ping.rc == 0
+      retries: 30
+      delay: 5
+      changed_when: false
+
+    - name: Wait for Zabbix web UI to be accessible (up to 3 min)
+      ansible.builtin.uri:
+        url: "http://{{ zabbix_server_ip }}/index.php"
+        status_code: [200, 302]
+      register: zbx_ui
+      until: zbx_ui.status in [200, 302]
+      retries: 36
+      delay: 5
+
+    - name: Verify Zabbix server version
+      ansible.builtin.command:
+        cmd: docker exec zbx_server zabbix_server --version
+      register: zbx_version
+      changed_when: false
+
+    - name: Display deployment info
+      ansible.builtin.debug:
+        msg:
+          - "Zabbix 7.0 LTS deployed successfully!"
+          - "Version: {{ zbx_version.stdout_lines[0] }}"
+          - "Web UI: http://{{ zabbix_server_ip }}"
+          - "Default login: Admin / zabbix"
+          - "IMPORTANT: Change the Admin password immediately!"
+          - "Trapper port: {{ zabbix_server_ip }}:10051"

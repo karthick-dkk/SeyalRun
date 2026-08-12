@@ -7,6 +7,30 @@ on:
     - cron: "27 4 * * 1"   # weekly, catches newly-disclosed CVEs in pinned deps
 
 jobs:
+  semgrep:
+    name: Semgrep static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install semgrep
+        run: pip install semgrep
+
+      - name: Advisory scan (upstream rule packs)
+        run: |
+          semgrep --metrics=off --config p/python --config p/fastapi \
+            --config p/jwt --config p/secrets core/ modules/ || true
+
+      # Blocking. A bare `semgrep` exits 0 even with ERROR findings, which is
+      # why 15 verify=False calls shipped past this very ruleset in the
+      # JumpServer repo — --error is what makes a finding fail the build.
+      - name: Project rules (blocking on ERROR)
+        run: |
+          semgrep --metrics=off --error --severity=ERROR \
+            --config security/scanning/.semgrep.yml core/ modules/
+
   trivy-fs:
     name: Trivy filesystem + config scan
     runs-on: ubuntu-latest

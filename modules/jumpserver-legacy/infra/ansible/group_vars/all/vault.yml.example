@@ -1,0 +1,18 @@
+# EXAMPLE ONLY — copy to vault.yml and encrypt with:
+#   ansible-vault encrypt infra/ansible/group_vars/all/vault.yml
+#
+# The real vault.yml MUST NOT be committed to git (.gitignore covers it)
+---
+vault_sudo_pass: "your-sudo-password"  # pragma: allowlist secret
+
+vault_ipa_admin_password: "change-me-strong-password"  # pragma: allowlist secret
+vault_ipa_dm_password: "change-me-strong-password"  # pragma: allowlist secret
+
+vault_jumpserver_admin_password: "change-me-strong-password"  # pragma: allowlist secret
+vault_jumpserver_api_key: ""
+
+vault_zabbix_admin_password: "change-me-strong-password"  # pragma: allowlist secret
+vault_zabbix_api_token: ""
+
+vault_redis_password: ""   # Will be populated after JumpServer secret rotation
+vault_db_password: ""      # Will be populated after JumpServer secret rotation

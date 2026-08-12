@@ -47,8 +47,8 @@ case "$DB_ENGINE" in
       fi
     done
     for db in "$IDENTITY_DB_NAME" "$INVENTORY_DB_NAME"; do
-      echo "[*] Importing schema/postgres/schema.sql into '$db'..."
-      psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$db" -v ON_ERROR_STOP=1 -f schema/postgres/schema.sql
+      echo "[*] Importing core/schema/postgres/schema.sql into '$db'..."
+      psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$db" -v ON_ERROR_STOP=1 -f core/schema/postgres/schema.sql
     done
     ;;
   mysql)
@@ -58,8 +58,8 @@ case "$DB_ENGINE" in
         -e "CREATE DATABASE IF NOT EXISTS \`$db\`"
     done
     for db in "$IDENTITY_DB_NAME" "$INVENTORY_DB_NAME"; do
-      echo "[*] Importing schema/mysql/schema.sql into '$db'..."
-      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$db" < schema/mysql/schema.sql
+      echo "[*] Importing core/schema/mysql/schema.sql into '$db'..."
+      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$db" < core/schema/mysql/schema.sql
     done
     ;;
   *)

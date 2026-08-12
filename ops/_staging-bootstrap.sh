@@ -74,6 +74,20 @@ if [[ "$USE_DB_OVERLAY" == "1" ]]; then
   COMPOSE_FILES+=(-f docker-compose.db.yml)
   COMPOSE_PROFILE=(--profile postgres-db)
 fi
+
+# Internal TLS is sticky: once the CA exists, every redeploy keeps the overlay.
+# This function rebuilds the compose flags from scratch, so without the check a
+# routine redeploy would quietly bring the stack back up on plaintext HTTP and
+# nothing would report that a security control had been turned off.
+INTERNAL_TLS_DIR="${INTERNAL_TLS_DIR:-$(pwd)/tls/internal}"
+if [[ -f "${INTERNAL_TLS_DIR}/ca.pem" && -f "${INTERNAL_TLS_DIR}/ca-bundle.pem" ]]; then
+  export INTERNAL_TLS_DIR
+  COMPOSE_FILES+=(-f docker-compose.internal-tls.yml)
+  echo "[*] Internal TLS enabled (found ${INTERNAL_TLS_DIR}/ca.pem)."
+else
+  echo "[*] Internal TLS not enabled — run ops/gen-internal-tls.sh to encrypt service-to-service traffic."
+fi
+
 printf '%s\n' "${COMPOSE_FILES[@]}" "${COMPOSE_PROFILE[@]}" > .compose-flags
 
 # ── Build + start ─────────────────────────────────────────────────────────
