@@ -1,5 +1,14 @@
 # Build context: repo root (so future shared frontend libs could be added)
-FROM node:24-alpine AS build
+#
+# --platform=$BUILDPLATFORM pins this stage to the machine doing the building,
+# never the target architecture. The Vite/esbuild compile then always runs
+# natively; under QEMU arm64 emulation esbuild's native binary dies with SIGILL
+# ("uncaught target signal 4"), which is why the frontend used to publish as
+# amd64-only — and why the release could not be deployed on an ARM64 host at
+# all while every other service was multi-arch. The output is a static bundle,
+# so it is architecture-independent: the nginx stage below still builds per
+# target arch and just copies it in.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS build
 WORKDIR /build
 COPY services/frontend/package.json services/frontend/package-lock.json* ./
 RUN npm config set fetch-retries 5 \
