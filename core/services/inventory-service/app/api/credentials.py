@@ -3,7 +3,7 @@ from __future__ import annotations
 import jwt
 import pydantic
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.elevation import elevation_active
@@ -27,6 +27,12 @@ from ..schemas import (
     CredentialTemplateOut,
 )
 from ..vault import VaultDecryptError, decrypt, decrypt_envelope, encrypt_envelope
+
+# How many prior secrets to retain per credential. Two gives you the previous
+# password for "what was it before this rotation" and one behind it for a
+# botched rotation, without accumulating an unbounded archive of still-valid
+# credentials.
+SECRET_HISTORY_KEEP = 2
 
 router = APIRouter(tags=["credentials"], dependencies=[Depends(require_service_token)])
 
@@ -487,6 +493,27 @@ async def update_credential_secret(
             wrapped_dek=cred.wrapped_dek,
             rotated_by=actor_id or None,
         ))
+        await session.flush()   # so the row just added is visible to the prune below
+
+        # Keep only the most recent SECRET_HISTORY_KEEP prior secrets. The archive
+        # was unbounded, which quietly turns a credential rotated weekly into a
+        # growing pile of decryptable old passwords — every one of them still a
+        # live secret for anything that never got re-keyed, and every one of them
+        # something ops/rotate_vault_key.py has to keep rewrapping forever.
+        # Deleting is done by explicit id after ordering, not by a bare OFFSET,
+        # so rows with an identical created_at cannot make the window ambiguous.
+        keep_ids = (await session.execute(
+            select(ZACredentialHistory.id)
+            .where(ZACredentialHistory.credential_id == cred.id)
+            .order_by(ZACredentialHistory.created_at.desc(), ZACredentialHistory.id.desc())
+            .limit(SECRET_HISTORY_KEEP)
+        )).scalars().all()
+        if keep_ids:
+            await session.execute(
+                delete(ZACredentialHistory)
+                .where(ZACredentialHistory.credential_id == cred.id)
+                .where(ZACredentialHistory.id.notin_(keep_ids))
+            )
 
     cred.secret_ciphertext, cred.wrapped_dek = _encrypt_secret(kind.encode(payload.secret))
     cred.strength_score = _strength_score(cred.secret_type, payload.secret)
