@@ -18,6 +18,19 @@ self-signed TLS cert, brings up a Dockerized Postgres, runs migrations, seeds
 the superadmin account, and starts every service. Takes a few minutes on
 first run (image pulls); safe to re-run (an existing `.env`/cert/database is
 reused, not overwritten).
+
+**Pin the version for anything you care about.** The installer defaults to
+`:latest`, which follows the newest *stable* release (a pre-release such as
+`v2.0.0-beta` publishes only its own tag and never moves `:latest`). For a
+system that has to answer "what was running on this date", set an immutable
+version instead:
+
+```sh
+SEYALRUN_VERSION=2.0.0 curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
+```
+
+Current release: **v2.0.0**. Images are published for `linux/amd64` and
+`linux/arm64`.
 <img width="2842" height="1622" alt="image" src="https://github.com/user-attachments/assets/1ca5e5cf-fad5-4964-8224-0ac56c62bff8" />
 
 # Repository layout
@@ -29,7 +42,7 @@ systems are optional modules, not part of the product's core.
 core/         the platform — libs, services, schema, tests, monitoring
 modules/      optional integrations
   zabbix/     Zabbix frontend module (embeds SeyalRun's UI inside Zabbix)
-  jumpserver-legacy/   staging for the JumpServer merge; see its MIGRATION.md
+  jumpserver-legacy/   quarantined; NOT wired into the stack. See its MIGRATION.md
 ops/          deploy, backup, rotation and verification scripts
 security/     scanning rules enforced by CI
 ```
@@ -49,6 +62,7 @@ before running the command above:
 |---|---|---|
 | `SEYALRUN_DIR` | `./seyalrun` | Where to install |
 | `SEYALRUN_HOST` | auto-detected | Hostname/IP for the TLS cert + `FRONTEND_ORIGIN` |
+| `SEYALRUN_VERSION` | `latest` | Image tag to install. Pin it for anything you need to be reproducible |
 | `FRAME_ANCESTORS` | *(none)* | Set to your Zabbix origin to allow iframe embedding |
 | `SEYALRUN_DB_ENGINE` | `postgres` | `postgres` or `mysql` |
 | `SEYALRUN_DB_HOST` | *(unset — uses Dockerized DB)* | Point at an **existing** Postgres/MySQL instead — see below |
@@ -159,6 +173,50 @@ by both paths.
 
 6. Open `https://<host>:${EDGE_HTTPS_PORT:-8443}/` and log in.
 
+## Verifying a deployment
+
+Two checks, both read-only.
+
+```sh
+ops/verify-staging.sh <host>          # 31 checks: edge, health, port exposure,
+                                      # container health, every service at Alembic head
+ops/rebaseline-identity-db.sh --check # runs the real verify_chain() over the audit log
+```
+
+The second one matters more than it looks. The audit log is a SHA-256 hash
+chain: each row stores `seq`, `prev_hash` and `entry_hash`, so editing or
+deleting any historical row breaks every hash after it, and the database
+rejects UPDATE and DELETE on the table outright. Audit Logs in the UI verifies
+the chain on load and says so.
+
+**Do not present an audit log as evidence until `verify_chain()` has actually
+returned `ok`.** Counting rows, or counting rows that have a hash, is not a
+verification — see R-9 in [docs/compliance/risk-register.md](docs/compliance/risk-register.md)
+for what that mistake cost here. A chain of zero rows also passes vacuously;
+generate real activity first.
+
+Deployments carrying rows written before v2.0.0's audit fix cannot verify and
+must be re-baselined (same script, without `--check`) before their log is used
+as evidence.
+
+## Compliance posture
+
+`docs/compliance/` ships with the code, because evidence is only credible
+versioned alongside what it describes:
+
+- [control-mapping.md](docs/compliance/control-mapping.md) — controls to the
+  code that implements them, with commands an assessor can run
+- [risk-register.md](docs/compliance/risk-register.md) — open and closed gaps,
+  each with the code that causes it. Accepted, documented risk is defensible;
+  the same risk found undocumented is a finding about the process
+- [staging-validation.md](docs/compliance/staging-validation.md) — controls
+  exercised against a running stack, not just unit tests
+
+Known and tracked: `sftp`/`upload`/`download` are grantable on an
+authorization but not yet enforced (R-11) — they render disabled in the UI
+until file transfer ships, so an access review cannot report a control that
+does not exist.
+
 ## `.env` reference
 
 Every variable is documented in [.env.example](.env.example). Highlights:
@@ -173,6 +231,7 @@ Every variable is documented in [.env.example](.env.example). Highlights:
 | `TLS_CERT_PATH` / `TLS_KEY_PATH` | edge-proxy TLS cert/key (host paths, bind-mounted) |
 | `FRONTEND_ORIGIN` | CORS allow-origin for api-gateway — must match the URL you browse to |
 | `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` | Initial superadmin (leave password blank to auto-generate) |
+| `SEYALRUN_VERSION` | Image tag to run, and the version shown in the UI sidebar. Pin it; `latest` moves with each stable release |
 | `ZABBIX_MODULE_SECRET` | Optional — only if using [modules/zabbix/seyalrun/](modules/zabbix/README.md); HMAC-signs the module's SSO handshake |
 
 No secret has a default value — services fail fast at startup if a required

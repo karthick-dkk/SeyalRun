@@ -9,6 +9,7 @@
 # e.g.:
 #
 #   SEYALRUN_HOST=seyalrun.example.com \
+#   SEYALRUN_VERSION=2.0.0 \
 #   FRAME_ANCESTORS=https://zabbix.example.com \
 #     curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
 #
@@ -106,6 +107,18 @@ info "[5/8] Configuring database and origins..."
 EDGE_HTTPS_PORT="$(grep '^EDGE_HTTPS_PORT=' .env | cut -d= -f2)"
 EDGE_HTTPS_PORT="${EDGE_HTTPS_PORT:-8443}"
 sed -i.bak "s|^FRONTEND_ORIGIN=.*|FRONTEND_ORIGIN=https://${SEYALRUN_HOST}:${EDGE_HTTPS_PORT}|" .env
+# Pin the image tag when asked. Without this the compose default (:latest)
+# wins and a reinstall silently moves to whatever the newest stable release
+# is — which is exactly what an operator pinning a version is trying to avoid,
+# and what makes "what was running on this date" unanswerable.
+if [[ -n "${SEYALRUN_VERSION:-}" ]]; then
+  if grep -q '^SEYALRUN_VERSION=' .env; then
+    sed -i.bak "s|^SEYALRUN_VERSION=.*|SEYALRUN_VERSION=${SEYALRUN_VERSION}|" .env
+  else
+    echo "SEYALRUN_VERSION=${SEYALRUN_VERSION}" >> .env
+  fi
+  ok "pinned image tag: ${SEYALRUN_VERSION}"
+fi
 if [[ -n "${FRAME_ANCESTORS:-}" ]]; then
   sed -i.bak "s|^FRAME_ANCESTORS=.*|FRAME_ANCESTORS=${FRAME_ANCESTORS}|" .env
 fi
