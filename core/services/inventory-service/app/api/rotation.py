@@ -139,7 +139,22 @@ async def _dispatch_rotation(session: AsyncSession, credential_id: str, triggere
             raise _DispatchError(status.HTTP_502_BAD_GATEWAY, f"automation unreachable: {exc}") from exc
 
     if run.status_code not in (200, 202):
-        raise _DispatchError(status.HTTP_502_BAD_GATEWAY, f"automation dispatch failed ({run.status_code})")
+        # A 4xx from automation-service means the REQUEST was wrong (a param not
+        # on the template allowlist, an unknown template), not that the service
+        # is unreachable. Collapsing it to 502 told the operator "the server is
+        # broken" when the real answer named the offending parameter — and hid a
+        # rotation that had never worked behind a message about a gateway.
+        # Pass 4xx through with its reason; keep 502 for genuine upstream faults.
+        detail = f"automation dispatch failed ({run.status_code})"
+        try:
+            body = run.json()
+            if isinstance(body, dict) and body.get("detail"):
+                detail = f"automation rejected the rotation: {body['detail']}"
+        except Exception:  # noqa: BLE001 - a non-JSON body is not worth failing over
+            pass
+        if 400 <= run.status_code < 500:
+            raise _DispatchError(run.status_code, detail)
+        raise _DispatchError(status.HTTP_502_BAD_GATEWAY, detail)
 
     policy = await _get_policy(session, credential_id)
     if policy is not None:

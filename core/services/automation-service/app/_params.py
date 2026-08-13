@@ -30,6 +30,24 @@ from __future__ import annotations
 # code/playbook executed on target hosts.
 RESERVED_PARAM_KEYS = frozenset({"script_content", "playbook_path"})
 
+# Params intrinsic to a flow rather than supplied by a caller, keyed by the
+# template's action_type. subject_credential_id names WHICH credential a
+# rotation targets — the rotate_secret flow is meaningless without it, and it
+# arrives from inventory-service over a signed X-Service-Token, not from a
+# webhook body.
+#
+# This is deliberately scoped per action_type and NOT a global exemption. The
+# allowlist exists because webhook payloads are attacker-influenceable; opening
+# a key for every template would hand that back. A webhook-driven template still
+# rejects subject_credential_id unless its own allowlist declares it.
+#
+# Reserved keys still win: FLOW_PARAMS is unioned before the RESERVED_PARAM_KEYS
+# subtraction below, so nothing here can ever re-open script_content or
+# playbook_path, which is the injection path this module closes.
+FLOW_PARAMS: dict[str, frozenset[str]] = {
+    "rotate_secret": frozenset({"subject_credential_id"}),
+}
+
 
 class ParamNotAllowedError(ValueError):
     """Raised when caller params contain reserved or non-allowlisted keys."""
@@ -61,6 +79,7 @@ def allowed_param_keys_for(tmpl) -> set[str]:
     allowed: set[str] = set(tmpl.allowed_param_keys or [])
     allowed |= set((tmpl.default_params or {}).keys())
     allowed |= _survey_field_names(tmpl.survey_schema)
+    allowed |= FLOW_PARAMS.get(getattr(tmpl, "action_type", "") or "", frozenset())
     allowed -= RESERVED_PARAM_KEYS  # reserved keys are never caller-allowable
     return allowed
 
