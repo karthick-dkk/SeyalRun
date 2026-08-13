@@ -121,7 +121,12 @@ async def _dispatch_rotation(session: AsyncSession, credential_id: str, triggere
             raise _DispatchError(status.HTTP_400_BAD_REQUEST, "No rotate_secret job template configured in Automation")
         try:
             run = await client.post(
-                "/internal/job-runs",
+                # automation-service mounts its internal router at /api/v1, so the
+                # real path is /api/v1/internal/job-runs. Without the prefix this
+                # 404s and rotation surfaces as a 502 — the two other calls in this
+                # same file (/api/v1/job-templates, /api/v1/internal/notifications)
+                # get it right, which is how the typo survived review.
+                "/api/v1/internal/job-runs",
                 headers={"X-Service-Token": token},
                 json={
                     "job_template_id": template_id,
