@@ -56,7 +56,12 @@ _SYSTEM = ["log-backend", "settings", "command-filters",
 # escalates nothing — it is an alternative authentication factor for an identity
 # the user already has. It sat in _SYSTEM (superadmin-only), so the API was
 # written as self-service while the gateway refused everyone but superadmin.
-_SELF = ["ssh", "recordings", "metrics", "api-tokens"]  # "auth" is always-allowed, not listed here
+# "notifications" is the WebSocket feed of the caller's OWN notifications, gated
+# on the WS upgrade by api-gateway/app/ws_proxy.py. It was in SERVICE_ROUTES as a
+# real upstream but in no role's permissions, so is_authorized() refused it for
+# every role except superadmin (which passes on all=True) and the socket was
+# closed with 4403 on connect. Self-scoped like the rest of _SELF.
+_SELF = ["ssh", "recordings", "metrics", "api-tokens", "notifications"]  # "auth" is always-allowed, not listed here
 
 
 def _grant(segments, methods=ALL_METHODS):
@@ -88,6 +93,7 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
             "recordings": ["GET"],
             "metrics": ["GET"],
             "api-tokens": list(ALL_METHODS),   # own tokens only — see _SYSTEM note
+            "notifications": ["GET"],          # own notification feed (WS upgrade)
             "users": ["GET", "PUT"],   # same restricted scope as admin
             "roles": ["GET"],
         },
@@ -101,6 +107,7 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
             "job-runs": ["GET"],
             "job-templates": ["GET"],
             "api-tokens": list(ALL_METHODS),   # own tokens only — see _SYSTEM note
+            "notifications": ["GET"],          # own notification feed (WS upgrade)
             "playbook-run": ["POST"],   # pseudo-segment: only .../job-templates/{id}/run
             "recordings": ["GET"],
         },
