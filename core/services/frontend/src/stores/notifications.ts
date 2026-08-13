@@ -13,6 +13,16 @@ export interface AppNotification {
 }
 
 let ws: WebSocket | null = null
+// Reconnect state. A fixed 5s retry with no ceiling meant a server that keeps
+// rejecting — an expired token, a shell still mounted after logout — was
+// reconnected against every 5 seconds indefinitely, and every client in a fleet
+// retried in lockstep after a restart. Backoff bounds the first, jitter spreads
+// the second, and the timer handle stops two chains stacking when connect() is
+// called again while one is already pending.
+let retryAttempt = 0
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+const RETRY_BASE_MS = 2000
+const RETRY_MAX_MS = 60000
 let intentionalClose = false
 
 export const useNotificationsStore = defineStore('notifications', {
@@ -55,6 +65,7 @@ export const useNotificationsStore = defineStore('notifications', {
     // per-page connection would miss notifications that arrive while browsing.
     connect() {
       if (ws) return
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
       intentionalClose = false
       ws = new WebSocket(wsUrl('notifications'))
       ws.onmessage = (evt) => {
@@ -67,16 +78,25 @@ export const useNotificationsStore = defineStore('notifications', {
         this.items = this.items.slice(0, 50)
         this.unreadCount += 1
       }
+      ws.onopen = () => { retryAttempt = 0 }   // a real connection resets the backoff
       ws.onclose = () => {
         ws = null
         if (intentionalClose) return
-        // Reconnect after a short delay — mirrors TermSession.vue's own backoff
-        // for the same "session token may just be mid-refresh" transient case.
-        setTimeout(() => this.connect(), 5000)
+        // Exponential backoff, capped, with jitter. The transient case this
+        // exists for (a session token mid-refresh) clears in one or two tries;
+        // anything that does not clear is a persistent rejection and must not be
+        // retried at a fixed rate forever.
+        const delay = Math.min(RETRY_BASE_MS * 2 ** retryAttempt, RETRY_MAX_MS)
+        retryAttempt += 1
+        const jittered = delay * (0.5 + Math.random())
+        if (retryTimer) clearTimeout(retryTimer)
+        retryTimer = setTimeout(() => { retryTimer = null; this.connect() }, jittered)
       }
     },
     disconnect() {
       intentionalClose = true
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+      retryAttempt = 0
       ws?.close()
       ws = null
     },
