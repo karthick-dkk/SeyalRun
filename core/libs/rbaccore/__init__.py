@@ -47,9 +47,16 @@ _INVENTORY = ["hosts", "host-groups", "credentials", "credential-templates"]
 _ZONES = ["zones"]
 _AUTOMATION = ["projects", "job-templates", "schedules", "job-runs",
                "secret-management-jobs", "trigger-bindings", "triggers"]
-_SYSTEM = ["log-backend", "settings", "api-tokens", "command-filters",
+_SYSTEM = ["log-backend", "settings", "command-filters",
            "command-groups", "login-acls", "housekeeping"]  # excluded from admin + support
-_SELF = ["ssh", "recordings", "metrics"]  # "auth" is always-allowed, not listed here
+# A Personal Access Token is the caller's OWN credential: every handler in
+# identity-service/app/api/tokens.py scopes by current_user_id, so a token can
+# only ever list, create or revoke rows belonging to the person asking, and it
+# authenticates as them with exactly their existing permissions. Granting this
+# escalates nothing — it is an alternative authentication factor for an identity
+# the user already has. It sat in _SYSTEM (superadmin-only), so the API was
+# written as self-service while the gateway refused everyone but superadmin.
+_SELF = ["ssh", "recordings", "metrics", "api-tokens"]  # "auth" is always-allowed, not listed here
 
 
 def _grant(segments, methods=ALL_METHODS):
@@ -80,6 +87,7 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
             "ssh": ["GET", "POST", "DELETE"],
             "recordings": ["GET"],
             "metrics": ["GET"],
+            "api-tokens": list(ALL_METHODS),   # own tokens only — see _SYSTEM note
             "users": ["GET", "PUT"],   # same restricted scope as admin
             "roles": ["GET"],
         },
@@ -92,6 +100,7 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
             "ssh": ["GET", "POST", "DELETE"],
             "job-runs": ["GET"],
             "job-templates": ["GET"],
+            "api-tokens": list(ALL_METHODS),   # own tokens only — see _SYSTEM note
             "playbook-run": ["POST"],   # pseudo-segment: only .../job-templates/{id}/run
             "recordings": ["GET"],
         },
