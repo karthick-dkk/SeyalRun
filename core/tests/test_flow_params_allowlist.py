@@ -17,22 +17,31 @@ an attacker-influenceable payload may set.
 
 from __future__ import annotations
 
-import sys
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-AUTOMATION = Path(__file__).resolve().parent.parent / "services/automation-service"
-sys.path.insert(0, str(AUTOMATION))
-
-from app._params import (  # noqa: E402
-    FLOW_PARAMS,
-    RESERVED_PARAM_KEYS,
-    ParamNotAllowedError,
-    allowed_param_keys_for,
-    filter_caller_params,
+# Loaded straight from its path. An earlier version did
+# sys.path.insert(0, automation-service) at import time, which left that
+# directory on sys.path for the rest of the session — so a LATER test importing
+# "app.*" resolved it to automation-service's app package and failed. Tests must
+# not mutate global import state to reach a module; the failure showed up in a
+# different file entirely, which is the worst way to debug one.
+_SPEC_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "services/automation-service/app/_params.py"
 )
+_spec = importlib.util.spec_from_file_location("_seyalrun_flow_params", _SPEC_PATH)
+_params = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_params)
+
+FLOW_PARAMS = _params.FLOW_PARAMS
+RESERVED_PARAM_KEYS = _params.RESERVED_PARAM_KEYS
+ParamNotAllowedError = _params.ParamNotAllowedError
+allowed_param_keys_for = _params.allowed_param_keys_for
+filter_caller_params = _params.filter_caller_params
 
 
 def _tmpl(action_type: str, **kw):
