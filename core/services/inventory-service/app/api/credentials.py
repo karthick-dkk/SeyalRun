@@ -689,11 +689,19 @@ async def update_credential_secret(
         # live secret for anything that never got re-keyed, and every one of them
         # something ops/rotate_vault_key.py has to keep rewrapping forever.
         # Deleting is done by explicit id after ordering, not by a bare OFFSET,
-        # so rows with an identical created_at cannot make the window ambiguous.
+        # so rows with an identical rotated_at cannot make the window ambiguous.
+        #
+        # The ordering column is rotated_at. It was written as created_at, which
+        # this model does not have, so the whole handler raised AttributeError and
+        # rolled back: rotation returned 500 and archived nothing. It went unseen
+        # because the only tests covering it were source-shape checks that looked
+        # for the constant and the delete() call without ever executing either,
+        # and end-to-end rotation was already failing earlier, on unreachable
+        # demo hosts, so this never got a chance to run.
         keep_ids = (await session.execute(
             select(ZACredentialHistory.id)
             .where(ZACredentialHistory.credential_id == cred.id)
-            .order_by(ZACredentialHistory.created_at.desc(), ZACredentialHistory.id.desc())
+            .order_by(ZACredentialHistory.rotated_at.desc(), ZACredentialHistory.id.desc())
             .limit(SECRET_HISTORY_KEEP)
         )).scalars().all()
         if keep_ids:
