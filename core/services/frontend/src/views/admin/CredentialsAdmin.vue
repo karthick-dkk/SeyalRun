@@ -53,12 +53,16 @@
       </div>
       <table class="table">
         <thead>
-          <tr><th>Name</th><th>Type</th><th>Default Username</th><th>Push</th><th>Rotation (days)</th><th>Description</th><th></th></tr>
+          <tr><th>Name</th><th>Type</th><th>Secret</th><th>Default Username</th><th>Push</th><th>Rotation (days)</th><th>Description</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="t in templates" :key="t.id" :class="{ 'row-active': activeTemplateId === t.id }">
             <td class="fw-600">{{ t.name }}</td>
             <td><span class="badge badge-blue">{{ t.secret_type }}</span></td>
+            <td>
+              <span v-if="t.has_secret" class="badge badge-green">Stored</span>
+              <span class="text-muted" v-else>—</span>
+            </td>
             <td class="text-muted">{{ t.default_username || '—' }}</td>
             <td>
               <span v-if="t.push_enabled" class="badge badge-green">Enabled</span>
@@ -132,6 +136,7 @@
         </div>
         <div class="fp-hint">
           <span v-if="editingCred">Leave blank to keep the current secret unchanged.</span>
+          <span v-else-if="seedTemplate">Leave blank to copy the secret from template <strong>{{ seedTemplate.name }}</strong>. It is re-encrypted under this account's own key.</span>
           <span v-else>Secret is write-only and stored encrypted.</span>
         </div>
 
@@ -207,6 +212,30 @@
         <div class="fp-field">
           <label class="fp-label">Default Username</label>
           <input v-model="templateForm.default_username" class="fp-input" placeholder="e.g. svc_default" />
+        </div>
+
+        <div class="fp-section-head">Secret <span class="fp-opt">(optional)</span></div>
+        <div v-if="templateForm.secret_type === 'password'" class="fp-field">
+          <label class="fp-label">Password</label>
+          <input v-model="templateForm.password" type="password" class="fp-input" placeholder="••••••••" autocomplete="new-password" />
+        </div>
+        <template v-else-if="templateForm.secret_type === 'ssh_key'">
+          <div class="fp-field">
+            <label class="fp-label">Private Key</label>
+            <textarea v-model="templateForm.private_key" class="fp-input fp-textarea" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
+          </div>
+          <div class="fp-field">
+            <label class="fp-label">Passphrase <span class="fp-opt">(optional)</span></label>
+            <input v-model="templateForm.passphrase" type="password" class="fp-input" placeholder="••••••••" />
+          </div>
+        </template>
+        <div v-else class="fp-field">
+          <label class="fp-label">Vault Path</label>
+          <input v-model="templateForm.vault_path" class="fp-input" placeholder="secret/data/prod/db" />
+        </div>
+        <div class="fp-hint">
+          <span v-if="editingTemplate && editingTemplate.has_secret">A secret is stored. Leave blank to keep it unchanged.</span>
+          <span v-else>Seed material — creating an account from this template copies the secret into that account and re-encrypts it under the account's own key. Leave blank for a defaults-only template.</span>
         </div>
         <div class="fp-field">
           <label class="fp-checkbox">
@@ -394,28 +423,43 @@ function openEditCred(c: any) {
 
 function closeCredPanel() { showCredPanel.value = false; editingCred.value = null; activeCredId.value = null }
 
-function buildSecret(isEdit: boolean): Record<string, any> | null {
-  if (credForm.secret_type === 'password') {
-    if (!credForm.password) {
-      if (!isEdit) { credError.value = 'Password is required'; return null }
-      return {}  // keep existing
-    }
-    return { password: credForm.password }
+/** Pull whichever secret fields match `form.secret_type` into the API's dict shape.
+ *  An empty result means "no secret supplied", which every write path reads as
+ *  "leave the stored one alone" (credential PUT, template create and PUT alike). */
+function secretFrom(form: { secret_type: string; password?: string; private_key?: string; passphrase?: string; vault_path?: string }): Record<string, any> {
+  if (form.secret_type === 'password') {
+    return form.password ? { password: form.password } : {}
   }
-  if (credForm.secret_type === 'ssh_key') {
-    if (!credForm.private_key) {
-      if (!isEdit) { credError.value = 'Private key is required'; return null }
-      return {}  // keep existing
-    }
-    const s: Record<string, any> = { private_key: credForm.private_key }
-    if (credForm.passphrase) s.passphrase = credForm.passphrase
+  if (form.secret_type === 'ssh_key') {
+    if (!form.private_key) return {}
+    const s: Record<string, any> = { private_key: form.private_key }
+    if (form.passphrase) s.passphrase = form.passphrase
     return s
   }
-  if (!credForm.vault_path) {
-    if (!isEdit) { credError.value = 'Vault path is required'; return null }
-    return {}  // keep existing
-  }
-  return { path: credForm.vault_path }
+  return form.vault_path ? { path: form.vault_path } : {}
+}
+
+const REQUIRED_SECRET_LABEL: Record<string, string> = {
+  password: 'Password is required',
+  ssh_key: 'Private key is required',
+  vault_path: 'Vault path is required',
+}
+
+/** The template chosen for this account, if it carries a secret to seed from. */
+const seedTemplate = computed(() =>
+  templates.value.find((t: any) => t.id === credForm.template_id && t.has_secret) || null,
+)
+
+function buildSecret(isEdit: boolean): Record<string, any> | null {
+  const secret = secretFrom(credForm)
+  if (Object.keys(secret).length) return secret
+  if (isEdit) return {}            // blank on edit = keep the stored secret
+  // On create, blank is legitimate when an Account Template supplies the secret:
+  // the backend copies it into this account and re-encrypts it under the account's
+  // own key. Without this branch the form rejected exactly the flow templates exist for.
+  if (seedTemplate.value) return {}
+  credError.value = REQUIRED_SECRET_LABEL[credForm.secret_type] || 'A secret is required'
+  return null
 }
 
 async function saveCred() {
@@ -477,6 +521,7 @@ const editingTemplate = ref<any>(null)
 const activeTemplateId = ref<string | null>(null)
 const templateForm = reactive({
   name: '', secret_type: 'password', description: '', default_username: '',
+  password: '', private_key: '', passphrase: '', vault_path: '',
   push_enabled: false, rotation_days: null as number | null,
 })
 const templateError = ref('')
@@ -485,7 +530,8 @@ const savingTemplate = ref(false)
 function openCreateTemplate() {
   editingTemplate.value = null
   activeTemplateId.value = null
-  Object.assign(templateForm, { name: '', secret_type: 'password', description: '', default_username: '', push_enabled: false, rotation_days: null })
+  Object.assign(templateForm, { name: '', secret_type: 'password', description: '', default_username: '',
+    password: '', private_key: '', passphrase: '', vault_path: '', push_enabled: false, rotation_days: null })
   templateError.value = ''
   showTemplatePanel.value = true
 }
@@ -494,6 +540,9 @@ function openEditTemplate(t: any) {
   editingTemplate.value = t
   activeTemplateId.value = t.id
   Object.assign(templateForm, {
+    // Secret fields stay blank: the API never returns a stored secret, and blank
+    // means "keep it" on save. Prefilling would be a lie about what is stored.
+    password: '', private_key: '', passphrase: '', vault_path: '',
     name: t.name, secret_type: t.secret_type, description: t.description || '',
     default_username: t.default_username || '', push_enabled: t.push_enabled, rotation_days: t.rotation_days,
   })
@@ -515,6 +564,8 @@ async function saveTemplate() {
       default_params: editingTemplate.value?.default_params || {},
       push_enabled: templateForm.push_enabled,
       rotation_days: templateForm.rotation_days || null,
+      // {} means "leave the stored secret alone" — same contract as the credential PUT.
+      secret: secretFrom(templateForm),
     }
     if (editingTemplate.value) {
       await api.put(`/credential-templates/${editingTemplate.value.id}`, payload)

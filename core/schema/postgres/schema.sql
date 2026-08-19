@@ -234,6 +234,12 @@ CREATE TABLE IF NOT EXISTS za_credential_templates (
     default_params  JSONB        NOT NULL DEFAULT '{}',
     push_enabled    BOOLEAN      NOT NULL DEFAULT FALSE,
     rotation_days   INTEGER,
+    -- Seed material, not a live shared credential: creating an Account from this
+    -- template COPIES the secret into the new per-asset row under its own DEK.
+    -- Same envelope scheme as za_credentials so ops/rotate_vault_key.py has one
+    -- thing to rewrap, not two. Nullable — a template may be defaults-only.
+    secret_ciphertext TEXT,
+    wrapped_dek       TEXT,
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 

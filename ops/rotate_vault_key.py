@@ -42,14 +42,18 @@ async def main() -> None:
     # An earlier version of this script rotated only za_credentials and printed
     # success, quietly orphaning the whole archive.
     #
-    #   TABLE                  | ENVELOPE ROW (wrapped_dek set) | LEGACY ROW
-    #   -----------------------|--------------------------------|-------------------------
-    #   za_credentials         | rewrap wrapped_dek             | re-encrypt secret_ciphertext
-    #   za_credential_history  | rewrap wrapped_dek             | re-encrypt secret_ciphertext
+    #   TABLE                    | ENVELOPE ROW (wrapped_dek set) | LEGACY ROW
+    #   -------------------------|--------------------------------|-------------------------
+    #   za_credentials           | rewrap wrapped_dek             | re-encrypt secret_ciphertext
+    #   za_credential_history    | rewrap wrapped_dek             | re-encrypt secret_ciphertext
+    #   za_credential_templates  | rewrap wrapped_dek             | re-encrypt secret_ciphertext
     #
     # Envelope rows must NOT have secret_ciphertext touched: it is encrypted under
     # the per-row DEK, not the KEK, so decrypting it with the KEK raises InvalidTag.
-    TABLES = ("za_credentials", "za_credential_history")
+    # za_credential_templates carries an envelope-encrypted seed secret too (see
+    # its model docstring). Omitting a table that holds wrapped secrets makes
+    # those rows undecryptable at the next KEK rotation — R-6's exact shape.
+    TABLES = ("za_credentials", "za_credential_history", "za_credential_templates")
 
     async with sessionmaker() as session:
         plan: dict[str, dict] = {}
@@ -59,13 +63,21 @@ async def main() -> None:
                     text(f"SELECT id, secret_ciphertext, wrapped_dek FROM {table}")
                 )
             ).all()
+            # Three buckets, not two. za_credential_templates is nullable-secret by
+            # design (a template may carry only defaults), so "no wrapped_dek" no
+            # longer implies "legacy single-KEK row with a secret to re-encrypt".
+            # Bucketing those as legacy would hand decrypt_secret(None) to the
+            # pre-flight and abort a rotation over rows that hold nothing.
             plan[table] = {
                 "envelope": [r for r in rows if r.wrapped_dek],
-                "legacy": [r for r in rows if not r.wrapped_dek],
+                "legacy": [r for r in rows if not r.wrapped_dek and r.secret_ciphertext],
+                "empty": [r for r in rows if not r.wrapped_dek and not r.secret_ciphertext],
             }
             print(
                 f"[*] {table}: {len(rows)} row(s) — "
                 f"{len(plan[table]['envelope'])} envelope, {len(plan[table]['legacy'])} legacy single-KEK"
+                + (f", {len(plan[table]['empty'])} without a secret (skipped)"
+                   if plan[table]["empty"] else "")
             )
 
         if dry_run:
@@ -123,8 +135,10 @@ async def main() -> None:
             for row in rows:
                 if row.wrapped_dek:
                     decrypt_secret(row.wrapped_dek, new_key)
-                else:
+                elif row.secret_ciphertext:
                     decrypt_secret(row.secret_ciphertext, new_key)
+                else:
+                    continue   # defaults-only template — nothing encrypted to verify
                 verified += 1
         print(f"[*] Post-verification OK — all {verified} row(s) decrypt under the new key.")
 

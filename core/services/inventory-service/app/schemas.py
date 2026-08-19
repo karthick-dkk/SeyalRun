@@ -77,7 +77,7 @@ class HostOut(BaseModel):
     is_production: bool = False
 
 
-class CredentialTemplateCreate(BaseModel):
+class CredentialTemplateBase(BaseModel):
     name: str
     secret_type: str = "password"  # password|ssh_key|vault_path
     description: str = ""
@@ -87,11 +87,23 @@ class CredentialTemplateCreate(BaseModel):
     rotation_days: int | None = None
 
 
-class CredentialTemplateOut(CredentialTemplateCreate):
+class CredentialTemplateCreate(CredentialTemplateBase):
+    # Write-only, and deliberately not on the Base: CredentialTemplateOut used to
+    # inherit CredentialTemplateCreate, so a `secret` field added there would have
+    # been returned by the plain list endpoint — every stored template secret handed
+    # to any admin, with no reveal token, no elevation and no audit row. Splitting a
+    # Base out is what makes that mistake unrepresentable rather than merely avoided.
+    secret: dict = Field(default_factory=dict)  # {} on PUT = keep the existing secret
+
+
+class CredentialTemplateOut(CredentialTemplateBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     created_at: datetime
+    # Whether a secret is stored — never the secret itself. Lets the UI show
+    # "secret set" and offer Reveal without another round trip.
+    has_secret: bool = False
 
 
 class CredentialCreate(BaseModel):

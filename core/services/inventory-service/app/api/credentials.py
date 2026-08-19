@@ -104,39 +104,192 @@ async def list_credential_templates(session: AsyncSession = Depends(get_session)
     return result.scalars().all()
 
 
+def _encrypt_template_secret(template: ZACredentialTemplate, secret: dict) -> None:
+    """Store a template secret under the SAME envelope scheme as ZACredential —
+    per-row DEK, KEK-wrapped (app/vault.encrypt_envelope).
+
+    Deliberately not a second scheme: another encryption story is another thing
+    ops/rotate_vault_key.py can miss, and missing one is precisely how R-6
+    happened. That script rotates za_credential_templates as of the same commit
+    that added these columns.
+    """
+    kind = _kind(template.secret_type)
+    try:
+        kind.validate(secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    template.secret_ciphertext, template.wrapped_dek = _encrypt_secret(kind.encode(secret))
+
+
+def _decrypt_template_secret(template: ZACredentialTemplate) -> str:
+    """Mirrors _decrypt_secret's fallback: wrapped_dek is NULL on any row written
+    before the envelope scheme reached this table."""
+    if template.wrapped_dek:
+        return decrypt_envelope(template.secret_ciphertext, template.wrapped_dek)
+    return decrypt(template.secret_ciphertext)
+
+
 @router.post("/credential-templates", response_model=CredentialTemplateOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
-async def create_credential_template(payload: CredentialTemplateCreate, session: AsyncSession = Depends(get_session)):
+async def create_credential_template(
+    payload: CredentialTemplateCreate,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+):
     existing = await session.execute(select(ZACredentialTemplate).where(ZACredentialTemplate.name == payload.name))
     if existing.scalar_one_or_none():
+        await audit.log_action(
+            user_id=actor_id, username=actor_name or "", action="credential_template.create",
+            resource_type="credential_template", resource_id="",
+            details={"name": payload.name, "reason": "name already exists"}, result="failure",
+        )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="template name already exists")
-    template = ZACredentialTemplate(**payload.model_dump())
+    fields = payload.model_dump(exclude={"secret"})
+    template = ZACredentialTemplate(**fields)
+    if payload.secret:
+        _encrypt_template_secret(template, payload.secret)
     session.add(template)
     await session.commit()
     await session.refresh(template)
+    await audit.log_action(
+        user_id=actor_id, username=actor_name or "", action="credential_template.create",
+        resource_type="credential_template", resource_id=template.id,
+        details={"name": template.name, "secret_type": template.secret_type,
+                 "has_secret": template.has_secret},
+        result="success",
+    )
     return template
 
 
 @router.put("/credential-templates/{template_id}", response_model=CredentialTemplateOut, dependencies=[Depends(require_admin)])
-async def update_credential_template(template_id: str, payload: CredentialTemplateCreate, session: AsyncSession = Depends(get_session)):
+async def update_credential_template(
+    template_id: str,
+    payload: CredentialTemplateCreate,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+):
     result = await session.execute(select(ZACredentialTemplate).where(ZACredentialTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if template is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="template not found")
-    for field, value in payload.model_dump().items():
+    # exclude secret: an empty dict means "leave the stored secret alone", matching
+    # the credential PUT. Blanket setattr over model_dump() would otherwise write
+    # `secret` onto the ORM object as a stray attribute and never touch the
+    # ciphertext at all — the original "why doesn't it save my password?" bug.
+    for field, value in payload.model_dump(exclude={"secret"}).items():
         setattr(template, field, value)
+    if payload.secret:
+        _encrypt_template_secret(template, payload.secret)
     await session.commit()
     await session.refresh(template)
+    await audit.log_action(
+        user_id=actor_id, username=actor_name or "", action="credential_template.update",
+        resource_type="credential_template", resource_id=template.id,
+        details={"name": template.name, "secret_replaced": bool(payload.secret)},
+        result="success",
+    )
     return template
 
 
-@router.delete("/credential-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
-async def delete_credential_template(template_id: str, session: AsyncSession = Depends(get_session)):
+@router.get("/credential-templates/{template_id}/reveal", response_model=CredentialSecretOut, dependencies=[Depends(require_admin)])
+async def reveal_credential_template(
+    template_id: str,
+    session: AsyncSession = Depends(get_session),
+    reveal_token: str = Header("", alias="X-Reveal-Token"),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+    actor_role: str = Header(default="user", alias="X-User-Role"),
+    elevated_until: str = Header(default="", alias="X-Elevated-Until"),
+):
+    """Reveal a template's stored secret — the same MFA + elevation gate as
+    /credentials/{id}/reveal, not the plain admin check.
+
+    A template secret is seed material for every account made from it, so reading
+    one is at least as sensitive as reading a single account's. The reveal token is
+    bound to this template id and this caller, so it cannot be replayed for another
+    template or by another user.
+
+    There is no za_authorization grant model for templates (grants are per
+    credential), so authorization here is admin/superadmin WITH an active JIT
+    elevation — the same fallback branch the credential reveal uses, minus the
+    grant path that has nothing to match against.
+    """
+    settings = get_settings()
+    if not reveal_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="reveal token required")
+    try:
+        claims = jwt.decode(reveal_token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired reveal token") from exc
+    if claims.get("purpose") != "credential_reveal":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="wrong token purpose")
+    if claims.get("cid") != template_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="reveal token not valid for this template")
+    if actor_id and claims.get("sub") and claims["sub"] != actor_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="reveal token issued for a different user")
+
+    # Fail closed — a missing actor must never skip the elevation check below.
+    if not actor_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user identity required")
+
     result = await session.execute(select(ZACredentialTemplate).where(ZACredentialTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if template is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="template not found")
+    if not template.secret_ciphertext:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="template has no stored secret")
+
+    if not (actor_role in ("admin", "superadmin") and elevation_active(elevated_until)):
+        await audit.log_action(
+            user_id=actor_id, username=actor_name or "", action="credential_template.viewed",
+            resource_type="credential_template", resource_id=template_id,
+            details={"name": template.name, "reason": "elevation required"}, result="failure",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="revealing a template secret requires an active elevation",
+        )
+
+    try:
+        secret = _kind(template.secret_type).decode(_decrypt_template_secret(template))
+    except VaultDecryptError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    await audit.log_action(
+        user_id=actor_id, username=actor_name or "", action="credential_template.viewed",
+        resource_type="credential_template", resource_id=template.id,
+        details={"event_type": "elevated_reveal", "name": template.name, "elevation_used": True},
+        result="success", critical=True,
+    )
+    return CredentialSecretOut(
+        id=template.id, username=template.default_username,
+        secret_type=template.secret_type, secret=secret,
+    )
+
+
+@router.delete("/credential-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
+async def delete_credential_template(
+    template_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+):
+    result = await session.execute(select(ZACredentialTemplate).where(ZACredentialTemplate.id == template_id))
+    template = result.scalar_one_or_none()
+    if template is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="template not found")
+    name, had_secret = template.name, template.has_secret
     await session.delete(template)
     await session.commit()
+    # Accounts already created from this template keep working: the copy is an
+    # independent row under its own DEK, and za_credentials.template_id is
+    # ON DELETE SET NULL.
+    await audit.log_action(
+        user_id=actor_id, username=actor_name or "", action="credential_template.delete",
+        resource_type="credential_template", resource_id=template_id,
+        details={"name": name, "had_secret": had_secret}, result="success",
+    )
 
 
 # ── Credentials ───────────────────────────────────────────────────────────────
@@ -163,13 +316,48 @@ async def create_credential(
     actor_id: str | None = Header(default=None, alias="X-User-Id"),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
 ):
+    # Create-from-template: no secret supplied but a template that has one. JumpServer
+    # PAM's model, and the one the spec settled on — the template is SEED material, so
+    # the secret is COPIED into this account and re-encrypted under the account's own
+    # fresh DEK. The template's ciphertext is never shared or referenced afterwards,
+    # which is what keeps one asset's compromise from handing over every asset seeded
+    # from the same template. An explicitly supplied secret always wins.
+    secret = payload.secret
+    copied_from_template: ZACredentialTemplate | None = None
+    if not secret and payload.template_id:
+        tmpl = (await session.execute(
+            select(ZACredentialTemplate).where(ZACredentialTemplate.id == payload.template_id)
+        )).scalar_one_or_none()
+        if tmpl is not None and tmpl.secret_ciphertext:
+            if tmpl.secret_type != payload.secret_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"template holds a {tmpl.secret_type} secret, but this account is {payload.secret_type}",
+                )
+            try:
+                secret = _kind(tmpl.secret_type).decode(_decrypt_template_secret(tmpl))
+            except VaultDecryptError as exc:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+            copied_from_template = tmpl
+
     kind = _kind(payload.secret_type)
     try:
-        kind.validate(payload.secret)
+        kind.validate(secret)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    ciphertext, wrapped_dek = _encrypt_secret(kind.encode(payload.secret))
+    # Reading a template secret in order to copy it IS a secret access, so it is
+    # audited as one — critical=True, mirroring credential.secret_issued: a copy
+    # that cannot be logged must not happen at all.
+    if copied_from_template is not None:
+        await audit.log_action(
+            user_id=actor_id, username=actor_name or "", action="credential.template_secret_used",
+            resource_type="credential_template", resource_id=copied_from_template.id,
+            details={"template_name": copied_from_template.name, "for_username": payload.username},
+            result="success", critical=True,
+        )
+
+    ciphertext, wrapped_dek = _encrypt_secret(kind.encode(secret))
 
     cred = ZACredential(
         name=payload.name,
@@ -182,7 +370,7 @@ async def create_credential(
         is_default=payload.is_default,
         is_sudo=payload.is_sudo,
         is_push_account=payload.is_push_account,
-        strength_score=_strength_score(payload.secret_type, payload.secret),
+        strength_score=_strength_score(payload.secret_type, secret),
     )
     session.add(cred)
     await session.flush()

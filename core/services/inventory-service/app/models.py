@@ -110,7 +110,25 @@ class ZACredentialTemplate(Base):
     default_params: Mapped[dict] = mapped_column(JSON, default=dict)
     push_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     rotation_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Seed material, not a live shared credential. Creating an Account from this
+    # template copies the secret into the new per-asset ZACredential, which
+    # re-encrypts it under its own DEK — so the template's ciphertext is never
+    # referenced by an account, and one asset's compromise does not hand over
+    # every asset seeded from the same template.
+    #
+    # Same envelope scheme as ZACredential below (app/vault.encrypt_envelope):
+    # per-row DEK, KEK-wrapped. ops/rotate_vault_key.py rewraps this table too —
+    # a wrapped secret it does not know about becomes undecryptable at the next
+    # KEK rotation, which is exactly what R-6 was.
+    secret_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    wrapped_dek: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def has_secret(self) -> bool:
+        """Read by CredentialTemplateOut (from_attributes). Reports *that* a secret
+        exists; the secret itself only ever leaves through the reveal endpoint."""
+        return bool(self.secret_ciphertext)
 
 
 class ZACredential(Base):
