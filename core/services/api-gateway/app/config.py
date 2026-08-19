@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from libs.secrets import require_secrets
+
+
+def _ws_scheme(url: str) -> str:
+    """http://host -> ws://host, https://host -> wss://host."""
+    for http, ws in (("https://", "wss://"), ("http://", "ws://")):
+        if url.startswith(http):
+            return ws + url[len(http):]
+    return url
 
 
 class Settings(BaseSettings):
@@ -28,10 +37,10 @@ class Settings(BaseSettings):
     identity_service_url: str = "http://identity-service:8101"
     inventory_service_url: str = "http://inventory-service:8102"
     terminal_service_url: str = "http://terminal-service:8103"
-    terminal_service_ws_url: str = "ws://terminal-service:8103"
+    terminal_service_ws_url: str = ""   # derived — see _derive_ws_urls
     recording_service_url: str = "http://recording-service:8104"
     automation_service_url: str = "http://automation-service:8105"
-    automation_service_ws_url: str = "ws://automation-service:8105"
+    automation_service_ws_url: str = ""  # derived — see _derive_ws_urls
     zabbix_integration_service_url: str = "http://zabbix-integration-service:8106"
     metrics_service_url: str = "http://metrics-service:8107"
 
@@ -50,6 +59,24 @@ class Settings(BaseSettings):
     # Metrics
     metrics_cache_ttl_seconds: int = 30
     metrics_refresh_interval_seconds: int = 30
+
+    @model_validator(mode="after")
+    def _derive_ws_urls(self) -> "Settings":
+        """Keep each WS upstream's scheme in lockstep with its HTTP one.
+
+        These used to be two independent settings with independent defaults, and
+        docker-compose.internal-tls.yml overrides only the http:// ones. So with
+        internal TLS enabled the gateway kept dialling ws:// at a TLS-only
+        listener and *every* WebSocket feature broke at once — SSH terminal, job
+        logs, notifications — each failing with "did not receive a valid HTTP
+        response". Deriving the scheme makes that drift unrepresentable. An
+        explicit *_WS_URL env var still wins, for a deployment that terminates
+        TLS somewhere unusual.
+        """
+        for svc in ("terminal_service", "automation_service"):
+            if not getattr(self, f"{svc}_ws_url"):
+                setattr(self, f"{svc}_ws_url", _ws_scheme(getattr(self, f"{svc}_url")))
+        return self
 
 
 @lru_cache

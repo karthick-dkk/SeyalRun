@@ -101,15 +101,22 @@ app.include_router(notifications_router, prefix="/api/v1")
 
 @app.websocket("/ws/jobs/{run_id}/log")
 async def _ws_job_log(websocket: WebSocket, run_id: str):
-    # App-level (no /api/v1 prefix, no router service-token dep) so the path matches the
-    # gateway WS proxy — same pattern as terminal-service's /ws/ssh route.
+    # App-level (no /api/v1 prefix) so the path matches the gateway WS proxy — same
+    # pattern as terminal-service's /ws/ssh route. Being off the router means the
+    # router's service-token dependency does not apply, so it is applied by hand.
     from .api.job_runs import ws_job_log
+    from .deps import require_ws_service_token
+    if not await require_ws_service_token(websocket):
+        return
     await ws_job_log(websocket, run_id)
 
 
 @app.websocket("/ws/notifications")
 async def _ws_notifications(websocket: WebSocket):
     from .api.notifications import ws_notifications
+    from .deps import require_ws_service_token
+    if not await require_ws_service_token(websocket):
+        return
     await ws_notifications(websocket)
 
 

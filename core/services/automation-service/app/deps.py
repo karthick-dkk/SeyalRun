@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, WebSocket, status
 from libs.servicetoken import verify
 from .config import get_settings
 
@@ -11,6 +11,29 @@ def require_service_token(x_service_token: str = Header(..., alias="X-Service-To
         return verify(x_service_token, "automation-service", settings.service_jwt_secret)
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid service token")
+
+
+async def require_ws_service_token(websocket: WebSocket) -> bool:
+    """The same guard as require_service_token, for the app-level WebSocket routes.
+
+    /ws/jobs/{run_id}/log and /ws/notifications are mounted on the app rather than
+    on the service-token-guarded router, so their paths match what api-gateway's
+    ws_proxy dials. Moving them off the router also moved them off its dependency,
+    and for a while nothing authenticated those two upgrades at all: any workload
+    that could reach this port could set X-User-Id and read another user's
+    notification stream, or tail any run's live job log by run_id. Both carry
+    command output, which is exactly where secrets surface.
+
+    Closes on 4401 and returns False so callers can `if not await ...: return`,
+    matching terminal-service's handle_terminal/handle_spectate.
+    """
+    settings = get_settings()
+    try:
+        verify(websocket.headers.get("x-service-token", ""), "automation-service", settings.service_jwt_secret)
+    except Exception:
+        await websocket.close(code=4401)
+        return False
+    return True
 
 
 def get_user_id(x_user_id: str = Header(..., alias="X-User-Id")) -> str:
