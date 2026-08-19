@@ -299,19 +299,12 @@ import TermSession from '@/components/terminal/TermSession.vue'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useTerminalTheme } from '@/composables/useTerminalTheme'
+import { useTerminalPanes, type Pane } from '@/composables/useTerminalPanes'
 
 const auth = useAuthStore()
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-interface Session { session_id: string; ws_path: string }
-interface Pane {
-  id: string; label: string; name?: string | null; hostId: string | null
-  session: Session | null
-  disconnected: boolean    // session ended — show reconnect overlay
-  error: string | null     // last connection error to show in pane
-  connecting: boolean      // connecting in-progress spinner
-}
 interface Ctx { visible: boolean; x: number; y: number; host: any; credentials: any[] }
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -355,16 +348,12 @@ const zbxConfirm = reactive<{ visible: boolean; host: any; targetPaneId: string;
   visible: false, host: null, targetPaneId: '', credentials: [], error: ''
 })
 
-// Panes
-let _pid = 0
-const mkPane = (label = 'New'): Pane => ({ id: `p${++_pid}`, label, name: null, hostId: null, session: null, disconnected: false, error: null, connecting: false })
-const panes = ref<Pane[]>([mkPane()])
-const activePaneId = ref(panes.value[0].id)
-
-// Split
-const splitId = ref<string | null>(null)
-const splitDir = ref<'h' | 'v'>('h')
-const focusedSide = ref<'primary' | 'secondary'>('primary')
+// Panes and split — see composables/useTerminalPanes.ts
+const {
+  panes, activePaneId, splitId, splitDir, focusedSide,
+  activePane, splitPane, focusedPane, activeSessionCount, paneAreaClass,
+  addPane, closePane, findPane, openSplit, exitSplit,
+} = useTerminalPanes({ isKiosk: () => auth.isKiosk })
 
 // Context menu
 const ctx = reactive<Ctx>({ visible: false, x: 0, y: 0, host: null, credentials: [] })
@@ -383,17 +372,6 @@ const filteredHosts = computed(() => {
 const filteredSeyalRunHosts = computed(() =>
   filteredHosts.value.filter(h => !h.zabbix_hostid && h.enabled)
 )
-
-const activePane = computed(() => panes.value.find(p => p.id === activePaneId.value) ?? null)
-const splitPane  = computed(() => panes.value.find(p => p.id === splitId.value) ?? null)
-const focusedPane = computed(() => focusedSide.value === 'secondary' ? splitPane.value : activePane.value)
-
-const activeSessionCount = computed(() => panes.value.filter(p => p.session && !p.disconnected).length)
-
-const paneAreaClass = computed(() => {
-  if (!splitId.value) return 'single'
-  return splitDir.value === 'h' ? 'split-h' : 'split-v'
-})
 
 // ── Menu helpers ──────────────────────────────────────────────────────────
 
@@ -513,28 +491,6 @@ function closePicker() {
 
 // ── Pane management ───────────────────────────────────────────────────────
 
-function addPane(label?: string): Pane {
-  // Single choke point for every "create a pane" path above — kiosk mode never gets
-  // a second pane, regardless of which caller reaches here. Returns the existing
-  // pane rather than null so callers don't need special-case handling.
-  if (auth.isKiosk && panes.value.length >= 1) return panes.value[0]
-  const p = mkPane(label)
-  panes.value.push(p)
-  activePaneId.value = p.id
-  return p
-}
-
-function closePane(paneId: string) {
-  if (splitId.value === paneId) splitId.value = null
-  const idx = panes.value.findIndex(p => p.id === paneId)
-  if (idx === -1) return
-  panes.value.splice(idx, 1)
-  if (!panes.value.length) panes.value.push(mkPane())
-  if (activePaneId.value === paneId) {
-    activePaneId.value = panes.value[Math.min(idx, panes.value.length - 1)].id
-  }
-}
-
 function closeActivePane() {
   closeAll()
   closePane(activePaneId.value)
@@ -546,26 +502,9 @@ function newConnection() {
   addPane()
 }
 
-function exitSplit() {
-  splitId.value = null
-  focusedSide.value = 'primary'
-}
-
 function doSplit(dir: 'h' | 'v') {
-  if (auth.isKiosk) return   // defense in depth — the UI trigger is already hidden
   closeAll()
-  // addPane() always makes the pane it creates the active one (a side effect every
-  // other caller wants) — here the new pane is the SPLIT side, not the primary, so
-  // that reassignment must be undone or it silently steals the primary slot away
-  // from whatever session was already showing there, unmounting it. Confirmed live:
-  // this is why clicking Split appeared to "reload" every open session at once —
-  // both the primary and secondary slots ended up pointing at the same new, empty pane.
-  const originalActiveId = activePaneId.value
-  const p = addPane()
-  activePaneId.value = originalActiveId
-  splitId.value = p.id
-  splitDir.value = dir
-  focusedSide.value = 'secondary'
+  openSplit(dir)   // kiosk guard and the activePaneId restore both live in the composable
 }
 
 // ── SSH connect ───────────────────────────────────────────────────────────
@@ -660,15 +599,8 @@ function ctxSplitConnect(dir: 'h' | 'v') {
   closeAll()
   if (!host) return
   if (!splitId.value) {
-    // See doSplit()'s comment — addPane() reassigns activePaneId as a side effect,
-    // which must be undone here too or the primary pane's session gets unmounted.
-    const originalActiveId = activePaneId.value
-    const p = addPane(host.name)
-    activePaneId.value = originalActiveId
-    splitId.value = p.id
-    splitDir.value = dir
-    focusedSide.value = 'secondary'
-    connectPane(p.id, host)
+    const p = openSplit(dir, host.name)
+    if (p) connectPane(p.id, host)
   } else {
     connectPane(splitId.value, host)
   }
