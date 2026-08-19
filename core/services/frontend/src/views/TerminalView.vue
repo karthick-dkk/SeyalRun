@@ -300,6 +300,7 @@ import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useTerminalTheme } from '@/composables/useTerminalTheme'
 import { useTerminalPanes, type Pane } from '@/composables/useTerminalPanes'
+import { useTerminalSession } from '@/composables/useTerminalSession'
 
 const auth = useAuthStore()
 
@@ -337,7 +338,6 @@ const hosts = ref<any[]>([])
 const hostsLoading = ref(false)
 const hostsError = ref('')
 const hostFilter = ref('')
-const recentlyDisconnected = reactive(new Set<string>())
 const credPicker = reactive<{ visible: boolean; host: any; targetPaneId: string; credentials: any[] }>({
   visible: false, host: null, targetPaneId: '', credentials: []
 })
@@ -354,6 +354,10 @@ const {
   activePane, splitPane, focusedPane, activeSessionCount, paneAreaClass,
   addPane, closePane, findPane, openSplit, exitSplit,
 } = useTerminalPanes({ isKiosk: () => auth.isKiosk })
+
+// Session lifecycle — see composables/useTerminalSession.ts
+const { recentlyDisconnected, connectPane, onDisconnected, onReconnect } =
+  useTerminalSession({ panes, hosts })
 
 // Context menu
 const ctx = reactive<Ctx>({ visible: false, x: 0, y: 0, host: null, credentials: [] })
@@ -509,46 +513,6 @@ function doSplit(dir: 'h' | 'v') {
 
 // ── SSH connect ───────────────────────────────────────────────────────────
 
-async function connectPane(paneId: string, host: any, credentialId?: string) {
-  const pane = panes.value.find(p => p.id === paneId)
-  if (!pane) return
-  pane.error = null
-  pane.disconnected = false
-  pane.connecting = true
-  pane.label = host.name
-  pane.session = null
-  const body: any = { host_id: host.id }
-  if (credentialId) body.credential_id = credentialId
-  try {
-    const resp = await api.post('/ssh/sessions', body)
-    pane.session = { session_id: resp.data.id, ws_path: resp.data.ws_path }
-    pane.hostId = host.id
-  } catch (e: any) {
-    const detail = e.response?.data?.detail ?? ''
-    const status  = e.response?.status
-    if (status === 403) {
-      if (detail.includes('credential')) {
-        pane.error = `No credential for "${host.name}" — link one in Admin → Credentials.`
-      } else if (detail.includes('ssh action')) {
-        pane.error = `SSH not permitted for "${host.name}" — add "ssh" to its Authorization actions.`
-      } else if (detail.includes('ACL') || detail.includes('login denied')) {
-        pane.error = `Login blocked by ACL for "${host.name}".`
-      } else {
-        pane.error = `No authorization for "${host.name}" — add one in Admin → Authorizations.`
-      }
-    } else if (status === 404) {
-      pane.error = `Host not found (id ${host.id}).`
-    } else if (detail) {
-      pane.error = detail
-    } else {
-      pane.error = `SSH connection failed to "${host.name}" — check the host is reachable and credentials are correct.`
-    }
-    pane.label = host.name
-  } finally {
-    pane.connecting = false
-  }
-}
-
 function targetPaneId(): string {
   // In split mode, clicking a host goes to the focused side's pane
   if (splitId.value && focusedSide.value === 'secondary') return splitId.value
@@ -617,31 +581,6 @@ function ctxDisconnect() {
     pane.label = 'New'
     pane.hostId = null
   }
-}
-
-function onDisconnected(paneId: string) {
-  const pane = panes.value.find(p => p.id === paneId)
-  if (!pane) return
-  if (pane.hostId) {
-    const hid = pane.hostId
-    recentlyDisconnected.add(hid)
-    setTimeout(() => recentlyDisconnected.delete(hid), 5000)
-  }
-  // Keep pane.session so TermSession stays mounted and shows its reconnect overlay.
-  // Set disconnected=true so onHostClick and the session-count badge treat it correctly.
-  pane.disconnected = true
-  pane.label = 'Disconnected'
-}
-
-async function onReconnect(paneId: string) {
-  const pane = panes.value.find(p => p.id === paneId)
-  if (!pane?.hostId) return
-  const host = hosts.value.find(h => h.id === pane.hostId)
-  if (!host) return
-  // Clear old session so TermSession unmounts cleanly before connectPane remounts it.
-  pane.session = null
-  pane.disconnected = false
-  await connectPane(paneId, host)
 }
 
 // ── Edit helpers ──────────────────────────────────────────────────────────
