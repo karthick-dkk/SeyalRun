@@ -109,6 +109,13 @@ const router = createRouter({
       component: () => import('@/views/SessionsView.vue'),
     },
     {
+      // Live supervision. Declared BEFORE /sessions/:id so "watch" is not
+      // swallowed by the playback route's parameter.
+      path: '/sessions/:id/watch',
+      name: 'session-watch',
+      component: () => import('@/views/SessionWatchView.vue'),
+    },
+    {
       path: '/sessions/:id',
       name: 'session-playback',
       component: () => import('@/views/SessionPlaybackView.vue'),

@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.servicetoken import ServiceTokenError, mint, verify
 
 from .. import audit
-from .. import sftp_registry
+from .. import sftp_registry, supervision
 from . import _zmodem
 from ..config import get_settings
 from ..database import SessionLocal
@@ -349,6 +349,39 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
         # connection is known-good, and removed in the finally below — a file
         # operation must never outlive the session it is attributed to.
         sftp_registry.register(session_id, ssh_conn)
+
+        async def _supervisor_write(data: str) -> bool:
+            """Input from a supervisor who has taken over.
+
+            Goes through process.stdin exactly as an operator keystroke does, so
+            it is subject to the same PTY and the same downstream recording. It
+            deliberately does NOT bypass anything: a takeover that could run
+            commands the session's own filters would refuse would be a privilege
+            escalation dressed as a supervision feature.
+            """
+            try:
+                process.stdin.write(data.encode("utf-8"))
+                await process.stdin.drain()
+                return True
+            except Exception:
+                return False
+
+        async def _notify_operator(text: str) -> None:
+            """Write a line into the operator's own terminal.
+
+            Takeover is announced to the person whose session it is. Silent
+            control would put their name on commands they did not type, which is
+            precisely the attribution the audit chain exists to get right.
+            """
+            try:
+                await websocket.send_text(json.dumps({"type": "output", "data": text}))
+            except Exception:
+                pass
+
+        supervision.register(session_id, supervision.SessionControl(
+            write=_supervisor_write, notify=_notify_operator,
+            owner_id=user_id, owner_name=username,
+        ))
 
         sess.status = "active"
         await db.commit()
@@ -680,6 +713,7 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
             # First thing in teardown: once the session is ending, no new SFTP
             # operation may borrow this connection.
             sftp_registry.unregister(session_id)
+            supervision.unregister(session_id)
             if ssh_reader_task is not None:
                 ssh_reader_task.cancel()
             if terminate_task is not None:

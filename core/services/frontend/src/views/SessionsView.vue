@@ -96,6 +96,14 @@
                   <router-link v-if="recordingMap[s.id]" :to="`/sessions/${recordingMap[s.id]}`" class="sv-btn sv-btn-play" title="Play recording">
                     ▶ Playback
                   </router-link>
+                  <router-link
+                    v-if="s.status === 'active'"
+                    :to="`/sessions/${s.id}/watch`"
+                    class="sv-btn sv-btn-watch"
+                    title="Watch this live session"
+                  >
+                    &#128065; Watch
+                  </router-link>
                   <button
                     v-if="isAdmin && s.status === 'active'"
                     class="sv-btn sv-btn-terminate"
@@ -445,4 +453,8 @@ onBeforeUnmount(() => {
 .sv-cmd-time {
   flex-shrink: 0; font-family: monospace; font-size: 10px; color: var(--text2);
 }
+.sv-btn-watch {
+  border-color: #1f6feb; color: #58a6ff; text-decoration: none;
+}
+.sv-btn-watch:hover { background: rgba(31, 111, 235, .12); }
 </style>

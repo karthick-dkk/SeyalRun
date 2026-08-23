@@ -96,7 +96,7 @@ async def ws_ssh_terminal(websocket: WebSocket, session_id: str):
 @app.websocket("/ws/ssh/{session_id}/spectate")
 async def ws_ssh_spectate(websocket: WebSocket, session_id: str):
     from .ws.spectate import handle_spectate
-    await handle_spectate(websocket, session_id, _spectators)
+    await handle_spectate(websocket, session_id, _spectators, _terminate_events)
 
 
 @app.get("/health")
