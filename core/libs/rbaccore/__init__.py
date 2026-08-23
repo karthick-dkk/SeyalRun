@@ -61,7 +61,7 @@ _SYSTEM = ["log-backend", "settings", "command-filters",
 # real upstream but in no role's permissions, so is_authorized() refused it for
 # every role except superadmin (which passes on all=True) and the socket was
 # closed with 4403 on connect. Self-scoped like the rest of _SELF.
-_SELF = ["ssh", "recordings", "metrics", "api-tokens", "notifications"]  # "auth" is always-allowed, not listed here
+_SELF = ["ssh", "sftp", "recordings", "metrics", "api-tokens", "notifications"]  # "auth" is always-allowed, not listed here
 
 
 def _grant(segments, methods=ALL_METHODS):
@@ -90,6 +90,10 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
             **_grant(_INVENTORY + _AUTOMATION),
             "authorizations": list(ALL_METHODS),
             "ssh": ["GET", "POST", "DELETE"],
+            # File management rides an SSH session the caller already holds; the
+            # per-host sftp/upload/download grants are what actually gate it (see
+            # terminal-service/app/api/sftp.py), exactly as they gate ssh itself.
+            "sftp": list(ALL_METHODS),
             "recordings": ["GET"],
             "metrics": ["GET"],
             "api-tokens": list(ALL_METHODS),   # own tokens only — see _SYSTEM note
@@ -104,6 +108,7 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
         "perms": {
             "hosts": ["GET"],
             "ssh": ["GET", "POST", "DELETE"],
+            "sftp": list(ALL_METHODS),   # gated per-host by the sftp/upload/download grants
             "job-runs": ["GET"],
             "job-templates": ["GET"],
             "api-tokens": list(ALL_METHODS),   # own tokens only — see _SYSTEM note

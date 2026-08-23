@@ -59,6 +59,7 @@ SERVICE_ROUTES: dict[str, tuple[str, str]] = {
     "log-backend": ("inventory_service_url", "inventory-service"),
     "zones": ("inventory_service_url", "inventory-service"),
     "ssh": ("terminal_service_url", "terminal-service"),
+    "sftp": ("terminal_service_url", "terminal-service"),
     "recordings": ("recording_service_url", "recording-service"),
     "projects": ("automation_service_url", "automation-service"),
     "job-templates": ("automation_service_url", "automation-service"),

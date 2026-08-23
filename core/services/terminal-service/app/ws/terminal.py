@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.servicetoken import ServiceTokenError, mint, verify
 
 from .. import audit
+from .. import sftp_registry
 from ..config import get_settings
 from ..database import SessionLocal
 from ..models import ZASSHSession, ZASessionCommand
@@ -319,6 +320,12 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
 
         # Clear plaintext credentials from local scope
         del connect_kwargs, secret_data, cred_secret
+
+        # Publish the connection so api/sftp.py can open an SFTP channel on it
+        # rather than authenticating a second time. Registered only after the
+        # connection is known-good, and removed in the finally below — a file
+        # operation must never outlive the session it is attributed to.
+        sftp_registry.register(session_id, ssh_conn)
 
         sess.status = "active"
         await db.commit()
@@ -633,6 +640,9 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
         except Exception as exc:
             logger.exception("terminal handler error", extra={"session_id": session_id})
         finally:
+            # First thing in teardown: once the session is ending, no new SFTP
+            # operation may borrow this connection.
+            sftp_registry.unregister(session_id)
             if ssh_reader_task is not None:
                 ssh_reader_task.cancel()
             if terminate_task is not None:

@@ -64,6 +64,13 @@
 
       <div class="menu-status">
         <span v-if="activeSessionCount" class="conn-badge">{{ activeSessionCount }} connected</span>
+        <button
+          class="menu-capture"
+          :class="{ 'is-on': showFiles }"
+          :disabled="!focusedPane?.session"
+          @click="toggleFiles"
+          :title="focusedPane?.session ? 'File manager (SFTP)' : 'Connect a session to browse files'"
+        ><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.5 2h9.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg> Files</button>
         <button v-if="!auth.isKiosk" class="menu-capture" :disabled="!focusedPane?.session" @click="editSnip" title="Capture screen (Ctrl/Cmd+S)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2L8 5h8l1.5 2h2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.5" r="3.2"/></svg> Capture</button>
         <button class="menu-close" @click="() => window.close()" title="Close Window">✕</button>
       </div>
@@ -212,6 +219,17 @@
           </div>
         </div>
       </section>
+
+      <!-- Right: SFTP file manager for the focused session. Keyed on session id so
+           switching panes rebuilds it against the right connection rather than
+           showing the previous host's listing. -->
+      <TermFilePanel
+        v-if="showFiles && focusedPane?.session"
+        :key="focusedPane.session.session_id"
+        :session-id="focusedPane.session.session_id"
+        :host-label="focusedPane.name || focusedPane.label"
+        @close="showFiles = false"
+      />
     </div>
 
     <!-- ── Context menu ─────────────────────────────────────────────────────── -->
@@ -296,6 +314,7 @@
 import { ref, computed, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import TermSession from '@/components/terminal/TermSession.vue'
+import TermFilePanel from '@/components/terminal/TermFilePanel.vue'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useTerminalTheme } from '@/composables/useTerminalTheme'
@@ -354,6 +373,16 @@ const {
   activePane, splitPane, focusedPane, activeSessionCount, paneAreaClass,
   addPane, closePane, findPane, openSplit, exitSplit,
 } = useTerminalPanes({ isKiosk: () => auth.isKiosk })
+
+// SFTP file manager visibility. Closed when the focused pane has no session —
+// the panel is bound to a live connection, so keeping it open across a
+// disconnect would show a listing that can no longer be acted on.
+const showFiles = ref(false)
+function toggleFiles() {
+  if (!focusedPane.value?.session) return
+  closeAll()
+  showFiles.value = !showFiles.value
+}
 
 // Session lifecycle — see composables/useTerminalSession.ts
 const { recentlyDisconnected, connectPane, onDisconnected, onReconnect } =
@@ -791,6 +820,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   border-radius: 5px;
 }
+.menu-capture.is-on { background: #1f6feb; border-color: #1f6feb; color: #fff; }
 .menu-capture:hover:not(:disabled) { border-color: #58a6ff; color: #58a6ff; }
 .menu-capture:disabled { opacity: 0.4; cursor: not-allowed; }
 

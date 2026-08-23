@@ -311,16 +311,23 @@ import { useAuthStore } from '@/stores/auth'
 
 const { confirm } = useConfirm()
 const auth = useAuthStore()
-// R-11: sftp/upload/download are grantable here but nothing in the product
-// implements file transfer, so granting one enforces nothing. Until the SFTP
-// work lands (docs/compliance/terminal-parity-plan.md, Increment 1) they are
-// shown disabled and labelled, rather than silently offered — an access review
-// must not be able to report a control that does not exist.
+// R-11 is retired: sftp/upload/download used to be grantable while nothing in
+// the product implemented file transfer, so a grant enforced nothing and an
+// access review could report a control that did not exist. They are now
+// enforced per-operation by terminal-service/app/api/sftp.py against this same
+// authorization record — `sftp` browses, `download` downloads, `upload`
+// uploads, each checked separately.
 const availableActions = ['ssh', 'sftp', 'upload', 'download']
-const UNENFORCED_ACTIONS = ['sftp', 'upload', 'download']
+const UNENFORCED_ACTIONS: string[] = []
 function actionEnforced(a: string) { return !UNENFORCED_ACTIONS.includes(a) }
+const ACTION_HINTS: Record<string, string> = {
+  ssh:      'Open an interactive shell on this host',
+  sftp:     'Browse the filesystem in the terminal file manager (does not permit transfers)',
+  download: 'Download files from this host — audited per file',
+  upload:   'Upload files to this host — audited per file',
+}
 function actionHint(a: string) {
-  return actionEnforced(a) ? '' : 'Not yet enforced — file transfer is not implemented, so this grant has no effect'
+  return actionEnforced(a) ? (ACTION_HINTS[a] || '') : 'Not yet enforced — this grant has no effect'
 }
 
 const authorizations = ref<any[]>([])

@@ -16,6 +16,7 @@ from .config import get_settings
 from .database import engine
 from .api.sessions import router as sessions_router
 from .api.internal import router as internal_router
+from .api.sftp import router as sftp_router
 
 _settings = get_settings()
 configure_logging("terminal-service", _settings.log_level, _settings.log_path)
@@ -82,6 +83,7 @@ app.middleware("http")(_metrics.middleware)
 
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(internal_router, prefix="/api/v1")
+app.include_router(sftp_router, prefix="/api/v1")
 
 
 @app.websocket("/ws/ssh/{session_id}")
