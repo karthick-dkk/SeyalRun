@@ -457,15 +457,33 @@ const SHORTCUTS = [
 ]
 /** Closing the browser in an SFTP-only pane has to give the terminal back —
  *  otherwise the pane is left showing nothing at all. */
-function onCloseFiles() {
+async function onCloseFiles() {
   showFiles.value = false
   const pane = focusedPane.value
-  if (pane && pane.mode === 'sftp') {
-    pane.mode = 'ssh'
-    // An xterm hidden with display:none measures zero, so the fit it did while
-    // hidden was against nothing. Without a refit here the terminal comes back
-    // at the wrong size and the PTY keeps the stale dimensions.
-    nextTick(() => activeTermRef()?.resize?.())
+  if (!pane || pane.mode !== 'sftp') return
+
+  // An SFTP pane ENDS when its file browser is closed. It previously fell back to
+  // the terminal, on the reasoning that an empty pane is useless — but that hands
+  // the operator an interactive shell they never asked for, on a host they chose
+  // to reach for file transfer only. "I closed the file manager" is not a request
+  // for a shell.
+  //
+  // The SSH session is also torn down rather than left running: it exists solely
+  // to carry SFTP, and an idle session nobody can see is one that keeps a
+  // credential unwrapped, holds a slot open and still appears in the live-session
+  // list as though someone were working in it.
+  const sessionId = pane.session?.session_id
+  pane.session = null
+  pane.mode = 'ssh'
+  pane.disconnected = false
+  pane.label = 'New'
+  pane.hostId = null
+  if (sessionId) {
+    try {
+      await api.delete(`/ssh/sessions/${sessionId}`)
+    } catch {
+      // Already gone (the socket may have closed first) — nothing to recover.
+    }
   }
 }
 

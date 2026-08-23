@@ -95,16 +95,32 @@ def test_file_browser_takes_the_full_pane_in_sftp_mode():
     assert re.search(r"\.fm-full\s*\{[^}]*width:\s*100%", src)
 
 
-def test_closing_the_browser_restores_the_terminal():
-    """Otherwise an SFTP-only pane is left showing nothing at all."""
+def test_closing_the_browser_ends_the_sftp_session():
+    """An SFTP pane ENDS when its browser closes — it must not fall back to a
+    terminal. Falling back hands the operator an interactive shell they never
+    asked for, on a host they chose to reach for file transfer only. "I closed
+    the file manager" is not a request for a shell.
+
+    (This asserted the opposite until the behaviour was reported: the earlier
+    reasoning was "an empty pane is useless", which weighed tidiness above not
+    handing out a shell.)"""
     src = VIEW.read_text()
-    fn = src[src.index("function onCloseFiles"):]
-    fn = fn[: fn.index("\n}") + 2]
-    assert "pane.mode = 'ssh'" in fn
-    assert "resize" in fn, (
-        "an xterm hidden with display:none measured zero — it needs a refit on the "
-        "way back or it returns at the wrong size with a stale PTY"
+    fn = src[src.index("async function onCloseFiles"):]
+    fn = fn[: fn.index("\n}\n") + 3]
+    assert "pane.session = null" in fn, "the pane must not keep showing the session"
+    assert "api.delete(`/ssh/sessions/" in fn, (
+        "the SSH session exists only to carry SFTP — leaving it running keeps a "
+        "credential unwrapped and shows a live session nobody is watching"
     )
+
+
+def test_sftp_close_does_not_leave_the_pane_on_the_host():
+    """A pane still bound to hostId would reconnect on the next click as though
+    the previous session were being resumed."""
+    src = VIEW.read_text()
+    fn = src[src.index("async function onCloseFiles"):]
+    fn = fn[: fn.index("\n}\n") + 3]
+    assert "pane.hostId = null" in fn
 
 
 # ── right-click offers both ──────────────────────────────────────────────────
