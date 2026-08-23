@@ -90,22 +90,41 @@ async def zone_gateway_chain(zone_id: str, session: AsyncSession = Depends(get_s
     zones.reverse()  # root ancestor first, target zone last
 
     hops = []
+    # A zone CYCLE is already impossible (_validate_parent_zone rejects one at
+    # write time, and the ancestry walk above carries its own `seen` guard). What
+    # was not guarded is the same HOST appearing twice in the resolved chain:
+    # distinct zones may legitimately exist while both name the same gateway
+    # machine, and nesting them produced "ssh -J gw,gw" — a second hop from a host
+    # to itself, which stalls the connection rather than failing it. Deduplicated
+    # by endpoint, keeping the OUTERMOST occurrence, because that is the one
+    # reachable from where the chain starts.
+    seen_endpoints: set[tuple[str, int]] = set()
+    skipped: list[str] = []
     for z in zones:
         gw_result = await session.execute(
             select(ZAGateway).where(ZAGateway.zone_id == z.id).order_by(ZAGateway.created_at).limit(1)
         )
         gw = gw_result.scalar_one_or_none()
-        if gw is not None:
-            hops.append({
-                "id": gw.id,
-                "zone_id": z.id,
-                "zone_name": z.name,
-                "host": gw.host,
-                "port": gw.port,
-                "username": gw.username,
-                "credential_id": gw.credential_id,
-            })
-    return {"chain": hops}
+        if gw is None:
+            continue
+        endpoint = ((gw.host or "").strip().lower(), int(gw.port or 22))
+        if endpoint in seen_endpoints:
+            skipped.append(f"{z.name} ({gw.host})")
+            continue
+        seen_endpoints.add(endpoint)
+        hops.append({
+            "id": gw.id,
+            "zone_id": z.id,
+            "zone_name": z.name,
+            "host": gw.host,
+            "port": gw.port,
+            "username": gw.username,
+            "credential_id": gw.credential_id,
+        })
+    # Reported rather than silently dropped: a duplicated gateway usually means the
+    # zone tree is misconfigured, and a chain that quietly works while the topology
+    # is wrong is how it stays wrong.
+    return {"chain": hops, "skipped_duplicate_gateways": skipped}
 
 
 @router.delete("/zones/{zone_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])

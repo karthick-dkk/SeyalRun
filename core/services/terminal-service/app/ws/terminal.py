@@ -241,7 +241,25 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
                 chain_data = await _inventory_get(f"/internal/zones/{zone_id}/gateway-chain", settings)
             except Exception:
                 chain_data = {"chain": []}
+            # Drop a hop that IS the target. A gateway whose address equals the
+            # host being connected to makes ssh -J jump through the machine it is
+            # already trying to reach: the connection stalls rather than failing,
+            # so it presents as a hang with no error. Inventory already dedupes
+            # repeated gateways within a chain; this is the one case it cannot see,
+            # because it does not know which host the chain is being built for.
+            _target = ((host.get("ip") or "").strip().lower(), int(host.get("port") or 22))
+            _hops = []
             for hop in chain_data.get("chain", []):
+                if ((hop.get("host") or "").strip().lower(), int(hop.get("port") or 22)) == _target:
+                    logger.warning(
+                        "gateway hop skipped — it is the target host itself",
+                        extra={"session": session_id[:8], "host": hop.get("host"),
+                               "zone": hop.get("zone_name")},
+                    )
+                    continue
+                _hops.append(hop)
+
+            for hop in _hops:
                 try:
                     gw_cred_id = hop.get("credential_id")
                     if gw_cred_id:
