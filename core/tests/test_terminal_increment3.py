@@ -158,6 +158,25 @@ def test_shortcut_map_exists_and_is_reachable():
     assert "showShortcuts = true" in src, "the map must be openable from the menu"
 
 
+# Every documented binding -> something in the view that must implement it.
+# The first version spot-checked two entries; "Esc closes any dialog" was listed
+# and did NOT close the shortcuts dialog, so the map was fiction exactly where it
+# was not checked. Spot-checking a documentation test defeats its purpose.
+_BINDING_EVIDENCE = {
+    "Ctrl+C": "isKiosk",              # passed through to the PTY by TermSession
+    "Ctrl+D": "isKiosk",
+    "Ctrl+L": "isKiosk",
+    "Ctrl/Cmd +": "adjustFontSize",
+    "Ctrl/Cmd -": "adjustFontSize",
+    "Ctrl/Cmd S": "editSnip",
+    "F11": "toggleFullscreen",
+    "Esc": "keydown.esc.window",
+    "Double-click": "dblclick",
+    "Double-click tab": "renameTab",
+    "Right-click host": "contextmenu",
+}
+
+
 def test_shortcut_map_documents_real_bindings():
     """Every listed key must be one the view actually handles, or the map is
     fiction that looks like documentation."""
@@ -166,6 +185,20 @@ def test_shortcut_map_documents_real_bindings():
     block = block[: block.index("\n]")]
     listed = set(re.findall(r"keys: '([^']+)'", block))
     assert listed, "no shortcuts parsed"
-    for keys, marker in [("F11", "toggleFullscreen"), ("Ctrl/Cmd S", "editSnip")]:
-        if keys in listed:
-            assert marker in src, f"{keys} is documented but {marker} is not present"
+    undocumented = listed - set(_BINDING_EVIDENCE)
+    assert not undocumented, (
+        f"these are shown to users but this test has no evidence they exist: "
+        f"{sorted(undocumented)} — add the handler it maps to, do not drop the check"
+    )
+    for keys in listed:
+        marker = _BINDING_EVIDENCE[keys]
+        assert marker in src, f"'{keys}' is documented but {marker!r} is not in the view"
+
+
+def test_escape_closes_the_shortcut_dialog():
+    """The map says Esc closes any open dialog. Esc routes to closeAll(), which
+    did not touch this one — so the documented behaviour was absent."""
+    src = VIEW.read_text()
+    fn = src[src.index("function closeAll()"):]
+    fn = fn[: fn.index("\n}") + 2]
+    assert "showShortcuts.value = false" in fn

@@ -476,6 +476,11 @@ function toggleMenu(name: string) {
 function closeAll() {
   activeMenu.value = null
   ctx.visible = false
+  // The shortcut map documents "Esc — close any open menu or dialog", and Esc
+  // routes here. It did not close this dialog, so the map described behaviour
+  // that did not exist — caught by a browser check, not by the test that was
+  // meant to prevent exactly that (it only spot-checked two of the bindings).
+  showShortcuts.value = false
 }
 
 // ── Hosts ─────────────────────────────────────────────────────────────────
