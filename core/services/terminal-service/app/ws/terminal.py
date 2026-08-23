@@ -31,6 +31,7 @@ from libs.servicetoken import ServiceTokenError, mint, verify
 
 from .. import audit
 from .. import sftp_registry
+from . import _zmodem
 from ..config import get_settings
 from ..database import SessionLocal
 from ..models import ZASSHSession, ZASessionCommand
@@ -162,6 +163,28 @@ async def _audit_command(session_id: str, command: str, filter_id: str | None, a
         extra={"category": "command", "session_id": session_id,
                "command": command, "action": action, "filter_id": filter_id},
     )
+
+
+async def _audit_zmodem(session_id: str, user_id: str, username: str, host_id: str, mode: str) -> None:
+    """Attempted transfers are recorded whether or not they were allowed — a
+    blocked attempt is the more interesting row, and it is the one an assessor
+    asks for when the question is "did anyone try to move files around the
+    audited path".
+
+    Fire-and-forget: this runs off the hot output path, and a terminal must not
+    stall on an audit write. It is therefore NOT critical=True — blocking already
+    happened synchronously, so the control does not depend on this row landing.
+    """
+    from ..audit import log_action
+    try:
+        await log_action(
+            user_id=user_id, username=username, action="terminal.zmodem_attempt",
+            resource_type="host", resource_id=host_id, session_id=session_id,
+            details={"mode": mode, "channel": "zmodem"},
+            result="failure" if mode == _zmodem.MODE_BLOCK else "success",
+        )
+    except Exception:
+        pass
 
 
 async def handle_terminal(websocket: WebSocket, session_id: str, terminate_events: dict[str, asyncio.Event]) -> None:
@@ -414,6 +437,20 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
                             "\x1b[?2004h\x1b[?2004l\r\r\n",
                             "\x1b[?2004h\x1b[?2004l\r",
                         )
+                        # ZMODEM gate — see ws/_zmodem.py. Checked on the way out
+                        # because the sender's opening frame is what announces the
+                        # transfer, whichever side initiated it.
+                        if _zmodem.detect(data):
+                            mode = getattr(settings, "zmodem_mode", _zmodem.MODE_BLOCK)
+                            asyncio.create_task(_audit_zmodem(session_id, user_id, username,
+                                                              sess.host_id, mode))
+                            if mode == _zmodem.MODE_BLOCK:
+                                try:
+                                    process.stdin.write(_zmodem.ZMODEM_CANCEL)
+                                except Exception:
+                                    pass
+                                data = _zmodem.notice(mode)
+
                         frames.append({"t": round(time.monotonic() - t0, 3), "d": data})
                         if len(frames) > settings.terminal_recording_max_frames:
                             frames.pop(0)

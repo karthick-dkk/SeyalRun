@@ -47,15 +47,18 @@
             <li v-for="t in themeNames" :key="t" @click="setTheme(t)">{{ themeName === t ? '✓ ' : '  ' }}{{ t }}</li>
             <li class="m-sep" />
             <li @click="toggleFullscreen">{{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }} <kbd>F11</kbd></li>
+            <li class="m-sep" />
+            <li @click="showWatermark = !showWatermark">{{ showWatermark ? '✓ ' : '  ' }}Session Watermark</li>
           </ul>
         </div>
 
         <div class="menu-group" :class="{ open: activeMenu === 'help' }">
           <button class="menu-btn" @click.stop="toggleMenu('help')">Help</button>
           <ul class="menu-dropdown">
+            <li @click="showShortcuts = true">Keyboard Shortcuts…</li>
+            <li class="m-sep" />
             <li class="dim">Right-click host → Connect as user</li>
             <li class="dim">Ctrl+C/D sends signal to SSH</li>
-            <li class="dim">Ctrl++/- adjusts font size</li>
             <li class="m-sep" />
             <li class="dim">SeyalRun v2.0</li>
           </ul>
@@ -159,7 +162,12 @@
               @split="doSplit"
               @font-size-delta="adjustFontSize"
             />
-            <div v-else class="pane-empty">
+            <TermWatermark
+              v-if="showWatermark && activePane?.session"
+              :username="auth.user?.username || ''"
+              :session-id="activePane.session.session_id"
+            />
+            <div v-else-if="!activePane?.session" class="pane-empty">
               <div class="pane-empty-inner" :class="{ 'pane-empty-error': activePane?.error }">
                 <template v-if="activePane?.connecting">
                   <span class="pane-empty-icon"><svg style="width:36px;height:36px;display:block;opacity:0.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg></span>
@@ -199,7 +207,12 @@
               @split="doSplit"
               @font-size-delta="adjustFontSize"
             />
-            <div v-else class="pane-empty">
+            <TermWatermark
+              v-if="showWatermark && splitPane?.session"
+              :username="auth.user?.username || ''"
+              :session-id="splitPane.session.session_id"
+            />
+            <div v-else-if="!splitPane?.session" class="pane-empty">
               <div class="pane-empty-inner" :class="{ 'pane-empty-error': splitPane?.error }">
                 <template v-if="splitPane?.connecting">
                   <span class="pane-empty-icon"><svg style="width:36px;height:36px;display:block;opacity:0.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg></span>
@@ -230,6 +243,24 @@
         :host-label="focusedPane.name || focusedPane.label"
         @close="showFiles = false"
       />
+    </div>
+
+    <!-- ── Keyboard shortcuts ───────────────────────────────────────────────── -->
+    <div v-if="showShortcuts" class="modal-overlay" style="z-index:530" @click.self="showShortcuts = false">
+      <div class="sc-modal" @click.stop>
+        <header class="sc-head">
+          <span>Keyboard Shortcuts</span>
+          <button class="fm-x" @click="showShortcuts = false" title="Close">✕</button>
+        </header>
+        <div class="sc-body">
+          <section v-for="g in SHORTCUTS" :key="g.group">
+            <h4>{{ g.group }}</h4>
+            <div v-for="s in g.items" :key="s.keys" class="sc-row">
+              <kbd>{{ s.keys }}</kbd><span>{{ s.what }}</span>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
 
     <!-- ── Context menu ─────────────────────────────────────────────────────── -->
@@ -315,6 +346,7 @@ import { ref, computed, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import TermSession from '@/components/terminal/TermSession.vue'
 import TermFilePanel from '@/components/terminal/TermFilePanel.vue'
+import TermWatermark from '@/components/terminal/TermWatermark.vue'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useTerminalTheme } from '@/composables/useTerminalTheme'
@@ -378,6 +410,35 @@ const {
 // the panel is bound to a live connection, so keeping it open across a
 // disconnect would show a listing that can no longer be acted on.
 const showFiles = ref(false)
+const showShortcuts = ref(false)
+// Watermarking is on by default — it is a deterrent control, so making it
+// opt-in would mean it is off exactly where nobody thought about it.
+const showWatermark = ref(true)
+
+// Documented rather than discovered. Every entry here is a binding that already
+// exists — this lists them, it does not add any, so the map cannot drift from
+// behaviour by being edited on its own.
+const SHORTCUTS = [
+  { group: 'Session', items: [
+    { keys: 'Ctrl+C', what: 'Send SIGINT to the remote process' },
+    { keys: 'Ctrl+D', what: 'Send EOF — usually ends the shell' },
+    { keys: 'Ctrl+L', what: 'Clear the screen' },
+  ]},
+  { group: 'Terminal', items: [
+    { keys: 'Ctrl/Cmd +', what: 'Increase font size' },
+    { keys: 'Ctrl/Cmd -', what: 'Decrease font size' },
+    { keys: 'Ctrl/Cmd S', what: 'Capture the screen as an image' },
+    { keys: 'F11', what: 'Toggle fullscreen' },
+  ]},
+  { group: 'Files', items: [
+    { keys: 'Double-click', what: 'Open a folder, or download a file' },
+  ]},
+  { group: 'Navigation', items: [
+    { keys: 'Esc', what: 'Close any open menu or dialog' },
+    { keys: 'Double-click tab', what: 'Rename the session' },
+    { keys: 'Right-click host', what: 'Connect as a specific user' },
+  ]},
+]
 function toggleFiles() {
   if (!focusedPane.value?.session) return
   closeAll()
@@ -1171,4 +1232,20 @@ onBeforeUnmount(() => {
   transition: background 0.1s;
 }
 .cred-picker-item:hover { background: #21262d; color: #e6edf3; }
+.sc-modal {
+  background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+  width: 460px; max-width: 92vw; max-height: 80vh; overflow: hidden;
+  display: flex; flex-direction: column; color: #c9d1d9;
+}
+.sc-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid #21262d; font-weight: 600; color: #e6edf3;
+}
+.sc-body { padding: 6px 14px 14px; overflow-y: auto; }
+.sc-body h4 { margin: 14px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; }
+.sc-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 13px; }
+.sc-row kbd {
+  flex: 0 0 130px; background: #21262d; border: 1px solid #30363d; border-radius: 4px;
+  padding: 2px 6px; font: 500 11px/1.5 ui-monospace, monospace; text-align: center;
+}
 </style>

@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     # Set to "/" to disable confinement, deliberately and visibly.
     sftp_root: str = "/tmp"
 
+    # ZMODEM (rz/sz) policy. "block" (default) cancels the transfer and tells the
+    # operator to use the Files panel; "allow" lets it through, still audited.
+    #
+    # Blocked by default because ZMODEM is a second file-transfer channel running
+    # inside the interactive session: it bypasses the upload/download grants, the
+    # SFTP drop point and the sftp.* audit rows. Shipping an audited front door
+    # beside an unaudited one is the failure R-11 was about, in a different shape.
+    zmodem_mode: str = "block"
+
     db_engine: str = "postgres"
     db_host: str = "127.0.0.1"
     db_port: str = "5432"

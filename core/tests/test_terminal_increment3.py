@@ -1,0 +1,171 @@
+"""Increment 3: watermark, ZMODEM gate, shortcut map.
+
+The ZMODEM part is a security control, not a feature. ZMODEM (rz/sz) is a file
+transfer that runs INSIDE the interactive session, so it is a second transfer
+channel parallel to SFTP and subject to none of its controls: it does not go
+through the upload/download grants, it does not land in the /tmp drop point, and
+it writes no sftp.* row. Shipping SFTP with a jail and an audit trail while
+leaving ZMODEM open is an audited front door beside an unaudited one — R-11's
+failure in a different shape, and it would quietly undo the constraint that
+uploads come only from the browser.
+
+So it is blocked by default and audited either way, and the detector is EXECUTED
+here rather than asserted to exist.
+"""
+
+from __future__ import annotations
+
+import ast
+import importlib.util
+import re
+import types
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+TS = ROOT / "services/terminal-service"
+ZMODEM = TS / "app/ws/_zmodem.py"
+TERMINAL = TS / "app/ws/terminal.py"
+CONFIG = TS / "app/config.py"
+VIEW = ROOT / "services/frontend/src/views/TerminalView.vue"
+WATERMARK = ROOT / "services/frontend/src/components/terminal/TermWatermark.vue"
+
+
+def _load_zmodem():
+    spec = importlib.util.spec_from_file_location("_zmodem_under_test", ZMODEM)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+Z = _load_zmodem()
+
+
+# ── the detector, executed ───────────────────────────────────────────────────
+
+def test_module_loads():
+    assert Z.MODE_BLOCK == "block" and Z.MODE_ALLOW == "allow"
+
+
+@pytest.mark.parametrize("payload", [
+    "**\x18B00000000000000",              # ZHEX header — how sz announces itself
+    "**\x18A",                             # ZBIN
+    "**\x18C",                             # ZBIN32
+    "prompt$ sz file.txt\r\n**\x18B0100",  # mid-stream, after the command echoes
+    "\x1b[0m**\x18B00",                    # after an ANSI sequence
+])
+def test_detects_zmodem_start(payload: str):
+    assert Z.detect(payload) is True
+
+
+@pytest.mark.parametrize("payload", [
+    "",
+    "no transfer here",
+    "** stars ** but no ZDLE",
+    "rz",                          # merely mentioning the command is not a transfer
+    "sz file.txt",                 # the command line alone — the frame is what counts
+    "**\x18",                      # truncated header, no format byte
+    "**\x18Z",                     # not a ZMODEM format byte
+])
+def test_does_not_fire_on_ordinary_output(payload: str):
+    assert Z.detect(payload) is False, f"false positive on {payload!r}"
+
+
+def test_detection_is_on_framing_not_the_command_name():
+    """So it catches sz/rz however they were invoked — an alias, a script, a
+    wrapper — because what is detected is the protocol starting."""
+    src = ZMODEM.read_text()
+    assert re.search(r"_ZMODEM_START\s*=\s*re\.compile", src)
+    # The pattern must not simply look for the words rz/sz.
+    pattern = re.search(r'_ZMODEM_START = re\.compile\(r"([^"]+)"\)', src).group(1)
+    assert "rz" not in pattern and "sz" not in pattern
+    assert r"\x18" in pattern, "the pattern must match ZDLE"
+
+
+def test_cancel_sequence_is_a_real_zmodem_abort():
+    assert Z.ZMODEM_CANCEL.startswith("\x18" * 8), "eight CANs is the canonical abort"
+
+
+def test_block_notice_points_at_the_supported_path():
+    """Obstruction without a route forward just gets worked around."""
+    n = Z.notice(Z.MODE_BLOCK)
+    assert "Files" in n and "blocked" in n.lower()
+    assert Z.notice(Z.MODE_ALLOW) == "", "allow mode must not inject anything into the stream"
+
+
+# ── the gate is wired, and defaults closed ───────────────────────────────────
+
+def test_default_is_block():
+    m = re.search(r'zmodem_mode:\s*str\s*=\s*"([^"]+)"', CONFIG.read_text())
+    assert m and m.group(1) == "block", f"default is {m and m.group(1)!r} — must be 'block'"
+
+
+def test_gate_cancels_and_audits_in_the_output_path():
+    src = TERMINAL.read_text()
+    assert "_zmodem.detect(data)" in src, "the gate must run on the output stream"
+    block = src[src.index("_zmodem.detect(data)"):][:900]
+    assert "ZMODEM_CANCEL" in block, "a blocked transfer must actually be cancelled"
+    assert "_audit_zmodem" in block, "the attempt must be audited"
+
+
+def test_attempts_are_audited_in_both_modes():
+    src = TERMINAL.read_text()
+    fn = src[src.index("async def _audit_zmodem"):]
+    fn = fn[: fn.index("\nasync def handle_terminal")]
+    assert "terminal.zmodem_attempt" in fn
+    assert 'result="failure" if mode == _zmodem.MODE_BLOCK else "success"' in fn, (
+        "a blocked attempt is a failure row; an allowed one still gets recorded"
+    )
+
+
+def test_gate_runs_before_the_data_is_recorded_or_sent():
+    """Cancelling after the frame has already been forwarded to the browser would
+    let the transfer start."""
+    src = TERMINAL.read_text()
+    gate = src.index("_zmodem.detect(data)")
+    frames = src.index('frames.append({"t": round(time.monotonic() - t0, 3), "d": data})', gate - 2000)
+    assert gate < frames, "the gate must precede recording and the WS send"
+
+
+# ── watermark ────────────────────────────────────────────────────────────────
+
+def test_watermark_carries_identity_session_and_time():
+    src = WATERMARK.read_text()
+    for needed in ("username", "sessionId", "toISOString"):
+        assert needed in src, f"watermark must include {needed}"
+
+
+def test_watermark_cannot_intercept_input():
+    """A deterrent overlay that swallowed clicks would break the terminal."""
+    assert "pointer-events: none" in WATERMARK.read_text()
+
+
+def test_watermark_is_on_by_default():
+    """Opt-in would mean it is off exactly where nobody thought about it."""
+    assert "const showWatermark = ref(true)" in VIEW.read_text()
+
+
+def test_watermark_is_rendered_for_both_panes():
+    assert VIEW.read_text().count("<TermWatermark") == 2, "split view must be watermarked too"
+
+
+# ── shortcuts ────────────────────────────────────────────────────────────────
+
+def test_shortcut_map_exists_and_is_reachable():
+    src = VIEW.read_text()
+    assert "const SHORTCUTS" in src
+    assert "showShortcuts = true" in src, "the map must be openable from the menu"
+
+
+def test_shortcut_map_documents_real_bindings():
+    """Every listed key must be one the view actually handles, or the map is
+    fiction that looks like documentation."""
+    src = VIEW.read_text()
+    block = src[src.index("const SHORTCUTS"):]
+    block = block[: block.index("\n]")]
+    listed = set(re.findall(r"keys: '([^']+)'", block))
+    assert listed, "no shortcuts parsed"
+    for keys, marker in [("F11", "toggleFullscreen"), ("Ctrl/Cmd S", "editSnip")]:
+        if keys in listed:
+            assert marker in src, f"{keys} is documented but {marker} is not present"
