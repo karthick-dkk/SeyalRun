@@ -67,8 +67,12 @@ import api from '@/api/client'
 const props = defineProps<{ sessionId: string; hostLabel?: string }>()
 defineEmits<{ (e: 'close'): void }>()
 
-const cwd = ref('.')
-const pathInput = ref('.')
+// Opens at /tmp on every host — it exists everywhere, every account can read
+// it, and it is the conventional drop point for these transfers. The server
+// applies the same default, so the two cannot disagree.
+const DEFAULT_PATH = '/tmp'
+const cwd = ref(DEFAULT_PATH)
+const pathInput = ref(DEFAULT_PATH)
 const entries = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -181,7 +185,7 @@ async function remove(e: any) {
   } catch (err: any) { fail(err, 'Delete failed') }
 }
 
-onMounted(() => go('.'))
+onMounted(() => go(DEFAULT_PATH))
 </script>
 
 <style scoped>

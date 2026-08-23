@@ -59,10 +59,19 @@ router = APIRouter(prefix="/sftp", tags=["sftp"], dependencies=[Depends(require_
 
 # Transfers are streamed in chunks; this bounds memory per request, not file size.
 CHUNK = 64 * 1024
-# Upload ceiling. A PAM is not a file-sharing service, and an unbounded upload is
-# a trivial way to fill a managed host's disk from a session that was only
-# granted "put a config file there".
-MAX_UPLOAD_BYTES = 512 * 1024 * 1024
+
+# Where the file manager opens, on every host. /tmp rather than the account's
+# home directory: it exists on every managed server, every account can read it,
+# and it is the conventional drop point for the transfers this feature is for —
+# so the panel opens somewhere useful instead of somewhere that may not exist.
+# Callers may navigate anywhere the account can reach; this is only the default.
+DEFAULT_PATH = "/tmp"
+
+# Transfer ceiling, both directions. A PAM is not a file-sharing service, and an
+# unbounded upload is a trivial way to fill a managed host's disk from a session
+# that was only granted "put a config file there". Applied to downloads too so
+# "max file size" means one number rather than two.
+MAX_TRANSFER_BYTES = 1024 * 1024 * 1024   # 1 GiB
 
 
 class _Entry(BaseModel):
@@ -172,7 +181,7 @@ def _mode_str(mode: int) -> str:
 @router.get("/{session_id}/list", response_model=ListOut)
 async def list_dir(
     session_id: str,
-    path: str = ".",
+    path: str = DEFAULT_PATH,
     db: AsyncSession = Depends(get_session),
     user_id: str = Depends(current_user_id),
     username: str = Depends(current_username),
@@ -182,7 +191,7 @@ async def list_dir(
     sess, conn = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
     try:
         async with conn.start_sftp_client() as sftp:
-            cwd = await sftp.realpath(_safe_join(".", path))
+            cwd = await sftp.realpath(_safe_join(DEFAULT_PATH, path))
             names = await sftp.listdir(cwd)
             entries: list[_Entry] = []
             for name in sorted(names):
@@ -234,7 +243,7 @@ async def download(
     sess, conn = await _authorize(session_id, "download", db, user_id, username, role, elevated_until)
 
     async with conn.start_sftp_client() as sftp:
-        target = await sftp.realpath(_safe_join(".", path))
+        target = await sftp.realpath(_safe_join(DEFAULT_PATH, path))
         try:
             attrs = await sftp.stat(target)
         except Exception as exc:
@@ -242,6 +251,20 @@ async def download(
         if statmod.S_ISDIR(attrs.permissions or 0):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cannot download a directory")
         size = attrs.size or 0
+        if size > MAX_TRANSFER_BYTES:
+            # Refused before the audit row, deliberately: nothing left the host, so
+            # recording it as a completed transfer would overstate what happened.
+            # The attempt is still logged, as a failure.
+            await log_action(
+                user_id=user_id, username=username, action="sftp.download", resource_type="host",
+                resource_id=sess.host_id, session_id=session_id,
+                details={"path": target, "bytes": size, "reason": "exceeds transfer limit"},
+                result="failure",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"file is {size // (1024 ** 2)} MiB — exceeds the {MAX_TRANSFER_BYTES // (1024 ** 3)} GiB transfer limit",
+            )
 
     # critical=True, and BEFORE a single byte moves: if this row cannot be
     # written, the transfer must not happen. Auditing after the stream would
@@ -289,7 +312,7 @@ async def upload(
 
     written = 0
     async with conn.start_sftp_client() as sftp:
-        base = await sftp.realpath(_safe_join(".", path))
+        base = await sftp.realpath(_safe_join(DEFAULT_PATH, path))
         target = posixpath.join(base, posixpath.basename(file.filename or "upload"))
         try:
             async with sftp.open(target, "wb") as fh:
@@ -298,7 +321,7 @@ async def upload(
                     if not chunk:
                         break
                     written += len(chunk)
-                    if written > MAX_UPLOAD_BYTES:
+                    if written > MAX_TRANSFER_BYTES:
                         await log_action(
                             user_id=user_id, username=username, action="sftp.upload",
                             resource_type="host", resource_id=sess.host_id, session_id=session_id,
@@ -306,7 +329,7 @@ async def upload(
                         )
                         raise HTTPException(
                             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                            detail=f"upload exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+                            detail=f"upload exceeds the {MAX_TRANSFER_BYTES // (1024 ** 3)} GiB limit",
                         )
                     await fh.write(chunk)
         except HTTPException:
@@ -340,7 +363,7 @@ async def mkdir(
 ):
     sess, conn = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
     async with conn.start_sftp_client() as sftp:
-        target = _safe_join(".", payload.path)
+        target = _safe_join(DEFAULT_PATH, payload.path)
         try:
             await sftp.mkdir(target)
         except Exception as exc:
@@ -370,8 +393,8 @@ async def rename(
 ):
     sess, conn = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
     async with conn.start_sftp_client() as sftp:
-        src = _safe_join(".", payload.path)
-        dst = _safe_join(".", payload.new_path)
+        src = _safe_join(DEFAULT_PATH, payload.path)
+        dst = _safe_join(DEFAULT_PATH, payload.new_path)
         try:
             await sftp.rename(src, dst)
         except Exception as exc:
@@ -402,7 +425,7 @@ async def remove(
 ):
     sess, conn = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
     async with conn.start_sftp_client() as sftp:
-        target = _safe_join(".", path)
+        target = _safe_join(DEFAULT_PATH, path)
         try:
             await (sftp.rmdir(target) if is_dir else sftp.remove(target))
         except Exception as exc:

@@ -161,12 +161,45 @@ def test_connection_is_registered_and_always_released():
     assert finally_at != -1, "unregister must run from a finally block, or a dead session keeps a live handle"
 
 
-def test_upload_is_bounded():
+def test_transfers_are_bounded_in_both_directions():
     """An unbounded upload fills a managed host's disk from a grant that only
-    meant 'put a config file there'."""
+    meant 'put a config file there'. The cap applies to downloads too, so
+    "max file size" is one number rather than one number and a blind spot."""
     body = SFTP.read_text()
-    assert "MAX_UPLOAD_BYTES" in body
-    assert "413" in body or "REQUEST_ENTITY_TOO_LARGE" in body
+    m = re.search(r"MAX_TRANSFER_BYTES\s*=\s*([0-9 *]+)", body)
+    assert m, "the transfer ceiling must be a named constant"
+    assert eval(m.group(1)) == 1024 ** 3, "transfer ceiling must be 1 GiB"
+    for endpoint in ("upload", "download"):
+        ep = _endpoints()[endpoint]
+        assert "MAX_TRANSFER_BYTES" in ep, f"{endpoint} does not enforce the transfer ceiling"
+        assert "REQUEST_ENTITY_TOO_LARGE" in ep, f"{endpoint} must refuse with 413"
+
+
+def test_oversize_download_is_refused_before_it_is_recorded_as_success():
+    """Nothing left the host, so a success row would overstate what happened —
+    but the attempt still has to be logged, as a failure."""
+    ep = _endpoints()["download"]
+    limit_at = ep.index("MAX_TRANSFER_BYTES")
+    ok_at = ep.index("critical=True")
+    assert limit_at < ok_at, "the size check must precede the success audit row"
+    refusal = ep[limit_at: ok_at]
+    assert 'result="failure"' in refusal, "an oversize download attempt must still be audited"
+
+
+def test_file_manager_opens_at_tmp_on_every_host():
+    """/tmp exists on every managed server and every account can read it, so the
+    panel opens somewhere useful rather than somewhere that may not exist.
+    Server and client must agree, or the first listing contradicts the path box."""
+    body = SFTP.read_text()
+    m = re.search(r'DEFAULT_PATH\s*=\s*"([^"]+)"', body)
+    assert m and m.group(1) == "/tmp", f"server default is {m and m.group(1)!r}, expected '/tmp'"
+    assert 'path: str = DEFAULT_PATH' in body, "the list endpoint must default to it, not to '.'"
+    assert '_safe_join("."' not in body, "no operation may still resolve against '.'"
+
+    panel = (ROOT / "services/frontend/src/components/terminal/TermFilePanel.vue").read_text()
+    pm = re.search(r"const DEFAULT_PATH\s*=\s*'([^']+)'", panel)
+    assert pm and pm.group(1) == "/tmp", f"client default is {pm and pm.group(1)!r}"
+    assert "onMounted(() => go(DEFAULT_PATH))" in panel, "the panel must open at the default path"
 
 
 def test_router_is_mounted_and_service_token_guarded():
