@@ -15,6 +15,7 @@ from libs.servicetoken import mint
 
 from . import audit
 from .config import get_settings
+from . import _masking
 from .database import SessionLocal
 from .models import ZAJobRun, ZANotification
 
@@ -140,6 +141,11 @@ async def execute(
     max_lines = settings.max_output_lines
 
     async def publish_line(line: str) -> None:
+        # Masked once, here, because this is the only path by which a line reaches
+        # either destination. Masking at the publish and forgetting the persist
+        # (or vice versa) would leave the secret in the other one, and the stored
+        # copy is the one that is retained and re-read later.
+        line = _masking.mask(line)
         msg = json.dumps({"type": "line", "line": line})
         await redis.publish(channel, msg)
         async with SessionLocal() as session:
@@ -174,6 +180,10 @@ async def execute(
         },
         result="started",
     )
+
+    # One secret scope per run. Created before the first attempt so a secret
+    # registered during attempt 1 is still masked in attempt 2's output.
+    _masking.new_scope()
 
     total_attempts = max(1, retry_count + 1)
     exit_code = None

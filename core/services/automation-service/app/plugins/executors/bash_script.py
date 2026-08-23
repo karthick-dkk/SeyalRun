@@ -12,6 +12,7 @@ from typing import Callable
 
 from libs.pluginbase import ActionExecutor, RunRequest, RunResult
 
+from app import _masking
 from app._ssh_exec import run_command as _ssh_run
 
 
@@ -147,6 +148,7 @@ class BashScriptExecutor(ActionExecutor):
                 await publish_line(f"[host:{host_id}] credential lookup failed")
                 return False, ""
             cred = cred_resp.json()
+            _masking.register_secret_dict(cred.get("secret"))
 
             # Sudo/become password: sourced from the credential vault only — never a raw
             # password in job params, which would otherwise sit in plaintext in za_job_runs
@@ -168,6 +170,7 @@ class BashScriptExecutor(ActionExecutor):
                         await publish_line(f"[host:{host_id}] sudo credential lookup failed")
                         return False, ""
                     sudo_cred = sc_resp.json()
+                    _masking.register_secret_dict(sudo_cred.get("secret"))
                 if sudo_cred.get("secret_type") != "password":
                     await publish_line(f"[host:{host_id}] use_sudo requires a password-type credential "
                                        f"(the resolved credential is {sudo_cred.get('secret_type')}) — "

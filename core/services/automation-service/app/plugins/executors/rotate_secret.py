@@ -8,6 +8,7 @@ from typing import Callable
 
 from libs.pluginbase import ActionExecutor, RunRequest, RunResult
 
+from app import _masking
 from app._ssh_exec import run_command as _ssh_run
 
 
@@ -65,6 +66,9 @@ class RotateSecretExecutor(ActionExecutor):
         if secret_type == "password":
             length = policy.get("length", 24)
             new_password = secrets.token_urlsafe(length)
+            # Generated here, so it exists nowhere else yet — register before any
+            # code path can echo it into output.
+            _masking.register(new_password)
             new_secret = {"password": new_password}
         elif secret_type == "ssh_key":
             import asyncssh

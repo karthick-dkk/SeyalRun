@@ -13,6 +13,7 @@ from typing import Callable
 
 import httpx
 
+from app import _masking
 from app._ssh_exec import run_command as _ssh_run
 
 
@@ -25,7 +26,14 @@ def _inv_token():
 
 async def get_secret(client: httpx.AsyncClient, token: str, cred_id: str) -> dict | None:
     r = await client.get(f"/api/v1/internal/credentials/{cred_id}/secret", headers={"X-Service-Token": token})
-    return r.json() if r.status_code == 200 else None
+    if r.status_code != 200:
+        return None
+    data = r.json()
+    # Registered at the point of RETRIEVAL, not of use: a secret fetched and never
+    # printed costs nothing to register, while one printed by a path nobody
+    # anticipated is exactly what masking exists for.
+    _masking.register_secret_dict(data.get("secret"))
+    return data
 
 
 async def host_admin_cred_id(client: httpx.AsyncClient, token: str, host_id: str) -> str | None:
