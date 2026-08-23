@@ -120,10 +120,16 @@ async def authorized_credentials(
             "is_sudo": bool(meta.get("is_sudo")),
         })
     # Bringing your own account bypasses the vault entirely — no rotation, and no
-    # record of WHICH stored credential was used — so it is a per-host permission
-    # rather than a convenience. An authorization with no explicit action list is
-    # unrestricted and keeps that meaning here, matching the `ssh` check above.
-    manual_allowed = (not actions) or ("manual_account" in actions)
+    # record of WHICH stored credential was used — so it needs an EXPLICIT grant.
+    #
+    # Deliberately not following the "empty actions means unrestricted" rule the
+    # `ssh` check above uses. A host with no authorization at all resolves to an
+    # empty action list, so that rule offered manual login on every host the
+    # caller cannot reach — and the flow creates the credential before the session
+    # create rejects it, leaving an account on an unauthorized host as litter from
+    # a connection that never happened. An unrestricted grant is not the same
+    # thing as no grant, and this is the wrong capability to blur them on.
+    manual_allowed = "manual_account" in actions
     return {"credentials": out, "manual_allowed": manual_allowed}
 
 
