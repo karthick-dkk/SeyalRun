@@ -117,7 +117,7 @@ async def _authorize(
     username: str,
     role: str,
     elevated_until: str,
-) -> tuple[ZASSHSession, Any]:
+) -> tuple[ZASSHSession, Any, str]:
     """Resolve the session, confirm ownership, and check `action` against the same
     za_authorization record SSH used — then return the live SSH connection.
 
@@ -142,6 +142,15 @@ async def _authorize(
         return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
     if sess.status != "active":
+        # Previously raised without a row. "All SFTP operations are audited" has to
+        # include the ones that never reached the filesystem, or the log answers
+        # "what happened" only for the attempts that got far enough to succeed.
+        await log_action(
+            user_id=user_id, username=username, action=f"sftp.{action}",
+            resource_type="host", resource_id=sess.host_id, session_id=session_id,
+            details={"reason": f"session is {sess.status}", "host_name": sess.host_name},
+            result="failure",
+        )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"session is {sess.status}")
 
     # Same resolve call, same record, same semantics as sessions.py step 3 — an
@@ -155,27 +164,88 @@ async def _authorize(
 
     conn = sftp_registry.get(session_id)
     if conn is None:
+        await log_action(
+            user_id=user_id, username=username, action=f"sftp.{action}",
+            resource_type="host", resource_id=sess.host_id, session_id=session_id,
+            details={"reason": "no live SSH connection", "host_name": sess.host_name},
+            result="failure",
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="no live SSH connection for this session — reconnect the terminal first",
         )
-    return sess, conn
+    return sess, conn, settings.sftp_root
 
 
-def _safe_join(base: str, path: str) -> str:
-    """Normalise without letting the result climb out of the SFTP root.
+class SftpPathDenied(Exception):
+    """Raised when a resolved path lies outside the configured SFTP root."""
 
-    asyncssh happily follows `..`, so a caller granted browse could otherwise
-    walk to anywhere the account can read. Normalising first and rejecting a
-    result that still escapes is cheaper and harder to get wrong than trying to
-    sanitise the input.
+
+def _within_root(resolved: str, root: str) -> bool:
+    """Containment test on an ALREADY-RESOLVED path.
+
+    Compared component-wise rather than with startswith(), which would accept
+    "/tmpevil" as being inside "/tmp".
     """
-    candidate = posixpath.normpath(posixpath.join(base, path)) if not path.startswith("/") else posixpath.normpath(path)
-    return candidate
+    root = posixpath.normpath(root)
+    if root == "/":
+        return True
+    resolved = posixpath.normpath(resolved)
+    return resolved == root or resolved.startswith(root.rstrip("/") + "/")
+
+
+async def _resolve(sftp, path: str, root: str) -> str:
+    """Resolve `path` through the SERVER's realpath, then confine it to `root`.
+
+    Order is the whole point, and the first version of this function got it
+    wrong: it normalised the string and returned it, rejecting nothing at all.
+    An absolute path passed straight through, so a caller granted `download`
+    could read /etc/shadow, any private key, any application secret that account
+    could read — through what looks in the grant like "may fetch files". The
+    runtime proof for this feature downloaded /etc/hostname without noticing.
+
+    Two reasons resolution must happen server-side and first:
+
+      * `..` is only meaningful after normalisation, and normalising locally
+        cannot see what the remote path actually is;
+      * realpath resolves SYMLINKS. Checking the string before resolution would
+        accept /tmp/escape when /tmp/escape -> /etc, which is the obvious way
+        around a naive prefix check — and a link an ordinary user can create.
+    """
+    target = path if path.startswith("/") else posixpath.join(root, path)
+    try:
+        resolved = await sftp.realpath(target)
+    except Exception:
+        # Non-existent leaf (an upload target, a mkdir) — resolve the parent,
+        # which must exist, and re-attach the basename.
+        parent = posixpath.dirname(posixpath.normpath(target)) or "/"
+        base = posixpath.basename(posixpath.normpath(target))
+        resolved_parent = await sftp.realpath(parent)
+        resolved = posixpath.join(resolved_parent, base) if base else resolved_parent
+    if not _within_root(resolved, root):
+        raise SftpPathDenied(resolved)
+    return resolved
 
 
 def _mode_str(mode: int) -> str:
     return statmod.filemode(mode) if mode else ""
+
+
+async def _deny_path(action: str, sess, session_id: str, user_id: str, username: str, resolved: str, root: str) -> HTTPException:
+    """A path escape is an access-control event, not a bad request — audited as a
+    refusal and reported as 403, with the root named so the operator can see the
+    boundary rather than guess at it."""
+    await log_action(
+        user_id=user_id, username=username, action=f"sftp.{action}", resource_type="host",
+        resource_id=sess.host_id, session_id=session_id,
+        details={"path": resolved, "reason": "outside sftp root", "sftp_root": root,
+                 "host_name": sess.host_name},
+        result="failure", critical=True,
+    )
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"path is outside the permitted SFTP root ({root})",
+    )
 
 
 @router.get("/{session_id}/list", response_model=ListOut)
@@ -188,10 +258,10 @@ async def list_dir(
     role: str = Depends(current_user_role),
     elevated_until: str = Header(default="", alias="X-Elevated-Until"),
 ):
-    sess, conn = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
+    sess, conn, root = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
     try:
         async with conn.start_sftp_client() as sftp:
-            cwd = await sftp.realpath(_safe_join(DEFAULT_PATH, path))
+            cwd = await _resolve(sftp, path, root)
             names = await sftp.listdir(cwd)
             entries: list[_Entry] = []
             for name in sorted(names):
@@ -208,6 +278,11 @@ async def list_dir(
                     size=attrs.size or 0, mtime=float(attrs.mtime or 0),
                     mode=_mode_str(attrs.permissions or 0),
                 ))
+    except SftpPathDenied as denied:
+        # Must precede the broad handler below, or a containment refusal would be
+        # reported as "cannot list" — a 400 that reads like a bad path rather than
+        # the access-control decision it is.
+        raise await _deny_path("list", sess, session_id, user_id, username, str(denied), root)
     except HTTPException:
         raise
     except Exception as exc:
@@ -240,10 +315,13 @@ async def download(
     browses and does not download — that distinction is the whole reason the
     three actions exist separately, and it is what R-11 promised and never
     delivered."""
-    sess, conn = await _authorize(session_id, "download", db, user_id, username, role, elevated_until)
+    sess, conn, root = await _authorize(session_id, "download", db, user_id, username, role, elevated_until)
 
     async with conn.start_sftp_client() as sftp:
-        target = await sftp.realpath(_safe_join(DEFAULT_PATH, path))
+        try:
+            target = await _resolve(sftp, path, root)
+        except SftpPathDenied as denied:
+            raise await _deny_path("download", sess, session_id, user_id, username, str(denied), root)
         try:
             attrs = await sftp.stat(target)
         except Exception as exc:
@@ -308,12 +386,17 @@ async def upload(
     elevated_until: str = Header(default="", alias="X-Elevated-Until"),
 ):
     """Requires the `upload` action specifically."""
-    sess, conn = await _authorize(session_id, "upload", db, user_id, username, role, elevated_until)
+    sess, conn, root = await _authorize(session_id, "upload", db, user_id, username, role, elevated_until)
 
     written = 0
     async with conn.start_sftp_client() as sftp:
-        base = await sftp.realpath(_safe_join(DEFAULT_PATH, path))
-        target = posixpath.join(base, posixpath.basename(file.filename or "upload"))
+        try:
+            base = await _resolve(sftp, path, root)
+        # Re-resolve the final target: basename() alone would not stop an upload
+        # into a symlinked subdirectory pointing out of the root.
+            target = await _resolve(sftp, posixpath.join(base, posixpath.basename(file.filename or "upload")), root)
+        except SftpPathDenied as denied:
+            raise await _deny_path("upload", sess, session_id, user_id, username, str(denied), root)
         try:
             async with sftp.open(target, "wb") as fh:
                 while True:
@@ -361,9 +444,12 @@ async def mkdir(
     role: str = Depends(current_user_role),
     elevated_until: str = Header(default="", alias="X-Elevated-Until"),
 ):
-    sess, conn = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
+    sess, conn, root = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
     async with conn.start_sftp_client() as sftp:
-        target = _safe_join(DEFAULT_PATH, payload.path)
+        try:
+            target = await _resolve(sftp, payload.path, root)
+        except SftpPathDenied as denied:
+            raise await _deny_path("mkdir", sess, session_id, user_id, username, str(denied), root)
         try:
             await sftp.mkdir(target)
         except Exception as exc:
@@ -391,10 +477,13 @@ async def rename(
     role: str = Depends(current_user_role),
     elevated_until: str = Header(default="", alias="X-Elevated-Until"),
 ):
-    sess, conn = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
+    sess, conn, root = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
     async with conn.start_sftp_client() as sftp:
-        src = _safe_join(DEFAULT_PATH, payload.path)
-        dst = _safe_join(DEFAULT_PATH, payload.new_path)
+        try:
+            src = await _resolve(sftp, payload.path, root)
+            dst = await _resolve(sftp, payload.new_path, root)
+        except SftpPathDenied as denied:
+            raise await _deny_path("rename", sess, session_id, user_id, username, str(denied), root)
         try:
             await sftp.rename(src, dst)
         except Exception as exc:
@@ -423,9 +512,12 @@ async def remove(
     role: str = Depends(current_user_role),
     elevated_until: str = Header(default="", alias="X-Elevated-Until"),
 ):
-    sess, conn = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
+    sess, conn, root = await _authorize(session_id, "sftp", db, user_id, username, role, elevated_until)
     async with conn.start_sftp_client() as sftp:
-        target = _safe_join(DEFAULT_PATH, path)
+        try:
+            target = await _resolve(sftp, path, root)
+        except SftpPathDenied as denied:
+            raise await _deny_path("delete", sess, session_id, user_id, username, str(denied), root)
         try:
             await (sftp.rmdir(target) if is_dir else sftp.remove(target))
         except Exception as exc:

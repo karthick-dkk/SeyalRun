@@ -20,11 +20,24 @@ async def list_audit_logs(
     session: AsyncSession = Depends(get_session),
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
+    action: str | None = Query(default=None, description="Action prefix, e.g. 'sftp.' for all file operations"),
+    result_filter: str | None = Query(default=None, alias="result", description="success | failure"),
 ):
-    result = await session.execute(
-        select(ZAAuditLog).order_by(ZAAuditLog.created_at.desc()).limit(limit).offset(offset)
-    )
-    return result.scalars().all()
+    """Filtering exists so a specific class of event can be found at all.
+
+    Without it, "show me the file transfers" meant paging through every row in
+    the log — and an assessor asking "what left this host, and did anything get
+    refused?" is exactly the question the chain is kept for. `action` is a prefix
+    match so 'sftp.' returns the whole family (list, download, upload, mkdir,
+    rename, delete) rather than requiring six separate queries.
+    """
+    stmt = select(ZAAuditLog)
+    if action:
+        stmt = stmt.where(ZAAuditLog.action.startswith(action))
+    if result_filter:
+        stmt = stmt.where(ZAAuditLog.result == result_filter)
+    stmt = stmt.order_by(ZAAuditLog.created_at.desc()).limit(limit).offset(offset)
+    return (await session.execute(stmt)).scalars().all()
 
 
 @router.get("/verify")

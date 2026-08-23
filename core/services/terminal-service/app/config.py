@@ -16,6 +16,18 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_path: str = "/var/log/seyalrun/terminal-service.jsonl"
 
+    # SFTP root — the file manager is confined to this directory on every managed
+    # host, matching JumpServer PAM's per-asset SFTP Root (which also defaults to
+    # /tmp). Confinement is enforced AFTER the server resolves symlinks, so a
+    # symlink planted inside the root cannot be used to read outside it.
+    #
+    # This is a containment boundary, not a convenience default: without it, any
+    # account granted `download` on a host could read every file that account can
+    # read — /etc/shadow, private keys, application secrets — through a file
+    # browser, with the grant looking like nothing more than "may fetch files".
+    # Set to "/" to disable confinement, deliberately and visibly.
+    sftp_root: str = "/tmp"
+
     db_engine: str = "postgres"
     db_host: str = "127.0.0.1"
     db_port: str = "5432"

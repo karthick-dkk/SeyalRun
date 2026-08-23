@@ -218,3 +218,30 @@ def test_r11_is_retired_in_the_ui():
     assert m, "UNENFORCED_ACTIONS not found"
     still_flagged = re.findall(r"'([a-z]+)'", m.group(1))
     assert not still_flagged, f"still marked unenforced after Increment 1: {still_flagged}"
+
+
+# ── every operation is audited, including the ones that never reach the disk ──
+
+def test_no_sftp_exit_path_is_unaudited():
+    """"All SFTP operations are audited" has to include the refusals and the
+    early exits, or the log answers "what happened" only for the attempts that
+    got far enough to succeed. The 409 paths (session not active, no live
+    connection) wrote nothing at all in the first version."""
+    auth = _fn(SFTP.read_text(), "_authorize")
+    for reason in ("session is", "no live SSH connection", "not permitted for this host"):
+        idx = auth.find(reason)
+        assert idx != -1, f"expected an exit path for {reason!r}"
+        window = auth[max(0, idx - 700): idx + 200]
+        assert "log_action" in window, f"the {reason!r} exit path writes no audit row"
+
+
+def test_audit_api_can_filter_to_the_sftp_family():
+    """Finding file transfers must not mean paging the whole log. A prefix match
+    returns the family (list/download/upload/mkdir/rename/delete) in one query."""
+    api = (ROOT / "services/identity-service/app/api/audit.py").read_text()
+    assert "action.startswith(" in api, "the audit list must support an action prefix filter"
+    assert "result" in api and "ZAAuditLog.result ==" in api, "and a result filter"
+
+    view = (ROOT / "services/frontend/src/views/admin/AuditAdmin.vue").read_text()
+    assert "'sftp.'" in view, "the audit page must offer a file-transfer filter"
+    assert "params.action" in view, "the filter must actually reach the API"

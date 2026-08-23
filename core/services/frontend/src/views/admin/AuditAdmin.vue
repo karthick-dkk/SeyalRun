@@ -21,6 +21,22 @@
 
     <div class="card">
       <div class="card-header">Audit Logs</div>
+      <div class="audit-filters">
+        <button
+          v-for="f in FILTERS"
+          :key="f.key"
+          class="btn btn-sm"
+          :class="actionFilter === f.key ? 'btn-primary' : ''"
+          @click="actionFilter = f.key; applyFilter()"
+        >{{ f.label }}</button>
+        <span class="audit-filter-sep" />
+        <button
+          class="btn btn-sm"
+          :class="resultFilter === 'failure' ? 'btn-primary' : ''"
+          @click="resultFilter = resultFilter === 'failure' ? '' : 'failure'; applyFilter()"
+          title="Show only refused or failed operations"
+        >Failures only</button>
+      </div>
       <table class="table">
         <thead>
           <tr><th>Time</th><th>User</th><th>Action</th><th>Result</th><th>Resource</th><th>Details</th><th>IP Address</th></tr>
@@ -76,10 +92,33 @@ function resultClass(r: string) {
   return /fail|denied|error/i.test(r) ? 'badge-red' : 'badge-green'
 }
 
+// Quick filters. Without these, "show me the file transfers" meant paging
+// through every row in the log — and "what left this host, and was anything
+// refused?" is exactly the question the chain is kept to answer.
+const FILTERS = [
+  { key: '',              label: 'All' },
+  { key: 'sftp.',         label: 'File transfer' },
+  { key: 'credential.',   label: 'Credentials' },
+  { key: 'session.',      label: 'Sessions' },
+  { key: 'auth.',         label: 'Authentication' },
+]
+const actionFilter = ref('')
+const resultFilter = ref('')
+
+function applyFilter() {
+  logs.value = []
+  offset.value = 0
+  hasMore.value = true
+  loadMore()
+}
+
 async function loadMore() {
   loading.value = true
   try {
-    const { data } = await api.get('/audit/logs', { params: { limit: PAGE_SIZE, offset: offset.value } })
+    const params: Record<string, any> = { limit: PAGE_SIZE, offset: offset.value }
+    if (actionFilter.value) params.action = actionFilter.value
+    if (resultFilter.value) params.result = resultFilter.value
+    const { data } = await api.get('/audit/logs', { params })
     logs.value.push(...data)
     offset.value += data.length
     hasMore.value = data.length === PAGE_SIZE
@@ -166,4 +205,9 @@ onMounted(() => { loadMore(); runVerify() })
 .audit-verify--broken  .audit-verify-icon, .audit-verify--broken .audit-verify-headline { color: var(--danger); }
 .audit-verify--unknown .audit-verify-icon, .audit-verify--unknown .audit-verify-headline { color: var(--warn); }
 .audit-verify--checking .audit-verify-icon { color: var(--text2); }
+.audit-filters {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.audit-filter-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
 </style>
