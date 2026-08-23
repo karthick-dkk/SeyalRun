@@ -51,6 +51,11 @@ class HostCreate(BaseModel):
     ip: str
     port: int = 22
     os_type: str = "linux"
+    # "server" or "gateway". A gateway is an ordinary host used as a jump point,
+    # so it carries groups, a zone and its own credential like any other.
+    host_type: str = "server"
+    # Position among its zone's gateways; ignored for host_type "server".
+    gateway_order: int = 0
     enabled: bool = True
     zone_id: str | None = None
     zabbix_hostid: str | None = None
@@ -69,6 +74,8 @@ class HostOut(BaseModel):
     ip: str
     port: int
     os_type: str
+    host_type: str = "server"
+    gateway_order: int = 0
     enabled: bool
     zone_id: str | None = None
     last_synced_at: datetime | None = None

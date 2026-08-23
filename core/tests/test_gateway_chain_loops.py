@@ -67,7 +67,10 @@ def test_chain_walk_terminates_even_on_a_corrupt_tree():
 def test_duplicate_gateway_endpoints_are_dropped():
     fn = _chain_fn()
     assert "seen_endpoints" in fn, "a repeated gateway host must not become a second hop"
-    assert re.search(r"endpoint\s*=\s*\(\(gw\.host or \"\"\)\.strip\(\)\.lower\(\), int\(gw\.port or 22\)\)", fn), (
+    # Anchored on the PROPERTY, not the variable name: the first version pinned
+    # `gw.host`, which broke the moment gateways became hosts and the local was
+    # renamed — while the normalisation it was checking was still correct.
+    assert re.search(r'\.strip\(\)\.lower\(\),\s*int\(\w+\[?"?port"?\]? or 22\)', fn), (
         "dedupe must compare host AND port, normalised — 'GW' and 'gw ' are the same machine"
     )
 

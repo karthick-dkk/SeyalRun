@@ -209,6 +209,10 @@ CREATE TABLE IF NOT EXISTS za_hosts (
     name            VARCHAR(200) NOT NULL,
     ip              VARCHAR(100) NOT NULL,
     port            INTEGER      NOT NULL DEFAULT 22,
+    -- 'server' or 'gateway'. A gateway is an ordinary host used as a jump
+    -- point, so it carries groups, a zone and its own credential.
+    host_type       VARCHAR(20)  NOT NULL DEFAULT 'server',
+    gateway_order   INTEGER      NOT NULL DEFAULT 0,
     os_type         VARCHAR(20)  NOT NULL DEFAULT 'linux',
     enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
     zone_id         VARCHAR(36)  REFERENCES za_zones(id) ON DELETE SET NULL,

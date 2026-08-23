@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..deps import require_admin, require_service_token
-from ..models import ZAGateway, ZAZone
+from ..models import ZACredentialHostLink, ZAGateway, ZAHost, ZAZone
 from ..schemas import GatewayCreate, GatewayOut, ZoneCreate, ZoneOut
 
 router = APIRouter(tags=["zones"], dependencies=[Depends(require_service_token)])
@@ -71,11 +71,21 @@ async def update_zone(zone_id: str, payload: ZoneCreate, session: AsyncSession =
 
 @router.get("/internal/zones/{zone_id}/gateway-chain")
 async def zone_gateway_chain(zone_id: str, session: AsyncSession = Depends(get_session)):
-    """Ordered ProxyJump hop list for connecting to a host in this zone — walks the
-    zone's parent_zone_id ancestry from the outermost ancestor down to this zone
-    (each zone contributes at most one hop, its first-created gateway), so nesting
-    zones is how a multi-hop chain is built. Called by terminal-service (and,
-    eventually, automation-service) instead of a single explicit gateway_id."""
+    """Ordered ProxyJump hop list for connecting to a host in this zone.
+
+    Walks the zone's parent_zone_id ancestry from the outermost ancestor down to
+    this zone, so nesting zones is how a multi-hop chain is built. Each zone
+    contributes EVERY enabled gateway it holds, in gateway_order — a zone may have
+    a redundant pair, or a chain through a DMZ. (It previously took one per zone,
+    so a zone's second gateway was silently ignored.)
+
+    A gateway is a host with host_type "gateway", carrying its own credential like
+    any other host. za_gateways is the older shape and is still read when a zone
+    has no gateway hosts, so a deployment that has not been reviewed keeps
+    connecting exactly as before.
+
+    Called by terminal-service instead of a single explicit gateway_id.
+    """
     zones: list[ZAZone] = []
     seen: set[str] = set()
     current_id: str | None = zone_id
@@ -101,26 +111,53 @@ async def zone_gateway_chain(zone_id: str, session: AsyncSession = Depends(get_s
     seen_endpoints: set[tuple[str, int]] = set()
     skipped: list[str] = []
     for z in zones:
-        gw_result = await session.execute(
-            select(ZAGateway).where(ZAGateway.zone_id == z.id).order_by(ZAGateway.created_at).limit(1)
-        )
-        gw = gw_result.scalar_one_or_none()
-        if gw is None:
-            continue
-        endpoint = ((gw.host or "").strip().lower(), int(gw.port or 22))
-        if endpoint in seen_endpoints:
-            skipped.append(f"{z.name} ({gw.host})")
-            continue
-        seen_endpoints.add(endpoint)
-        hops.append({
-            "id": gw.id,
-            "zone_id": z.id,
-            "zone_name": z.name,
-            "host": gw.host,
-            "port": gw.port,
-            "username": gw.username,
-            "credential_id": gw.credential_id,
-        })
+        # Gateway HOSTS first. A gateway is an ordinary host marked host_type
+        # "gateway", so it carries groups, a zone and its own credential like any
+        # other; za_gateways is the old shape, kept as a fallback so a deployment
+        # whose gateways have not been reviewed keeps connecting exactly as before.
+        #
+        # A zone may hold SEVERAL gateways — a redundant pair, or a chain through a
+        # DMZ — so every one contributes a hop, in gateway_order. Ordering is
+        # explicit rather than by created_at: which gateway comes first is a
+        # topology decision, not an accident of when someone typed it in.
+        gw_hosts = (await session.execute(
+            select(ZAHost)
+            .where(ZAHost.zone_id == z.id, ZAHost.host_type == "gateway", ZAHost.enabled.is_(True))
+            .order_by(ZAHost.gateway_order, ZAHost.created_at)
+        )).scalars().all()
+
+        candidates: list[dict] = []
+        for h in gw_hosts:
+            # A gateway host logs in with its OWN linked credential, exactly like
+            # any other host — that is the whole benefit of modelling it as one.
+            # Without resolving it here the hop would carry no login and the jump
+            # would fail at connect time with nothing explaining why.
+            link = (await session.execute(
+                select(ZACredentialHostLink.credential_id)
+                .where(ZACredentialHostLink.host_id == h.id)
+                .limit(1)
+            )).scalar_one_or_none()
+            candidates.append({
+                "id": h.id, "host": h.ip, "port": h.port, "username": "",
+                "credential_id": link, "host_id": h.id,
+            })
+        if not candidates:
+            legacy = (await session.execute(
+                select(ZAGateway).where(ZAGateway.zone_id == z.id).order_by(ZAGateway.created_at)
+            )).scalars().all()
+            candidates = [
+                {"id": g.id, "host": g.host, "port": g.port, "username": g.username,
+                 "credential_id": g.credential_id, "host_id": None}
+                for g in legacy
+            ]
+
+        for cand in candidates:
+            endpoint = ((cand["host"] or "").strip().lower(), int(cand["port"] or 22))
+            if endpoint in seen_endpoints:
+                skipped.append(f"{z.name} ({cand['host']})")
+                continue
+            seen_endpoints.add(endpoint)
+            hops.append({**cand, "zone_id": z.id, "zone_name": z.name})
     # Reported rather than silently dropped: a duplicated gateway usually means the
     # zone tree is misconfigured, and a chain that quietly works while the topology
     # is wrong is how it stays wrong.

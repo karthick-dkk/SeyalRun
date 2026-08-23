@@ -68,6 +68,16 @@ class ZAHost(Base):
     ip: Mapped[str] = mapped_column(String(100), nullable=False)
     port: Mapped[int] = mapped_column(Integer, default=22)
     os_type: Mapped[str] = mapped_column(String(20), default="linux")
+    # "server" (the default) or "gateway". A gateway is an ordinary host in every
+    # other respect — it has an address, a zone, asset groups and its own login
+    # credential — which is the point of modelling it as one: it was a separate
+    # za_gateways table with its own shape, so it could not be listed in Assets,
+    # grouped, authorized, or given a credential through the normal paths.
+    host_type: Mapped[str] = mapped_column(String(20), default="server", nullable=False)
+    # Order among the gateways of one zone. A zone may hold several (a pair for
+    # redundancy, or a chain through a DMZ), and the connect order has to be
+    # deterministic rather than whatever the database returns.
+    gateway_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     zone_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("za_zones.id", ondelete="SET NULL"), nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
