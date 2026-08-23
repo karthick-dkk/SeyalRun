@@ -84,6 +84,10 @@ class ZASchedule(Base):
     job_template_id: Mapped[str] = mapped_column(String(36), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)
+    # IANA zone the cron expression is evaluated in. Defaults to UTC, which is the
+    # behaviour every existing schedule already has — so a deploy does not move
+    # anyone's job to a different hour.
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
     params_override: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

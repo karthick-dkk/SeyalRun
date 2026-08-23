@@ -340,6 +340,16 @@ async def run_template(
         "_chain_steps": tmpl.chain_steps if tmpl.action_type == "chain" else None,
         "_run_id": run_id,
     }
+    # Refuse rather than queue. Queueing would hide the double-trigger and run it
+    # later against hosts whose state has moved on; a 409 tells the caller what is
+    # already happening and lets them decide.
+    busy = await live_run_id(session, template_id)
+    if busy:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"'{tmpl.name}' is already running (run {busy}) — wait for it to finish or cancel it",
+        )
+
     run = ZAJobRun(
         id=run_id,
         job_template_id=template_id,

@@ -19,6 +19,9 @@ class ScheduleCreate(BaseModel):
     job_template_id: str
     name: str
     cron_expression: str
+    # IANA zone the cron is evaluated in. UTC is what every existing schedule
+    # already effectively used, so the default changes nobody's firing time.
+    timezone: str = "UTC"
     params_override: dict = {}
     enabled: bool = True
 
@@ -26,6 +29,7 @@ class ScheduleCreate(BaseModel):
 class ScheduleUpdate(BaseModel):
     name: str | None = None
     cron_expression: str | None = None
+    timezone: str | None = None
     params_override: dict | None = None
     enabled: bool | None = None
 
