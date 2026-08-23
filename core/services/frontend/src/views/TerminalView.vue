@@ -1,6 +1,6 @@
 <template>
   <!-- Standalone fullscreen SSH terminal — opened as a popup window or directly -->
-  <div class="ssh-app" @click="closeAll" @keydown.esc.window="closeAll">
+  <div class="ssh-app" @click="closeAll">
 
     <!-- ── Menu bar ─────────────────────────────────────────────────────────── -->
     <header class="menu-bar" @click.stop>
@@ -472,6 +472,21 @@ const filteredSeyalRunHosts = computed(() =>
 function toggleMenu(name: string) {
   activeMenu.value = activeMenu.value === name ? null : name
 }
+
+// Esc, on the window rather than on this element.
+//
+// The template had @keydown.esc.window — but `.window` is NOT a Vue modifier.
+// Vue treats an unrecognised modifier on a key event as another KEY name, so
+// that listener sat on this <div>, not on window. Keydown only reached it while
+// focus was already inside the app; after clicking a menu item, focus is on
+// <body>, the event never bubbles down into a child, and Esc did nothing. The
+// shortcut map has been promising "Esc closes any open menu or dialog" the whole
+// time — measured in a browser: the dialog stayed open.
+function onWindowKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeAll()
+}
+onMounted(() => window.addEventListener('keydown', onWindowKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
 
 function closeAll() {
   activeMenu.value = null

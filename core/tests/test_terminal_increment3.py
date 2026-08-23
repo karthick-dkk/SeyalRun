@@ -44,6 +44,19 @@ Z = _load_zmodem()
 
 # ── the detector, executed ───────────────────────────────────────────────────
 
+def _template_of(src: str) -> str:
+    """The <template> block only — bindings live there, and prose about a fixed
+    binding lives in <script>."""
+    i = src.find("<template>")
+    j = src.rfind("</template>")
+    return src[i:j] if i != -1 and j != -1 else src
+
+
+def test_template_extraction_works():
+    assert "<div class=\"ssh-app\"" in _template_of(VIEW.read_text())
+    assert "function closeAll" not in _template_of(VIEW.read_text())
+
+
 def test_module_loads():
     assert Z.MODE_BLOCK == "block" and Z.MODE_ALLOW == "allow"
 
@@ -202,3 +215,35 @@ def test_escape_closes_the_shortcut_dialog():
     fn = src[src.index("function closeAll()"):]
     fn = fn[: fn.index("\n}") + 2]
     assert "showShortcuts.value = false" in fn
+
+
+def test_escape_is_bound_on_the_window_not_an_element():
+    """`.window` is NOT a Vue modifier. Vue reads an unrecognised modifier on a
+    key event as another KEY name, so @keydown.esc.window put the listener on the
+    element, where it only fired while focus was already inside it. After a menu
+    click focus is on <body> and Esc did nothing — verified in a browser, with
+    the dialog still open afterwards.
+
+    Any element-scoped Esc binding on this view is therefore a bug, not a style
+    preference."""
+    src = VIEW.read_text()
+    # Scoped to <template>: the fix is explained in a script comment that quotes
+    # the broken binding, and a whole-file check flags the explanation as the bug.
+    assert not re.search(r"@key(down|up)\.[\w.]*\.window", _template_of(src)), (
+        "`.window` is not a Vue modifier — this listener is element-scoped and "
+        "will not fire unless focus is already inside it"
+    )
+    assert "window.addEventListener('keydown', onWindowKeydown)" in src
+    assert "window.removeEventListener('keydown', onWindowKeydown)" in src, \
+        "an un-removed window listener outlives the view and fires on a dead component"
+
+
+def test_no_view_relies_on_a_window_key_modifier():
+    """Same defect, anywhere else it may have been copied to."""
+    src_root = ROOT / "services/frontend/src"
+    bad = [
+        f"{f.relative_to(src_root)}"
+        for f in src_root.rglob("*.vue")
+        if re.search(r"@key(down|up)\.[\w.]*\.window", _template_of(f.read_text()))
+    ]
+    assert not bad, f"element-scoped listeners posing as window listeners: {bad}"
