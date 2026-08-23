@@ -194,6 +194,30 @@ def _within_root(resolved: str, root: str) -> bool:
     return resolved == root or resolved.startswith(root.rstrip("/") + "/")
 
 
+def upload_target(root: str, resolved_base: str, filename: str) -> str:
+    """Where an upload is allowed to land, as a pure function so it can be tested
+    by running it rather than by reading it.
+
+    Writing is pinned to the SFTP root ITSELF, not the tree beneath it. Browsing
+    may descend into subdirectories; writing may not. One fixed drop point is the
+    difference between "files can be delivered to this host" and "files can be
+    placed anywhere the account can write" — and the second is a far larger grant
+    than the word `upload` suggests to whoever approves it. crontabs,
+    authorized_keys and systemd units all sit at writable paths.
+
+    Raises SftpPathDenied if `resolved_base` is anything but the root, or if the
+    filename would redirect the write out of it. basename() already strips
+    separators; checking anyway is what keeps that true when someone edits this.
+    """
+    root_n = posixpath.normpath(root)
+    if posixpath.normpath(resolved_base) != root_n:
+        raise SftpPathDenied(resolved_base)
+    target = posixpath.join(root_n, posixpath.basename(filename or "upload"))
+    if posixpath.dirname(target) != root_n or posixpath.basename(target) in ("", ".", ".."):
+        raise SftpPathDenied(target)
+    return target
+
+
 async def _resolve(sftp, path: str, root: str) -> str:
     """Resolve `path` through the SERVER's realpath, then confine it to `root`.
 
@@ -385,16 +409,39 @@ async def upload(
     role: str = Depends(current_user_role),
     elevated_until: str = Header(default="", alias="X-Elevated-Until"),
 ):
-    """Requires the `upload` action specifically."""
+    """Requires the `upload` action specifically.
+
+    Two constraints beyond the action check, both deliberate:
+
+    **Destination is the SFTP root itself, not the tree beneath it.** Browsing may
+    descend into subdirectories; writing may not. A single, fixed drop point is
+    the difference between "files can be delivered to this host" and "files can
+    be placed anywhere the account can write", and the second is a much larger
+    grant than the word `upload` suggests to whoever approves it.
+
+    **The bytes come from the request body and nowhere else.** There is no source
+    URL, no remote path, no host-to-host copy: the only way to put a file on a
+    managed host through this API is for a person to choose it in their browser.
+    A server-side fetch would let a caller move data between machines using the
+    PAM's own credentials, with the PAM's network position, and the audit row
+    would name the operator rather than whatever actually produced the bytes.
+    test_sftp_upload_source.py fails the build if such a parameter is ever added.
+    """
     sess, conn, root = await _authorize(session_id, "upload", db, user_id, username, role, elevated_until)
 
     written = 0
     async with conn.start_sftp_client() as sftp:
         try:
             base = await _resolve(sftp, path, root)
-        # Re-resolve the final target: basename() alone would not stop an upload
-        # into a symlinked subdirectory pointing out of the root.
-            target = await _resolve(sftp, posixpath.join(base, posixpath.basename(file.filename or "upload")), root)
+            # Pinned to the drop point by upload_target(), which runs AFTER
+            # resolution so a symlink inside the root pointing at another in-root
+            # directory cannot widen it either.
+            candidate = upload_target(root, base, file.filename or "upload")
+            # Re-resolve: the drop point itself may be a symlink, and the final
+            # write must still land inside the root.
+            target = await _resolve(sftp, candidate, root)
+            if posixpath.dirname(target) != posixpath.normpath(await _resolve(sftp, root, root)):
+                raise SftpPathDenied(target)
         except SftpPathDenied as denied:
             raise await _deny_path("upload", sess, session_id, user_id, username, str(denied), root)
         try:

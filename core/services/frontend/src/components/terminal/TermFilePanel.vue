@@ -16,7 +16,7 @@
     <div class="fm-actions">
       <button class="fm-btn" :disabled="loading" @click="refresh">Refresh</button>
       <button class="fm-btn" :disabled="loading" @click="promptMkdir">New Folder</button>
-      <label class="fm-btn fm-upload" :class="{ disabled: loading }">
+      <label class="fm-btn fm-upload" :class="{ disabled: loading }" :title="`Upload a file from this computer into ${DEFAULT_PATH}`">
         Upload
         <input type="file" hidden @change="onUpload" />
       </label>
@@ -144,7 +144,10 @@ async function onUpload(ev: Event) {
   loading.value = true
   try {
     const fd = new FormData()
-    fd.append('path', cwd.value)
+    // Always the root, never the directory currently being browsed: the server
+    // pins writes to the drop point and would refuse anything else, so sending
+    // cwd would just produce a confusing 403 when the user has navigated away.
+    fd.append('path', DEFAULT_PATH)
     fd.append('file', file)
     await api.post(`/sftp/${props.sessionId}/upload`, fd)
     await refresh()
