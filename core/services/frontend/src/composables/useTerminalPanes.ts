@@ -27,6 +27,9 @@ export interface Pane {
   disconnected: boolean    // session ended — show reconnect overlay
   error: string | null     // last connection error to show in pane
   connecting: boolean      // connecting in-progress spinner
+  /** 'sftp' shows only the file browser. The SSH session still runs underneath —
+   *  file transfer rides that connection — it is simply not displayed. */
+  mode: 'ssh' | 'sftp'
 }
 
 export interface UseTerminalPanesOptions {
@@ -39,7 +42,7 @@ export function useTerminalPanes(opts: UseTerminalPanesOptions) {
   let _pid = 0
   const mkPane = (label = 'New'): Pane => ({
     id: `p${++_pid}`, label, name: null, hostId: null,
-    session: null, disconnected: false, error: null, connecting: false,
+    session: null, disconnected: false, error: null, connecting: false, mode: 'ssh',
   })
 
   const panes: Ref<Pane[]> = ref([mkPane()])

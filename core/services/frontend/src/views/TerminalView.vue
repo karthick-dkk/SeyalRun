@@ -149,8 +149,13 @@
             :class="{ 'pane--focused': !splitId || focusedSide === 'primary' }"
             @click="focusedSide = 'primary'; termRefs.primary?.focus()"
           >
+            <!-- In SFTP mode the terminal is kept MOUNTED but hidden: the file
+                 browser works over this session's SSH connection, and unmounting
+                 the component closes the socket that holds it open. Hidden, not
+                 destroyed. -->
             <TermSession
               v-if="activePane?.session"
+              :class="{ 'pane-hidden': activePane.mode === 'sftp' }"
               :key="activePane.session.session_id"
               :session-id="activePane.session.session_id"
               :ws-path="activePane.session.ws_path"
@@ -196,6 +201,7 @@
           >
             <TermSession
               v-if="splitPane?.session"
+              :class="{ 'pane-hidden': splitPane.mode === 'sftp' }"
               :key="splitPane.session.session_id"
               :session-id="splitPane.session.session_id"
               :ws-path="splitPane.session.ws_path"
@@ -241,7 +247,8 @@
         :key="focusedPane.session.session_id"
         :session-id="focusedPane.session.session_id"
         :host-label="focusedPane.name || focusedPane.label"
-        @close="showFiles = false"
+        :class="{ 'fm-full': focusedPane.mode === 'sftp' }"
+        @close="onCloseFiles"
       />
     </div>
 
@@ -271,16 +278,21 @@
       @click.stop
     >
       <div class="ctx-header">{{ ctx.host?.name }}</div>
+      <!-- Each login offers both entry points. SSH and SFTP are the same session
+           underneath — SFTP just opens it straight into the file browser — so
+           they belong on the credential, not as separate top-level verbs. -->
       <template v-if="ctx.credentials.length">
         <div class="ctx-section">Connect as</div>
-        <button
-          v-for="cred in ctx.credentials"
-          :key="cred.id"
-          class="ctx-item"
-          @click="ctxConnectWithCred(cred)"
-        >
-          ▶ {{ cred.username || cred.name }}
-        </button>
+        <div v-for="cred in ctx.credentials" :key="cred.id" class="ctx-cred">
+          <span class="ctx-cred-name">
+            {{ cred.username || cred.name }}
+            <span v-if="cred.is_default" class="ctx-cred-tag">default</span>
+          </span>
+          <span class="ctx-cred-go">
+            <button class="ctx-mini" @click="ctxConnectWithCred(cred, 'ssh')" title="Open a shell">▶ SSH</button>
+            <button class="ctx-mini" @click="ctxConnectWithCred(cred, 'sftp')" title="Open the file browser">⁂ SFTP</button>
+          </span>
+        </div>
       </template>
       <button v-else class="ctx-item" @click="ctxConnectDefault">▶ Connect</button>
       <div class="ctx-sep" />
@@ -331,7 +343,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, reactive, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import TermSession from '@/components/terminal/TermSession.vue'
 import TermFilePanel from '@/components/terminal/TermFilePanel.vue'
@@ -443,6 +455,20 @@ const SHORTCUTS = [
     { keys: 'Right-click host', what: 'Connect as a specific user' },
   ]},
 ]
+/** Closing the browser in an SFTP-only pane has to give the terminal back —
+ *  otherwise the pane is left showing nothing at all. */
+function onCloseFiles() {
+  showFiles.value = false
+  const pane = focusedPane.value
+  if (pane && pane.mode === 'sftp') {
+    pane.mode = 'ssh'
+    // An xterm hidden with display:none measures zero, so the fit it did while
+    // hidden was against nothing. Without a refit here the terminal comes back
+    // at the wrong size and the PTY keeps the stale dimensions.
+    nextTick(() => activeTermRef()?.resize?.())
+  }
+}
+
 function toggleFiles() {
   if (!focusedPane.value?.session) return
   closeAll()
@@ -508,7 +534,11 @@ async function loadHosts() {
   hostsLoading.value = true
   hostsError.value = ''
   try {
-    const resp = await api.get('/hosts')
+    // Only hosts this user can actually open a session on. Listing all of
+    // inventory meant clicking to find out — session create refuses correctly,
+    // so nothing was exposed, but a list where most entries fail is not a list,
+    // and it misrepresents the access model to whoever reads it.
+    const resp = await api.get('/ssh/hosts')
     hosts.value = resp.data
   } catch (e: any) {
     hostsError.value = e.response?.data?.detail ?? 'Failed to load hosts'
@@ -576,6 +606,8 @@ async function onCredPicked(p: { credentialId: string; mode: ConnectMode }) {
   const paneId = credPicker.targetPaneId
   closePicker()
   if (!host) return
+  const pane = findPane(paneId)
+  if (pane) pane.mode = p.mode
   await connectPane(paneId, host, p.credentialId)
   if (p.mode === 'sftp') showFiles.value = true
 }
@@ -681,10 +713,15 @@ function ctxConnectDefault() {
   if (host) connectPane(targetPaneId(), host)
 }
 
-function ctxConnectWithCred(cred: any) {
+function ctxConnectWithCred(cred: any, mode: ConnectMode = 'ssh') {
   const host = ctx.host
   closeAll()
-  if (host) connectPane(targetPaneId(), host, cred.id)
+  if (!host) return
+  const paneId = targetPaneId()
+  const pane = findPane(paneId)
+  if (pane) pane.mode = mode
+  connectPane(paneId, host, cred.id)
+  if (mode === 'sftp') showFiles.value = true
 }
 
 function ctxSplitConnect(dir: 'h' | 'v') {
@@ -1287,4 +1324,24 @@ onBeforeUnmount(() => {
   flex: 0 0 130px; background: #21262d; border: 1px solid #30363d; border-radius: 4px;
   padding: 2px 6px; font: 500 11px/1.5 ui-monospace, monospace; text-align: center;
 }
+.ctx-cred {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 4px 10px;
+}
+.ctx-cred:hover { background: #161b22; }
+.ctx-cred-name { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12.5px; }
+.ctx-cred-tag {
+  font-size: 9px; text-transform: uppercase; letter-spacing: .04em;
+  padding: 1px 5px; border-radius: 7px; background: #1f6feb; color: #fff;
+}
+.ctx-cred-go { display: flex; gap: 4px; flex: 0 0 auto; }
+.ctx-mini {
+  background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
+  border-radius: 4px; padding: 2px 7px; cursor: pointer; font-size: 11px;
+}
+.ctx-mini:hover { background: #30363d; color: #e6edf3; }
+/* SFTP-only: the terminal keeps running (the file browser needs its connection)
+   but takes no space, and the browser expands to the full pane. */
+.pane-hidden { display: none !important; }
+.fm-full { width: 100% !important; min-width: 0 !important; border-left: 0; }
 </style>

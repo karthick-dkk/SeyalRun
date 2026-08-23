@@ -85,6 +85,61 @@ async def _inventory_get(path: str, settings=None, subject: str | None = None, *
     return resp.json()
 
 
+@router.get("/ssh/hosts")
+async def connectable_hosts(
+    user_id: str = Depends(current_user_id),
+):
+    """Hosts this caller can actually open a session on.
+
+    The terminal listed every host in inventory and let the user find out by
+    clicking: session create refuses correctly, so nothing was exposed, but a
+    list of things that all fail is not a list. It also misrepresents the access
+    model — an operator reasonably reads "these are my hosts".
+
+    A host qualifies only if BOTH hold:
+      * an explicit za_authorization grants it (strict — no role bypass, matching
+        what session create enforces, so the list cannot promise more than the
+        gate allows), and
+      * it has a login to connect with: a credential the authorization covers,
+        or the `manual_account` grant.
+
+    The second half is the "account is attached to host" requirement. An
+    authorized host with no credential is a dead entry — the picker opens empty
+    and there is nothing to click.
+    """
+    settings = get_settings()
+    authz = await _identity_get("/internal/authz/host-ids", settings, user_id=user_id, strict="true")
+    allowed: list[str] = authz.get("host_ids", [])
+    if not allowed:
+        return []
+
+    out: list[dict] = []
+    for host_id in allowed:
+        try:
+            resolve = await _identity_get(
+                "/internal/authz/resolve", settings, user_id=user_id, host_id=host_id
+            )
+        except Exception:
+            continue
+        actions = resolve.get("actions") or []
+        if actions and "ssh" not in actions:
+            continue
+        cred_ids = resolve.get("credential_ids") or (
+            [resolve["credential_id"]] if resolve.get("credential_id") else []
+        )
+        if not cred_ids and "manual_account" not in actions:
+            continue
+        try:
+            host = await _inventory_get(f"/hosts/{host_id}", settings)
+        except Exception:
+            continue
+        host["login_count"] = len(cred_ids)
+        host["manual_allowed"] = "manual_account" in actions
+        out.append(host)
+    out.sort(key=lambda h: (h.get("name") or "").lower())
+    return out
+
+
 @router.get("/ssh/credentials")
 async def authorized_credentials(
     host_id: str,
