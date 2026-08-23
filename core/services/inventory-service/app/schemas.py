@@ -54,6 +54,8 @@ class HostCreate(BaseModel):
     enabled: bool = True
     zone_id: str | None = None
     zabbix_hostid: str | None = None
+    # Required, enforced in the endpoint rather than with min_length here so the
+    # caller gets an explanation instead of a schema error naming a field.
     group_ids: list[str] = Field(default_factory=list)
     is_production: bool = False
 

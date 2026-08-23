@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
+
+import httpx
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from libs.servicetoken import mint
 
 from ..audit import log_action
 from ..config import get_settings
@@ -28,6 +33,8 @@ from ..models import (
 )
 from ..schemas import TokenVerifyRequest, TokenVerifyResponse
 from ..security import verify_pat
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/internal", tags=["internal"], dependencies=[Depends(require_service_token)])
 
@@ -59,6 +66,38 @@ def _authz_hosts(authz: ZAAuthorization) -> set[str]:
     if authz.host_id:
         hs.add(authz.host_id)
     return hs
+
+
+async def _hosts_in_groups(group_ids: set[str]) -> set[str]:
+    """Which hosts belong to these groups — asked of inventory, which owns it.
+
+    Authorization lives here but group MEMBERSHIP lives in inventory-service, and
+    both directions of that gap were guessed rather than resolved: host-ids never
+    expanded groups (so a grant made through a host group authorized nothing) and
+    resolve treated "this authorization names a group" as "it covers this host"
+    (so it matched hosts in no granted group).
+
+    Fails CLOSED. If inventory is unreachable this returns nothing, which means a
+    group-derived grant stops applying rather than applying to everything — an
+    outage must not widen access.
+    """
+    if not group_ids:
+        return set()
+    settings = get_settings()
+    token = mint("identity-service", "inventory-service", settings.service_jwt_secret)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{settings.inventory_service_url}/api/v1/internal/host-group-members",
+                params={"group_ids": ",".join(sorted(group_ids))},
+                headers={"X-Service-Token": token},
+            )
+            resp.raise_for_status()
+            return set(resp.json().get("host_ids") or [])
+    except Exception:
+        logger.warning("host-group expansion failed — group grants will not apply",
+                       extra={"group_count": len(group_ids)})
+        return set()
 
 
 def _authz_host_groups(authz: ZAAuthorization) -> set[str]:
@@ -232,6 +271,11 @@ async def authz_host_ids(
         host_ids.update(_authz_hosts(authz))
         host_group_ids.update(_authz_host_groups(authz))
 
+    # A grant made through a host group has to name real hosts here, because every
+    # caller gates on host_ids — terminal-service refuses a session whose host is
+    # not in this list, so an unexpanded group grant authorized nothing at all.
+    host_ids.update(await _hosts_in_groups(host_group_ids))
+
     return {"host_ids": list(host_ids), "host_group_ids": list(host_group_ids), "is_admin": False}
 
 
@@ -371,9 +415,21 @@ async def authz_resolve(
     # but no credential" even though a valid grant exists. Direct host match
     # always outranks a host-group-only match; within the same specificity, a
     # credential-bearing row always outranks a credential-less one.
+    # Which of THIS host's groups are granted, per authorization. `group` used to
+    # be bool(_authz_host_groups(authz)) — "this authorization names some group",
+    # not "this host is in it" — so a grant on group A matched a host in group B,
+    # or in no group at all. host-ids gated it closed in practice, but
+    # /ssh/credentials calls resolve directly and would list credentials for a
+    # host the caller has no grant on.
+    def _covers_by_group(authz: ZAAuthorization) -> bool:
+        return host_id in _group_member_hosts.get(_gkey(authz), set())
+
+    def _gkey(authz: ZAAuthorization) -> str:
+        return ",".join(sorted(_authz_host_groups(authz)))
+
     def _rank(authz: ZAAuthorization) -> int:
         direct = host_id in _authz_hosts(authz)
-        group = bool(_authz_host_groups(authz))
+        group = _covers_by_group(authz)
         has_cred = bool(authz.credential_id or authz.credential_ids)
         if direct and has_cred:
             return 0
@@ -383,9 +439,18 @@ async def authz_resolve(
             return 2
         return 3  # group without a credential (only reachable when group is True)
 
+    # Resolve membership once for every distinct group set in play, rather than
+    # per authorization row — this sits in the connect path.
+    _candidates = list(result.scalars().all())
+    _group_member_hosts: dict[str, set[str]] = {}
+    for _a in _candidates:
+        key = _gkey(_a)
+        if key and key not in _group_member_hosts:
+            _group_member_hosts[key] = await _hosts_in_groups(_authz_host_groups(_a))
+
     best: ZAAuthorization | None = None
     best_rank = 4
-    for authz in result.scalars().all():
+    for authz in _candidates:
         if authz.date_start and authz.date_start > now:
             continue
         if authz.date_expired and authz.date_expired < now:
@@ -393,7 +458,7 @@ async def authz_resolve(
         if not _authz_matches_principal(authz, user_id, group_ids):
             continue
         direct = host_id in _authz_hosts(authz)
-        group = bool(_authz_host_groups(authz))
+        group = _covers_by_group(authz)
         if not direct and not group:
             continue
         rank = _rank(authz)

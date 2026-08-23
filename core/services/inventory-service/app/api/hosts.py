@@ -60,6 +60,26 @@ async def create_host(
     actor_id: str | None = Header(default=None, alias="X-User-Id"),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
 ):
+    # An asset must belong to at least one group. Group membership is how
+    # authorization is granted at scale — a host in no group can only ever be
+    # authorized one row at a time, and in practice is the host somebody forgets
+    # to grant and then cannot reach. Validated BEFORE the row is created, so a
+    # rejected create leaves nothing behind.
+    if not payload.group_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="at least one asset group is required — groups are how access is granted",
+        )
+    known = await session.execute(
+        select(ZAHostGroup.id).where(ZAHostGroup.id.in_(payload.group_ids))
+    )
+    missing = set(payload.group_ids) - {g for (g,) in known.all()}
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unknown asset group(s): {sorted(missing)}",
+        )
+
     host = ZAHost(
         name=payload.name,
         ip=payload.ip,
@@ -94,6 +114,30 @@ async def get_host(host_id: str, session: AsyncSession = Depends(get_session)):
     if host is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="host not found")
     return await _host_out(session, host)
+
+
+@router.get("/internal/host-group-members")
+async def internal_host_group_members(
+    group_ids: str = Query(default="", description="comma-separated host group ids"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Host ids belonging to the given groups.
+
+    Authorization lives in identity-service but GROUP MEMBERSHIP lives here, so
+    identity had no way to answer "is this host in that group". It guessed in two
+    different directions: authz/host-ids never expanded groups at all (so a grant
+    made through a host group authorized nothing), while authz/resolve treated
+    "this authorization names some group" as "it covers this host" (so it matched
+    hosts that were in no granted group). This endpoint is what lets both ask
+    instead of guess.
+    """
+    ids = [g for g in (group_ids or "").split(",") if g.strip()]
+    if not ids:
+        return {"host_ids": []}
+    result = await session.execute(
+        select(ZAHostGroupMember.host_id).where(ZAHostGroupMember.group_id.in_(ids))
+    )
+    return {"host_ids": sorted({h for (h,) in result.all()})}
 
 
 @router.get("/internal/hosts/{host_id}")
