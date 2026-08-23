@@ -616,8 +616,8 @@
                 <button type="button" class="btn btn-sm" :title="codeFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="codeFullscreen = !codeFullscreen">
                   {{ codeFullscreen ? '⤡ Exit Fullscreen' : '⤢ Fullscreen' }}
                 </button>
-                <button type="button" class="btn btn-sm" :disabled="githubImport.loading" @click="githubImport.visible = true">
-                  {{ githubImport.loading ? 'Importing…' : '⇩ Import from GitHub' }}
+                <button type="button" class="btn btn-sm" @click="githubImport.visible = true">
+                  ⇩ Import from GitHub
                 </button>
               </div>
             </div>
@@ -708,64 +708,19 @@
       </div>
     </div>
 
-    <!-- ── Import Playbook from GitHub ──────────────────────────────────── -->
-    <div v-if="githubImport.visible" class="modal-overlay" @click.self="githubImport.visible = false">
-      <div class="modal">
-        <div class="modal-header">
-          <div class="u-fs-15_fw-700">Import {{ editDlg.form.action_type === 'bash_script' ? 'Script' : 'Playbook' }} from GitHub</div>
-          <button class="btn btn-sm btn-icon" @click="githubImport.visible = false">✕</button>
-        </div>
-        <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
-          <div class="form-group">
-            <label class="form-label">GitHub URL</label>
-            <input v-model="githubImport.url" class="input" :placeholder="editDlg.form.action_type === 'bash_script' ? 'https://github.com/owner/repo/blob/main/script.sh' : 'https://github.com/owner/repo/blob/main/playbook.yml'" @keydown.enter="doGithubImport" />
-            <div style="font-size:11.5px;color:var(--text2);margin-top:4px">A github.com file link (blob URL) or a raw.githubusercontent.com link. Replaces the current content below — nothing is saved until you click Save on the template. The URL is kept with the template afterward for reference.</div>
-          </div>
-          <div v-if="githubImport.error" style="color:var(--danger);font-size:13px;padding:10px;background:rgba(248,81,73,0.08);border-radius:6px;border:1px solid rgba(248,81,73,0.3)">{{ githubImport.error }}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn" @click="githubImport.visible = false">Cancel</button>
-          <button class="btn btn-primary" :disabled="githubImport.loading || !githubImport.url.trim()" @click="doGithubImport">{{ githubImport.loading ? 'Importing…' : 'Import' }}</button>
-        </div>
-      </div>
-    </div>
+    <GithubImportModal
+      v-model="githubImport.visible"
+      :action-type="editDlg.form.action_type"
+      @imported="onGithubImported"
+    />
 
-    <!-- ── Schedule Modal ────────────────────────────────────────────────── -->
-    <div v-if="schedDlg.visible" class="modal-overlay" @click.self="schedDlg.visible = false">
-      <div class="modal">
-        <div class="modal-header">
-          <div class="u-fs-15_fw-700">{{ schedDlg.isEdit ? 'Edit Schedule' : 'New Schedule' }}</div>
-          <button class="btn btn-sm btn-icon" @click="schedDlg.visible = false">✕</button>
-        </div>
-        <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
-          <div class="form-group">
-            <label class="form-label">Schedule Name <span class="text-danger">*</span></label>
-            <input v-model="schedDlg.form.name" class="input" placeholder="e.g. Nightly Deploy" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Job Template <span class="text-danger">*</span></label>
-            <select v-model="schedDlg.form.job_template_id" class="input">
-              <option value="">— Select Template —</option>
-              <option v-for="t in allTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Cron Expression <span class="text-danger">*</span></label>
-            <input v-model="schedDlg.form.cron_expression" class="input" placeholder="0 2 * * *" />
-            <div style="font-size:12px;color:var(--text2);margin-top:4px">{{ cronHuman(schedDlg.form.cron_expression) }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Status</label>
-            <select v-model="schedDlg.form.enabled" class="input"><option :value="true">Active</option><option :value="false">Disabled</option></select>
-          </div>
-          <div v-if="schedDlg.error" style="color:var(--danger);font-size:13px;padding:10px;background:rgba(248,81,73,0.08);border-radius:6px;border:1px solid rgba(248,81,73,0.3)">{{ schedDlg.error }}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn" @click="schedDlg.visible = false">Cancel</button>
-          <button class="btn btn-primary" :disabled="schedDlg.saving" @click="saveSchedule">{{ schedDlg.saving ? 'Saving…' : (schedDlg.isEdit ? 'Save' : 'Create') }}</button>
-        </div>
-      </div>
-    </div>
+    <ScheduleModal
+      v-model="schedDlg.visible"
+      :templates="allTemplates"
+      :editing="schedDlg.editing"
+      :cron-human="cronHuman"
+      @saved="loadAll"
+    />
 
   </AppShell>
 </template>
@@ -777,6 +732,8 @@ import yaml from 'js-yaml'
 import AppShell from '@/components/layout/AppShell.vue'
 import AsyncPicker, { type PickerItem } from '@/components/common/AsyncPicker.vue'
 import api from '@/api/client'
+import GithubImportModal from '@/components/automation/GithubImportModal.vue'
+import ScheduleModal from '@/components/automation/ScheduleModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useConfirm } from '@/composables/useConfirm'
 
@@ -1149,7 +1106,10 @@ const _blankPlaybookForm = () => ({
 // is the real enforcement point (runner.py's min(timeout_seconds, ceiling)).
 const platformTimeoutCeiling = 3600
 const editDlg = reactive({ visible: false, isEdit: false, editingId: '', form: _blankPlaybookForm(), saving: false, error: '' })
-const githubImport = reactive({ visible: false, url: '', loading: false, error: '' })
+// Only visibility lives here now; the URL, the request, its progress and its
+// error all belong to the modal. Keeping a `loading` flag here would be state
+// the parent can no longer update — a button stuck on 'Import' forever.
+const githubImport = reactive({ visible: false })
 
 // ── Chain editor (multi-playbook execution: an ordered list of existing,
 // already-configured templates) ────────────────────────────────────────────
@@ -1258,23 +1218,12 @@ function openEdit(t: any) {
 function openCreateTemplate() { openCreate() }
 function openEditRaw(t: any) { openEdit(t) }
 
-async function doGithubImport() {
-  if (!githubImport.url.trim()) return
-  githubImport.loading = true; githubImport.error = ''
-  try {
-    const r = await api.post('/job-templates/import-playbook', { url: githubImport.url.trim() })
-    editDlg.form.script_content = r.data.content
-    editDlg.form.imported_from = r.data.source_url || githubImport.url.trim()
-    // Auto-detect type from the imported file's extension so the right linter runs.
-    // Without this, importing a .sh file while "Ansible Playbook" was still selected
-    // ran the YAML parser against real bash and reported false syntax errors — the
-    // script was fine, it just was never valid YAML to begin with.
-    const importedUrl = (r.data.source_url || githubImport.url).toLowerCase()
-    editDlg.form.action_type = /\.(sh|bash)(\?|#|$)/.test(importedUrl) ? 'bash_script' : 'ansible_playbook'
-    githubImport.visible = false; githubImport.url = ''
-  } catch (e: any) { githubImport.error = e?.response?.data?.detail || 'Import failed'
-  } finally { githubImport.loading = false }
+function onGithubImported(p: { content: string; sourceUrl: string; actionType: string }) {
+  editDlg.form.script_content = p.content
+  editDlg.form.imported_from = p.sourceUrl
+  editDlg.form.action_type = p.actionType
 }
+
 
 // ── Code editor line-number gutter (synced scroll with the textarea) ──────
 const codeGutterEl = ref<HTMLElement | null>(null)
@@ -1519,30 +1468,18 @@ async function bulkDeleteTemplates() {
 }
 
 // ── Schedules modal ────────────────────────────────────────────────────────
-const _blankSchedForm = () => ({ name: '', job_template_id: '', cron_expression: '0 2 * * *', enabled: true })
-const schedDlg = reactive({ visible: false, isEdit: false, editingId: '', form: _blankSchedForm(), saving: false, error: '' })
+// The form, its validation, the request and the error all live in
+// components/automation/ScheduleModal.vue. What stays here is which schedule is
+// being edited (null = create) and whether the dialog is open.
+const schedDlg = reactive<{ visible: boolean; editing: any | null }>({ visible: false, editing: null })
 
 function openCreateSchedule() {
-  schedDlg.isEdit = false; schedDlg.editingId = ''
-  Object.assign(schedDlg.form, _blankSchedForm()); schedDlg.error = ''; schedDlg.visible = true
+  schedDlg.editing = null
+  schedDlg.visible = true
 }
 function openEditSchedule(s: any) {
-  schedDlg.isEdit = true; schedDlg.editingId = s.id
-  Object.assign(schedDlg.form, { name: s.name, job_template_id: s.job_template_id, cron_expression: s.cron_expression, enabled: s.enabled })
-  schedDlg.error = ''; schedDlg.visible = true
-}
-async function saveSchedule() {
-  schedDlg.error = ''
-  if (!schedDlg.form.name.trim()) { schedDlg.error = 'Name required.'; return }
-  if (!schedDlg.form.job_template_id) { schedDlg.error = 'Job template required.'; return }
-  if (!schedDlg.form.cron_expression.trim()) { schedDlg.error = 'Cron expression required.'; return }
-  schedDlg.saving = true
-  try {
-    const p = { name: schedDlg.form.name, job_template_id: schedDlg.form.job_template_id, cron_expression: schedDlg.form.cron_expression, enabled: schedDlg.form.enabled, params_override: {} }
-    schedDlg.isEdit ? await api.put(`/schedules/${schedDlg.editingId}`, p) : await api.post('/schedules', p)
-    schedDlg.visible = false; loadAll()
-  } catch (e: any) { schedDlg.error = e?.response?.data?.detail || 'Save failed'
-  } finally { schedDlg.saving = false }
+  schedDlg.editing = s
+  schedDlg.visible = true
 }
 async function deleteSchedule(s: any) {
   if (!await confirm(`Delete schedule "${s.name}"?`, { title: 'Delete Schedule', danger: true, confirmLabel: 'Delete' })) return
