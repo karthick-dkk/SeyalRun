@@ -27,6 +27,17 @@
 
     <p v-if="notice" class="sw-notice">{{ notice }}</p>
 
+    <div v-if="confirmKill" class="sw-confirm">
+      <div>
+        <strong>End this session?</strong>
+        <span class="sw-dim"> {{ meta.username }} on {{ meta.host_name }} will be disconnected immediately.</span>
+      </div>
+      <div class="sw-confirm-actions">
+        <button class="btn btn-sm" @click="confirmKill = false">Cancel</button>
+        <button class="btn btn-sm btn-danger" @click="doTerminate">End session</button>
+      </div>
+    </div>
+
     <div ref="hostEl" class="sw-term" @click="focusTerm"></div>
 
     <footer class="sw-foot">
@@ -126,8 +137,13 @@ function onResize() { fit?.fit() }
 
 function takeover() { notice.value = ''; ws?.send(JSON.stringify({ type: 'takeover' })) }
 function release()  { notice.value = ''; ws?.send(JSON.stringify({ type: 'release' })) }
-function terminate() {
-  if (!window.confirm('End this session for the operator immediately?')) return
+// In-view confirm rather than window.confirm: a browser-chrome dialog titled
+// with the host:port cannot be styled, cannot be dismissed with the rest of the
+// UI, and reads like the page is being impersonated.
+const confirmKill = ref(false)
+function terminate() { confirmKill.value = true }
+function doTerminate() {
+  confirmKill.value = false
   ws?.send(JSON.stringify({ type: 'terminate' }))
 }
 </script>
@@ -145,4 +161,10 @@ function terminate() {
 .sw-term { flex: 1; min-height: 0; background: #1a1b1e; border: 1px solid var(--border); border-radius: 8px; padding: 6px; overflow: hidden; }
 .sw-foot { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .sw-live { box-shadow: none; } }
+.sw-confirm {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border-radius: 6px;
+  background: rgba(248, 81, 73, .08); border: 1px solid rgba(248, 81, 73, .35);
+}
+.sw-confirm-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 </style>

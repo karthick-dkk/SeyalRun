@@ -293,25 +293,14 @@
     </div>
 
     <!-- ── Credential picker ──────────────────────────────────────────────── -->
-    <div v-if="credPicker.visible" class="cred-picker-overlay" @click.self="closePicker">
-      <div class="cred-picker">
-        <div class="cred-picker-header">
-          <span>Connect to {{ credPicker.host?.name }}</span>
-          <button class="cred-picker-close" @click="closePicker">✕</button>
-        </div>
-        <div class="cred-picker-body">
-          <p class="cred-picker-hint">Select a credential:</p>
-          <button
-            v-for="cred in credPicker.credentials"
-            :key="cred.id"
-            class="cred-picker-item"
-            @click="pickCred(cred)"
-          >
-            ▶ {{ cred.username || cred.name }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <CredentialPicker
+      :visible="credPicker.visible"
+      :host="credPicker.host"
+      :credentials="credPicker.credentials"
+      :manual-allowed="credPicker.manualAllowed"
+      @close="closePicker"
+      @pick="onCredPicked"
+    />
 
     <!-- ── Zabbix deep-link confirmation — never auto-connect without an explicit click ── -->
     <div v-if="zbxConfirm.visible" class="cred-picker-overlay" @click.self="closeZbxConfirm">
@@ -347,6 +336,7 @@ import { useRoute } from 'vue-router'
 import TermSession from '@/components/terminal/TermSession.vue'
 import TermFilePanel from '@/components/terminal/TermFilePanel.vue'
 import TermWatermark from '@/components/terminal/TermWatermark.vue'
+import CredentialPicker, { type ConnectMode } from '@/components/terminal/CredentialPicker.vue'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useTerminalTheme } from '@/composables/useTerminalTheme'
@@ -389,9 +379,23 @@ const hosts = ref<any[]>([])
 const hostsLoading = ref(false)
 const hostsError = ref('')
 const hostFilter = ref('')
-const credPicker = reactive<{ visible: boolean; host: any; targetPaneId: string; credentials: any[] }>({
-  visible: false, host: null, targetPaneId: '', credentials: []
-})
+const credPicker = reactive<{
+  visible: boolean; host: any; targetPaneId: string; credentials: any[]; manualAllowed: boolean
+}>({ visible: false, host: null, targetPaneId: '', credentials: [], manualAllowed: false })
+
+const LOGIN_STORE_KEY = 'seyalrun.login.default'
+
+/** The login this user last chose for a host, if they asked to remember it.
+ *  Storage is unavailable inside Safari's third-party-iframe context (which is
+ *  how this app runs embedded in Zabbix), so this degrades to "nothing saved"
+ *  rather than throwing on every host click. */
+function rememberedCredential(hostId: string): string {
+  try {
+    return (JSON.parse(localStorage.getItem(LOGIN_STORE_KEY) || '{}') || {})[hostId] || ''
+  } catch {
+    return ''
+  }
+}
 // A link that opens this page and auto-connects (Zabbix deep-link) must never establish
 // a live session with zero human awareness — even when there's exactly one authorized
 // credential and the normal flow would otherwise skip straight past the picker.
@@ -532,34 +536,48 @@ function hostDotTitle(host: any): string {
 
 async function connectWithCredPicker(paneId: string, host: any) {
   let creds: any[] = []
+  let manualAllowed = false
   try {
     const resp = await api.get('/ssh/credentials', { params: { host_id: host.id } })
-    creds = resp.data ?? []
-  } catch { /* fallback: let connectPane handle the error via sessions API */ }
+    // The endpoint used to return a bare array and now returns an object; accept
+    // both so a frontend deployed ahead of the service does not break the picker.
+    creds = Array.isArray(resp.data) ? resp.data : (resp.data?.credentials ?? [])
+    manualAllowed = Array.isArray(resp.data) ? false : !!resp.data?.manual_allowed
+  } catch { /* fall through: connectPane surfaces the real error */ }
 
-  if (creds.length === 1) {
+  // A remembered login connects straight away — that is the point of remembering
+  // it. Only honoured when the credential is STILL authorized for this host, so a
+  // revoked grant cannot be resurrected from a stale entry in someone's browser.
+  const saved = rememberedCredential(host.id)
+  if (saved && creds.some(c => c.id === saved)) {
+    await connectPane(paneId, host, saved)
+    return
+  }
+
+  if (creds.length === 1 && !manualAllowed) {
     await connectPane(paneId, host, creds[0].id)
     return
   }
-  if (creds.length > 1) {
+  if (creds.length || manualAllowed) {
     credPicker.host = host
     credPicker.targetPaneId = paneId
     credPicker.credentials = creds
+    credPicker.manualAllowed = manualAllowed
     credPicker.visible = true
     return
   }
   await connectPane(paneId, host)
 }
 
-function pickCred(cred: any) {
+/** SFTP opens the same SSH session and shows the file browser on top of it —
+ *  file transfer rides that connection, so there is no second thing to connect. */
+async function onCredPicked(p: { credentialId: string; mode: ConnectMode }) {
   const host = credPicker.host
   const paneId = credPicker.targetPaneId
-  credPicker.visible = false
-  credPicker.host = null
-  credPicker.targetPaneId = ''
-  credPicker.credentials = []
+  closePicker()
   if (!host) return
-  connectPane(paneId, host, cred.id)
+  await connectPane(paneId, host, p.credentialId)
+  if (p.mode === 'sftp') showFiles.value = true
 }
 
 // Zabbix deep-link entry point only — always requires an explicit click before a live
@@ -597,6 +615,7 @@ function closeZbxConfirm() {
 }
 
 function closePicker() {
+  credPicker.manualAllowed = false
   credPicker.visible = false
   credPicker.host = null
   credPicker.targetPaneId = ''

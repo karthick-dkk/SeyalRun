@@ -317,7 +317,7 @@ const auth = useAuthStore()
 // enforced per-operation by terminal-service/app/api/sftp.py against this same
 // authorization record — `sftp` browses, `download` downloads, `upload`
 // uploads, each checked separately.
-const availableActions = ['ssh', 'sftp', 'upload', 'download']
+const availableActions = ['ssh', 'sftp', 'upload', 'download', 'manual_account']
 const UNENFORCED_ACTIONS: string[] = []
 function actionEnforced(a: string) { return !UNENFORCED_ACTIONS.includes(a) }
 const ACTION_HINTS: Record<string, string> = {
@@ -325,6 +325,9 @@ const ACTION_HINTS: Record<string, string> = {
   sftp:     'Browse the filesystem in the terminal file manager (does not permit transfers)',
   download: 'Download files from this host — audited per file',
   upload:   'Upload files to this host — audited per file',
+  manual_account: 'Connect with an account typed at connect time, not one already in the vault. '
+                + 'The account is saved to this host, so it is encrypted and rotatable like any other — '
+                + 'but grant this only where users legitimately hold credentials the vault does not.',
 }
 function actionHint(a: string) {
   return actionEnforced(a) ? (ACTION_HINTS[a] || '') : 'Not yet enforced — this grant has no effect'

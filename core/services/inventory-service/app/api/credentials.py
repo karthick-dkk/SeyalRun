@@ -581,6 +581,27 @@ async def reveal_credential(
     return CredentialSecretOut(id=cred.id, username=cred.username, secret_type=cred.secret_type, secret=secret)
 
 
+@router.get("/internal/credentials/{credential_id}", response_model=CredentialOut)
+async def internal_credential_meta(
+    credential_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Credential metadata WITHOUT the secret — for callers that need to describe a
+    login rather than use it.
+
+    terminal-service's "Connect as" picker needs to label each account (default,
+    sudo) and had only the secret endpoint to ask, which meant decrypting a secret
+    purely to read a username. Every secret read is an audited, elevation-relevant
+    event; doing it to render a badge both pollutes that record and hands the
+    plaintext to a caller with no use for it.
+    """
+    result = await session.execute(select(ZACredential).where(ZACredential.id == credential_id))
+    cred = result.scalar_one_or_none()
+    if cred is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="credential not found")
+    return await _credential_out(session, cred)
+
+
 @router.get("/internal/credentials/{credential_id}/secret", response_model=CredentialSecretOut)
 async def get_credential_secret(
     credential_id: str,

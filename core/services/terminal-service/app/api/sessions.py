@@ -99,15 +99,32 @@ async def authorized_credentials(
     resolve = await _identity_get("/internal/authz/resolve", settings, user_id=user_id, host_id=host_id)
     actions = resolve.get("actions") or []
     if actions and "ssh" not in actions:
-        return []
+        return {"credentials": [], "manual_allowed": False}
     ids = resolve.get("credential_ids") or ([resolve["credential_id"]] if resolve.get("credential_id") else [])
     for cid in ids:
         try:
-            sec = await _inventory_get(f"/internal/credentials/{cid}/secret", settings, subject=user_id)
-            out.append({"id": cid, "username": sec.get("username", ""), "name": sec.get("username", "")})
+            # Metadata only. This used to read the SECRET endpoint just to learn a
+            # username — decrypting a credential, and writing an audited
+            # secret-access row, every time someone opened the picker. Rendering a
+            # dialog is not a secret access, and a log full of reads that were only
+            # ever label lookups makes the real ones harder to find.
+            meta = await _inventory_get(f"/internal/credentials/{cid}", settings, subject=user_id)
         except HTTPException:
             continue
-    return out
+        username = meta.get("username", "")
+        out.append({
+            "id": cid,
+            "username": username,
+            "name": meta.get("name") or username,
+            "is_default": bool(meta.get("is_default")),
+            "is_sudo": bool(meta.get("is_sudo")),
+        })
+    # Bringing your own account bypasses the vault entirely — no rotation, and no
+    # record of WHICH stored credential was used — so it is a per-host permission
+    # rather than a convenience. An authorization with no explicit action list is
+    # unrestricted and keeps that meaning here, matching the `ssh` check above.
+    manual_allowed = (not actions) or ("manual_account" in actions)
+    return {"credentials": out, "manual_allowed": manual_allowed}
 
 
 @router.post("/ssh/sessions", response_model=SessionOut, status_code=status.HTTP_201_CREATED)

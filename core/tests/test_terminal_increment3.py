@@ -109,9 +109,51 @@ def test_block_notice_points_at_the_supported_path():
 
 # ── the gate is wired, and defaults closed ───────────────────────────────────
 
-def test_default_is_block():
+def test_default_mode_is_one_of_the_two_supported_values():
+    """The default moved from block to allow once the transport gained grant
+    enforcement — the reason to block was that ZMODEM bypassed the permission
+    model, and it no longer does. What must stay true is that the value is one the
+    gate understands: a typo would fall through to the permissive branch."""
     m = re.search(r'zmodem_mode:\s*str\s*=\s*"([^"]+)"', CONFIG.read_text())
-    assert m and m.group(1) == "block", f"default is {m and m.group(1)!r} — must be 'block'"
+    assert m, "zmodem_mode default not found"
+    assert m.group(1) in ("allow", "block"), f"unsupported default {m.group(1)!r}"
+
+
+def test_block_mode_still_cancels():
+    """Deployments that want the /tmp confinement set this back to block, so that
+    path has to keep working."""
+    src = TERMINAL.read_text()
+    blk = src[src.index("if mode == _zmodem.MODE_BLOCK:"):][:700]
+    assert "ZMODEM_CANCEL" in blk and "notice(mode)" in blk
+
+
+def test_transport_checks_the_same_grants_as_the_files_panel():
+    """A transfer channel that ignored the per-host grants would make them
+    advisory — which is exactly what R-11 was."""
+    src = TERMINAL.read_text()
+    assert "/internal/authz/resolve" in src, "the gate must resolve the host's grants"
+    gate = src[src.index("allowed_actions = await zmodem_actions()"):][:900]
+    assert "zdir in allowed_actions" in gate, "the direction must be checked against the grants"
+    assert "zdir is not None" in gate, (
+        "an unclassifiable opener must be refused, not guessed — guessing the "
+        "direction means guessing which permission to check"
+    )
+
+
+def test_grant_lookup_fails_closed():
+    """An unreachable identity-service must not become 'everything permitted' on
+    a file-transfer path."""
+    src = TERMINAL.read_text()
+    fn = src[src.index("async def zmodem_actions()"):][:1200]
+    assert "__unresolved__" in fn, "the failure path must yield a grant set that matches nothing"
+
+
+def test_authorized_transfers_pass_through_untouched():
+    """Re-checking mid-stream would corrupt the protocol; the decision is made
+    once, at the opening frame."""
+    src = TERMINAL.read_text()
+    assert "and not zmodem_active" in src, "only opening frames may be policed"
+    assert "_zmodem.is_finished(data)" in src, "the transfer window must close again"
 
 
 def test_gate_cancels_and_audits_in_the_output_path():
@@ -127,9 +169,16 @@ def test_attempts_are_audited_in_both_modes():
     fn = src[src.index("async def _audit_zmodem"):]
     fn = fn[: fn.index("\nasync def handle_terminal")]
     assert "terminal.zmodem_attempt" in fn
-    assert 'result="failure" if mode == _zmodem.MODE_BLOCK else "success"' in fn, (
-        "a blocked attempt is a failure row; an allowed one still gets recorded"
+    # Outcome is keyed on what actually happened, not on the mode. With the
+    # transport enabled there are now three ways an attempt ends — started,
+    # finished, or refused because the direction is not granted — and keying on
+    # mode alone would have recorded a grant refusal as a success.
+    assert 'result="success" if reason in ("transfer started", "transfer finished") else "failure"' in fn, (
+        "every non-transfer outcome (policy block, missing grant, unknown direction) "
+        "must record as a failure"
     )
+    assert "direction" in fn, "the row must say which way the bytes were going"
+    assert "reason" in fn, "and why it ended that way"
 
 
 def test_gate_runs_before_the_data_is_recorded_or_sent():

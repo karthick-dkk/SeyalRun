@@ -24,6 +24,33 @@
 
     <p v-if="error" class="fm-error">{{ error }}</p>
 
+    <!-- In-panel prompt. Native window.prompt/confirm render as a browser chrome
+         dialog titled with the host:port ("192.168.64.2:8443 says"), which looks
+         like the page is being impersonated and cannot be styled or keyboard-
+         managed with the rest of the panel. -->
+    <div v-if="dlg.kind" class="fm-dialog">
+      <div class="fm-dlg-title">{{ dlg.title }}</div>
+      <input
+        v-if="dlg.kind !== 'confirm'"
+        ref="dlgInput"
+        v-model="dlg.value"
+        class="fm-path-input fm-dlg-input"
+        spellcheck="false"
+        @keyup.enter="confirmDialog"
+        @keyup.esc="cancelDialog"
+      />
+      <p v-else class="fm-dlg-body">{{ dlg.body }}</p>
+      <div class="fm-dlg-actions">
+        <button class="fm-btn" @click="cancelDialog">Cancel</button>
+        <button
+          class="fm-btn fm-dlg-ok"
+          :class="{ 'fm-danger-btn': dlg.kind === 'confirm' }"
+          :disabled="dlg.kind !== 'confirm' && !dlg.value.trim()"
+          @click="confirmDialog"
+        >{{ dlg.okLabel }}</button>
+      </div>
+    </div>
+
     <ul class="fm-list">
       <li v-if="loading" class="fm-muted">Loading…</li>
       <li v-else-if="!entries.length" class="fm-muted">Empty directory</li>
@@ -61,7 +88,7 @@
  * the message the API returns, so what the operator sees is what was actually
  * enforced rather than a guess this component made.
  */
-import { ref, computed, onMounted } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import api from '@/api/client'
 
 const props = defineProps<{ sessionId: string; hostLabel?: string }>()
@@ -159,33 +186,77 @@ async function onUpload(ev: Event) {
   }
 }
 
-async function promptMkdir() {
-  const name = window.prompt('New folder name:')
-  if (!name) return
-  error.value = ''
-  try {
-    await api.post(`/sftp/${props.sessionId}/mkdir`, { path: `${cwd.value}/${name}` })
-    await refresh()
-  } catch (e: any) { fail(e, 'Could not create folder') }
+/** One in-panel dialog, driven by `kind`. `onOk` closes over whatever the caller
+ *  needs, so adding a dialog does not mean adding more panel-level state. */
+const dlg = reactive<{
+  kind: '' | 'text' | 'confirm'
+  title: string
+  body: string
+  value: string
+  okLabel: string
+  onOk: (value: string) => Promise<void> | void
+}>({ kind: '', title: '', body: '', value: '', okLabel: 'OK', onOk: () => {} })
+
+const dlgInput = ref<HTMLInputElement | null>(null)
+
+function openDialog(cfg: Partial<typeof dlg> & { kind: 'text' | 'confirm' }) {
+  Object.assign(dlg, { title: '', body: '', value: '', okLabel: 'OK' }, cfg)
+  // Focus and preselect, matching what the native prompt did for free — without
+  // it a rename means clicking into the field before typing.
+  nextTick(() => { dlgInput.value?.focus(); dlgInput.value?.select() })
 }
 
-async function promptRename(e: any) {
-  const name = window.prompt('Rename to:', e.name)
-  if (!name || name === e.name) return
-  error.value = ''
-  try {
-    await api.post(`/sftp/${props.sessionId}/rename`, { path: e.path, new_path: `${cwd.value}/${name}` })
-    await refresh()
-  } catch (err: any) { fail(err, 'Rename failed') }
+function cancelDialog() { dlg.kind = '' }
+
+async function confirmDialog() {
+  const value = dlg.value.trim()
+  if (dlg.kind === 'text' && !value) return
+  const run = dlg.onOk
+  dlg.kind = ''
+  await run(value)
 }
 
-async function remove(e: any) {
-  if (!window.confirm(`Delete ${e.is_dir ? 'folder' : 'file'} "${e.name}"?`)) return
-  error.value = ''
-  try {
-    await api.delete(`/sftp/${props.sessionId}/rm`, { params: { path: e.path, is_dir: e.is_dir } })
-    await refresh()
-  } catch (err: any) { fail(err, 'Delete failed') }
+function promptMkdir() {
+  openDialog({
+    kind: 'text', title: 'New folder', okLabel: 'Create',
+    onOk: async (name) => {
+      error.value = ''
+      try {
+        await api.post(`/sftp/${props.sessionId}/mkdir`, { path: `${cwd.value}/${name}` })
+        await refresh()
+      } catch (e: any) { fail(e, 'Could not create folder') }
+    },
+  })
+}
+
+function promptRename(e: any) {
+  openDialog({
+    kind: 'text', title: `Rename "${e.name}"`, value: e.name, okLabel: 'Rename',
+    onOk: async (name) => {
+      if (name === e.name) return
+      error.value = ''
+      try {
+        await api.post(`/sftp/${props.sessionId}/rename`, { path: e.path, new_path: `${cwd.value}/${name}` })
+        await refresh()
+      } catch (err: any) { fail(err, 'Rename failed') }
+    },
+  })
+}
+
+function remove(e: any) {
+  openDialog({
+    kind: 'confirm',
+    title: `Delete ${e.is_dir ? 'folder' : 'file'}`,
+    body: `"${e.name}" will be removed from the host. This cannot be undone.`,
+    okLabel: 'Delete',
+    onOk: async () => {
+      error.value = ''
+      try {
+        await api.delete(`/sftp/${props.sessionId}/rm`, { params: { path: e.path, is_dir: e.is_dir } })
+        await refresh()
+      } catch (err: any) { fail(err, 'Delete failed') }
+    },
+  })
 }
 
 onMounted(() => go(DEFAULT_PATH))
@@ -225,4 +296,15 @@ onMounted(() => go(DEFAULT_PATH))
 .fm-danger:hover { color: #f85149; }
 .icon-inline { width: 14px; height: 14px; }
 @media (prefers-reduced-motion: reduce) { .fm-row-actions { opacity: 1; } }
+.fm-dialog {
+  margin: 8px; padding: 10px; border-radius: 6px;
+  background: #161b22; border: 1px solid #30363d;
+}
+.fm-dlg-title { font-weight: 600; color: #e6edf3; margin-bottom: 6px; }
+.fm-dlg-body { margin: 0 0 8px; color: #8b949e; line-height: 1.45; }
+.fm-dlg-input { width: 100%; margin-bottom: 8px; }
+.fm-dlg-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.fm-dlg-ok { border-color: #1f6feb; color: #58a6ff; }
+.fm-dlg-ok:disabled { opacity: .5; cursor: default; }
+.fm-danger-btn { border-color: #6e2b31; color: #ff7b72; }
 </style>

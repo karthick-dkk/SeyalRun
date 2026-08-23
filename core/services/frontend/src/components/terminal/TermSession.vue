@@ -1,5 +1,6 @@
 <template>
   <div class="term-wrapper">
+    <div v-if="zmodemStatus" class="zm-strip">{{ zmodemStatus }}</div>
 
     <!-- Shown while WebSocket handshake is in progress -->
     <div v-if="wsState === 'connecting'" class="status-overlay">
@@ -73,6 +74,7 @@ import { reactive, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { wsUrl } from '@/api/client'
+import { useZmodem } from '@/composables/useZmodem'
 import { useCapturesStore } from '@/stores/captures'
 import '@xterm/xterm/css/xterm.css'
 
@@ -121,6 +123,9 @@ let _sentRows = 0
 
 
 const pendingConfirm   = ref<{ command: string; filter: string; filter_id: string } | null>(null)
+// ZMODEM transfer progress. Shown as a strip over the pane rather than written
+// into the terminal, so it cannot be mistaken for remote output.
+const zmodemStatus     = ref('')
 const disconnectReason = ref('')
 const sessionError = ref(false)
 const errInfo = ref<{ user: string; host: string; address: string; port: string | number; detail: string } | null>(null)
@@ -243,11 +248,38 @@ onMounted(async () => {
     term?.focus()
   }
 
+  // ZMODEM sits between the socket and xterm: once a transfer starts those bytes
+  // are protocol, not text, and writing them through would corrupt the transfer
+  // and spray binary at the user. Whether a transfer is permitted at all is the
+  // server's decision (per-host download/upload grants) — this is transport only.
+  const zmodem = useZmodem({
+    toTerminal: (d) => term?.write(d),
+    toHost: (bytes) => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'input', data: String.fromCharCode(...bytes) }))
+      }
+    },
+    onStatus: (m) => { zmodemStatus.value = m },
+    pickFiles: () => new Promise((resolve) => {
+      const el = document.createElement('input')
+      el.type = 'file'
+      el.multiple = true
+      el.onchange = () => resolve(el.files ? Array.from(el.files) : null)
+      // A cancelled picker fires no 'change' event in any browser, so without
+      // this the ZMODEM session would hang open waiting for a file forever.
+      window.addEventListener('focus', () => setTimeout(() => resolve(null), 400), { once: true })
+      el.click()
+    }),
+  })
+
   ws.onmessage = ({ data }) => {
     try {
       const msg = JSON.parse(data)
       if (msg.type === 'output') {
-        term?.write(msg.data)
+        const text: string = msg.data
+        const bytes = new Uint8Array(text.length)
+        for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff
+        zmodem.consume(bytes)
       } else if (msg.type === 'confirm_required') {
         pendingConfirm.value = { command: msg.command, filter: msg.filter, filter_id: msg.filter_id }
       } else if (msg.type === 'error') {
@@ -578,4 +610,11 @@ defineExpose({
   background: #1a1b1e; color: #dce1e7; cursor: pointer; font-size: 14px; line-height: 1;
 }
 .term-ctx-stepper button:hover { background: #30363d; }
+.zm-strip {
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+  z-index: 20; padding: 4px 12px; border-radius: 12px;
+  background: rgba(31, 111, 235, .92); color: #fff;
+  font: 500 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  pointer-events: none; white-space: nowrap;
+}
 </style>

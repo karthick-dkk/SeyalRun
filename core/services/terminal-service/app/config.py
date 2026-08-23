@@ -28,14 +28,24 @@ class Settings(BaseSettings):
     # Set to "/" to disable confinement, deliberately and visibly.
     sftp_root: str = "/tmp"
 
-    # ZMODEM (rz/sz) policy. "block" (default) cancels the transfer and tells the
-    # operator to use the Files panel; "allow" lets it through, still audited.
+    # ZMODEM (rz/sz) policy. "allow" (default) runs the transfer; "block" cancels
+    # it and points the operator at the Files panel.
     #
-    # Blocked by default because ZMODEM is a second file-transfer channel running
-    # inside the interactive session: it bypasses the upload/download grants, the
-    # SFTP drop point and the sftp.* audit rows. Shipping an audited front door
-    # beside an unaudited one is the failure R-11 was about, in a different shape.
-    zmodem_mode: str = "block"
+    # This defaulted to "block" while ZMODEM bypassed the permission model
+    # entirely. It no longer does: the opening frame's direction is read off the
+    # protocol (ZRQINIT = host sends = download, ZRINIT = host receives = upload)
+    # and checked against the SAME per-host `download` / `upload` grants the Files
+    # panel uses, with the start and finish of every transfer audited. The reason
+    # to block was that it was an unaudited channel beside an audited one; that
+    # reason is gone.
+    #
+    # One limitation to know before relying on it: `rz` writes wherever the
+    # operator's shell happens to be, so ZMODEM uploads are NOT confined to the
+    # /tmp drop point that sftp_root enforces for the Files panel. Confining them
+    # would mean rewriting paths inside the protocol stream. Deployments that need
+    # that confinement should set this back to "block" and use the Files panel —
+    # which is why the setting still exists.
+    zmodem_mode: str = "allow"
 
     db_engine: str = "postgres"
     db_host: str = "127.0.0.1"

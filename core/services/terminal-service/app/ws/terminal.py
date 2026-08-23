@@ -165,7 +165,8 @@ async def _audit_command(session_id: str, command: str, filter_id: str | None, a
     )
 
 
-async def _audit_zmodem(session_id: str, user_id: str, username: str, host_id: str, mode: str) -> None:
+async def _audit_zmodem(session_id: str, user_id: str, username: str, host_id: str,
+                        mode: str, direction: str | None = None, reason: str = "") -> None:
     """Attempted transfers are recorded whether or not they were allowed — a
     blocked attempt is the more interesting row, and it is the one an assessor
     asks for when the question is "did anyone try to move files around the
@@ -180,8 +181,9 @@ async def _audit_zmodem(session_id: str, user_id: str, username: str, host_id: s
         await log_action(
             user_id=user_id, username=username, action="terminal.zmodem_attempt",
             resource_type="host", resource_id=host_id, session_id=session_id,
-            details={"mode": mode, "channel": "zmodem"},
-            result="failure" if mode == _zmodem.MODE_BLOCK else "success",
+            details={"mode": mode, "channel": "zmodem", "direction": direction,
+                     "reason": reason},
+            result="success" if reason in ("transfer started", "transfer finished") else "failure",
         )
     except Exception:
         pass
@@ -447,8 +449,33 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
                     pass
                 return  # finally block still runs for cleanup
 
+            # True between an authorized opening frame and ZFIN. While set, frames
+            # are forwarded untouched — the policy decision is already made.
+            zmodem_active = False
+            _zmodem_actions: list[str] | None = None
+
+            async def zmodem_actions() -> list[str]:
+                """The per-host grants, fetched once per session on first use.
+
+                Resolved from the same za_authorization record the Files panel and
+                the SSH gate use, so a host granted `sftp` only cannot move files
+                by reaching for sz instead. Cached because this sits in the output
+                path; a per-frame lookup would stall the terminal.
+                """
+                nonlocal _zmodem_actions
+                if _zmodem_actions is None:
+                    try:
+                        r = await _identity_get("/internal/authz/resolve", settings,
+                                                user_id=user_id, host_id=sess.host_id)
+                        _zmodem_actions = list(r.get("actions") or [])
+                    except Exception:
+                        # Fail CLOSED: an unreachable identity-service must not turn
+                        # into "everything permitted" on a file-transfer path.
+                        _zmodem_actions = ["__unresolved__"]
+                return _zmodem_actions
+
             async def from_ssh() -> None:
-                nonlocal _ws_send_failed
+                nonlocal _ws_send_failed, zmodem_active
                 logger.info("from_ssh started", extra={"session": session_id[:8]})
                 try:
                     while True:
@@ -473,16 +500,61 @@ async def handle_terminal(websocket: WebSocket, session_id: str, terminate_event
                         # ZMODEM gate — see ws/_zmodem.py. Checked on the way out
                         # because the sender's opening frame is what announces the
                         # transfer, whichever side initiated it.
-                        if _zmodem.detect(data):
+                        #
+                        # Only OPENING frames are policed. Once a transfer is
+                        # authorized, its subsequent frames pass through untouched:
+                        # re-checking mid-stream would corrupt the protocol, and the
+                        # decision has already been made and recorded.
+                        if _zmodem.detect(data) and not zmodem_active:
                             mode = getattr(settings, "zmodem_mode", _zmodem.MODE_BLOCK)
-                            asyncio.create_task(_audit_zmodem(session_id, user_id, username,
-                                                              sess.host_id, mode))
+                            zdir = _zmodem.direction(data)
+
                             if mode == _zmodem.MODE_BLOCK:
+                                asyncio.create_task(_audit_zmodem(
+                                    session_id, user_id, username, sess.host_id,
+                                    mode, zdir, "blocked by policy"))
                                 try:
                                     process.stdin.write(_zmodem.ZMODEM_CANCEL)
                                 except Exception:
                                     pass
                                 data = _zmodem.notice(mode)
+                            else:
+                                # Transport enabled. It is still the SAME permission
+                                # model as the Files panel: sz needs `download`, rz
+                                # needs `upload`. A transfer channel that ignored the
+                                # grants would make them advisory, which is what R-11
+                                # was. An unclassifiable opener is refused rather than
+                                # guessed — guessing the direction means guessing
+                                # which permission to check.
+                                allowed_actions = await zmodem_actions()
+                                permitted = (
+                                    zdir is not None
+                                    and (not allowed_actions or zdir in allowed_actions)
+                                )
+                                if permitted:
+                                    zmodem_active = True
+                                    asyncio.create_task(_audit_zmodem(
+                                        session_id, user_id, username, sess.host_id,
+                                        mode, zdir, "transfer started"))
+                                else:
+                                    reason = ("direction not recognised" if zdir is None
+                                              else f"{zdir} not granted")
+                                    asyncio.create_task(_audit_zmodem(
+                                        session_id, user_id, username, sess.host_id,
+                                        mode, zdir, reason))
+                                    try:
+                                        process.stdin.write(_zmodem.ZMODEM_CANCEL)
+                                    except Exception:
+                                        pass
+                                    data = _zmodem.notice_denied(
+                                        "download" if zdir == "download" else "upload",
+                                        zdir or "upload/download",
+                                    )
+                        elif zmodem_active and _zmodem.is_finished(data):
+                            zmodem_active = False
+                            asyncio.create_task(_audit_zmodem(
+                                session_id, user_id, username, sess.host_id,
+                                "allow", None, "transfer finished"))
 
                         frames.append({"t": round(time.monotonic() - t0, 3), "d": data})
                         if len(frames) > settings.terminal_recording_max_frames:
