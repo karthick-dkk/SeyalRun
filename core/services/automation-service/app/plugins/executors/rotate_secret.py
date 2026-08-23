@@ -32,7 +32,7 @@ class RotateSecretExecutor(ActionExecutor):
         if not subject_cred_id:
             return RunResult(ok=False, output="rotate_secret requires subject_credential_id", exit_code=1)
 
-        from app._account_ops import host_admin_cred_id, is_privileged, sudo_exec
+        from app._account_ops import chpasswd_script, host_admin_cred_id, is_privileged, sh_quote, sudo_exec, validate_username
 
         async with httpx.AsyncClient(base_url=settings.inventory_service_url, timeout=10) as client:
             tok = mint("automation-service", "inventory-service", settings.service_jwt_secret)
@@ -90,17 +90,19 @@ class RotateSecretExecutor(ActionExecutor):
             await publish_line(f"[host:{addr}] rotating secret for '{target_user}'...")
 
             if secret_type == "password":
-                script = f"echo '{target_user}:{new_secret['password']}' | chpasswd\n"
+                script = chpasswd_script(target_user, new_secret["password"])
             else:
                 from cryptography.hazmat.primitives.serialization import (
                     load_ssh_private_key, Encoding, PublicFormat
                 )
                 pk = load_ssh_private_key(new_secret["private_key"].encode(), password=None)
                 pub = pk.public_key().public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH).decode()
+                _ssh_dir = sh_quote(f"/home/{validate_username(target_user)}/.ssh")
+                _keys = sh_quote(f"/home/{target_user}/.ssh/authorized_keys")
                 script = (
-                    f"mkdir -p /home/{target_user}/.ssh && chmod 700 /home/{target_user}/.ssh\n"
-                    f"echo '{pub}' > /home/{target_user}/.ssh/authorized_keys\n"
-                    f"chown -R {target_user}:{target_user} /home/{target_user}/.ssh\n"
+                    f"mkdir -p {_ssh_dir} && chmod 700 {_ssh_dir}\n"
+                    f"printf '%s\\n' {sh_quote(pub)} > {_keys}\n"
+                    f"chown -R {sh_quote(f'{target_user}:{target_user}')} {_ssh_dir}\n"
                 )
 
             _cmd, _stdin = sudo_exec(admin_cred, script)

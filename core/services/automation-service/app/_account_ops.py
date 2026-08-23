@@ -7,6 +7,8 @@ so the default account-operation templates work across hosts without a fixed adm
 
 from __future__ import annotations
 
+import re
+import shlex
 from typing import Callable
 
 import httpx
@@ -80,11 +82,75 @@ async def get_host(client: httpx.AsyncClient, token: str, host_id: str) -> dict 
     return r.json() if r.status_code == 200 else None
 
 
-# op -> shell snippet template (Linux). {u} = target username.
-_OPS = {
-    "disable": "if id '{u}' &>/dev/null; then usermod -L '{u}'; usermod -e 1 '{u}' 2>/dev/null || true; echo '[ok] {u} disabled'; else echo '[skip] no such user {u}'; fi",
-    "remove":  "if id '{u}' &>/dev/null; then userdel -r '{u}' 2>/dev/null && echo '[ok] {u} removed' || (userdel '{u}' && echo '[ok] {u} removed (home kept)'); else echo '[skip] no such user {u}'; fi",
-}
+class UnsafeAccountValue(ValueError):
+    """Raised when a value cannot be safely placed in a privileged shell command."""
+
+
+# POSIX-portable account names. Deliberately narrow: these strings end up in
+# commands that run as root on managed hosts, and there is no legitimate account
+# name that needs a quote, a semicolon or a newline in it.
+_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
+
+
+def validate_username(username: str) -> str:
+    """Reject an account name that has no business in a root shell command.
+
+    Belt and braces with sh_quote() below. Quoting alone is sufficient against
+    injection, but a name like `; rm -rf /` would then be *correctly* passed to
+    useradd as a literal account name — technically safe, obviously wrong, and
+    the kind of thing that should fail loudly at the boundary rather than create
+    an absurd account on fifty hosts.
+    """
+    if not _USERNAME_RE.match(username or ""):
+        raise UnsafeAccountValue(
+            f"unsafe account name {username!r} — must match {_USERNAME_RE.pattern}"
+        )
+    return username
+
+
+def sh_quote(value: str) -> str:
+    """Quote a value for safe interpolation into a POSIX shell command.
+
+    This exists because every account executor used to build its script with an
+    f-string and hand-written single quotes:
+
+        echo '{user}:{password}' | chpasswd
+
+    A password containing a single quote closes that quote and everything after
+    it becomes a NEW COMMAND, running as root on every target host — an
+    escalation from "may create a credential" to "arbitrary root across the
+    fleet". Credential secrets are admin-supplied and unvalidated, so this was
+    reachable, not theoretical.
+    """
+    return shlex.quote(value or "")
+
+
+def chpasswd_script(username: str, password: str) -> str:
+    """`user:password | chpasswd`, with the pair quoted as a single argument.
+
+    printf rather than echo: echo's handling of backslashes and leading `-` is
+    shell-dependent, and a password is exactly the kind of string that contains
+    both. printf '%s' is defined behaviour everywhere.
+    """
+    validate_username(username)
+    return f"printf '%s\\n' {sh_quote(f'{username}:{password}')} | chpasswd\n"
+
+
+# op -> shell snippet builder (Linux). Every interpolation is quoted.
+def _op_snippet(op: str, username: str) -> str:
+    u = sh_quote(validate_username(username))
+    if op == "disable":
+        return (
+            f"if id {u} &>/dev/null; then usermod -L {u}; usermod -e 1 {u} 2>/dev/null || true; "
+            f"echo \"[ok] $(printf '%s' {u}) disabled\"; else echo \"[skip] no such user $(printf '%s' {u})\"; fi"
+        )
+    if op == "remove":
+        return (
+            f"if id {u} &>/dev/null; then userdel -r {u} 2>/dev/null && echo \"[ok] $(printf '%s' {u}) removed\" "
+            f"|| (userdel {u} && echo \"[ok] $(printf '%s' {u}) removed (home kept)\"); "
+            f"else echo \"[skip] no such user $(printf '%s' {u})\"; fi"
+        )
+    raise UnsafeAccountValue(f"unknown account op {op!r}")
 
 
 async def run_account_op(request, publish_line: Callable, op: str):
@@ -105,7 +171,7 @@ async def run_account_op(request, publish_line: Callable, op: str):
         if not target_user:
             return RunResult(ok=False, output="subject credential has no username", exit_code=1)
 
-        snippet = _OPS[op].format(u=target_user)
+        snippet = _op_snippet(op, target_user)
         # Per-host credential overrides, then a single shared credential, then the host's
         # own linked credential ("default" = the push account of the server).
         host_cred_map = request.params.get("_host_credentials") or {}

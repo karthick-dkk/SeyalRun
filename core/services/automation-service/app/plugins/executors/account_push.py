@@ -24,7 +24,7 @@ class AccountPushExecutor(ActionExecutor):
 
         settings = get_settings()
 
-        from app._account_ops import get_secret, get_host, host_admin_cred_id, is_privileged, sudo_exec
+        from app._account_ops import chpasswd_script, sh_quote, validate_username, get_secret, get_host, host_admin_cred_id, is_privileged, sudo_exec
 
         subject_cred_id = request.params.get("subject_credential_id") or request.params.get("subject_cred_id")
         if not subject_cred_id:
@@ -69,7 +69,11 @@ class AccountPushExecutor(ActionExecutor):
             await publish_line(f"[host:{addr}] pushing account '{target_user}'...")
 
             if secret_type == "password":
-                _script = f"id {target_user} &>/dev/null || useradd -m {target_user}\necho '{target_user}:{secret.get('password','')}' | chpasswd\n"
+                _u = sh_quote(target_user)
+                _script = (
+                    f"id {_u} &>/dev/null || useradd -m {_u}\n"
+                    + chpasswd_script(target_user, secret.get("password", ""))
+                )
                 _cmd, _stdin = sudo_exec(admin_cred, _script)
                 exit_code, stdout, stderr = await _ssh_run(
                     host=addr, port=port,
@@ -91,12 +95,18 @@ class AccountPushExecutor(ActionExecutor):
                     failure += 1
                     continue
 
+                _u = sh_quote(validate_username(target_user))
+                _home = sh_quote(f"/home/{target_user}")
+                _ssh_dir = sh_quote(f"/home/{target_user}/.ssh")
+                _keys = sh_quote(f"/home/{target_user}/.ssh/authorized_keys")
+                _pub = sh_quote(pub)
+                _owner = sh_quote(f"{target_user}:{target_user}")
                 script = (
-                    f"id {target_user} &>/dev/null || useradd -m {target_user}\n"
-                    f"mkdir -p /home/{target_user}/.ssh\n"
-                    f"chmod 700 /home/{target_user}/.ssh\n"
-                    f"grep -qF '{pub}' /home/{target_user}/.ssh/authorized_keys 2>/dev/null || echo '{pub}' >> /home/{target_user}/.ssh/authorized_keys\n"
-                    f"chown -R {target_user}:{target_user} /home/{target_user}/.ssh\n"
+                    f"id {_u} &>/dev/null || useradd -m {_u}\n"
+                    f"mkdir -p {_ssh_dir}\n"
+                    f"chmod 700 {_ssh_dir}\n"
+                    f"grep -qF {_pub} {_keys} 2>/dev/null || printf '%s\\n' {_pub} >> {_keys}\n"
+                    f"chown -R {_owner} {_ssh_dir}\n"
                 )
                 _cmd, _stdin = sudo_exec(admin_cred, script)
                 exit_code, stdout, stderr = await _ssh_run(
