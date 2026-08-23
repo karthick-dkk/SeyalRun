@@ -228,6 +228,12 @@ async def update_host(
     host.ip = payload.ip
     host.port = payload.port
     host.os_type = payload.os_type
+    # Persisted on update too. Without these, editing any field of a gateway
+    # silently demoted it back to a server — it would vanish from its zone's
+    # chain, and the connection would start failing for a reason nothing in the
+    # edit suggested.
+    host.host_type = payload.host_type
+    host.gateway_order = payload.gateway_order
     host.enabled = payload.enabled
     host.zone_id = payload.zone_id
     host.is_production = payload.is_production

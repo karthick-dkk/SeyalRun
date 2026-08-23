@@ -97,7 +97,10 @@
               </td>
               <td><span class="ip-mono">{{ h.ip }}</span></td>
               <td><span class="ip-mono text-sm">{{ h.port || 22 }}</span></td>
-              <td class="text-muted">{{ h.os_type === 'windows' ? 'Windows' : 'Linux' }}</td>
+              <td class="text-muted">
+                <span v-if="h.host_type === 'gateway'" class="badge badge-blue">Gateway</span>
+                <span v-else>{{ h.os_type === 'windows' ? 'Windows' : 'Linux' }}</span>
+              </td>
               <td>
                 <span v-if="zoneName(h)" class="zone-badge"><span class="zone-badge-icon">⊕</span>{{ zoneName(h) }}</span>
                 <span class="text-muted-sm" v-else>—</span>
@@ -160,7 +163,26 @@
                   <div class="form-group"><label class="form-label">Name</label><input v-model="assetForm.name" class="input" placeholder="e.g. db-prod-01" /></div>
                   <div class="form-group"><label class="form-label">IP Address</label><input v-model="assetForm.ip" class="input" placeholder="10.0.0.5" /></div>
                   <div class="form-group"><label class="form-label">SSH Port</label><input v-model.number="assetForm.port" type="number" min="1" max="65535" class="input" /></div>
+                  <div class="form-group">
+                    <label class="form-label">Asset Type</label>
+                    <select v-model="assetForm.host_type" class="input">
+                      <option value="server">Server</option>
+                      <option value="gateway">Gateway (jump host)</option>
+                    </select>
+                    <div class="af-hint">
+                      A gateway is an ordinary asset used as a jump point. It carries its own
+                      groups, zone and login credential — assets in its zone connect through it.
+                    </div>
+                  </div>
                   <div class="form-group"><label class="form-label">Platform</label><select v-model="assetForm.os_type" class="input"><option value="linux">Linux</option><option value="windows">Windows</option></select></div>
+                  <div v-if="assetForm.host_type === 'gateway'" class="form-group">
+                    <label class="form-label">Gateway Order</label>
+                    <input v-model.number="assetForm.gateway_order" type="number" min="0" max="99" class="input" />
+                    <div class="af-hint">
+                      Position among this zone's gateways when a zone has more than one. Lower
+                      connects first.
+                    </div>
+                  </div>
                   <div class="form-group"><label class="form-label">Zone (ProxyJump)</label><select v-model="assetForm.zone_id" class="input"><option value="">— No Zone —</option><option v-for="z in zones" :key="z.id" :value="z.id">{{ z.name }}</option></select></div>
                   <div class="form-group"><label class="form-label">Status</label><select v-model="assetForm.enabled" class="input"><option :value="true">Active</option><option :value="false">Inactive</option></select></div>
                   <div class="form-group u-gcol-1--1">
@@ -712,7 +734,7 @@ const showAssetDrawer = ref(false)
 const editingAsset    = ref<any>(null)
 const userFilter      = ref('')
 const assetForm = reactive({
-  name: '', ip: '', os_type: 'linux', port: 22, zone_id: '',
+  name: '', ip: '', os_type: 'linux', host_type: 'server', gateway_order: 0, port: 22, zone_id: '',
   enabled: true, groups: [] as PickerItem[],
   date_expired: '',
   allowedUserIds: [] as string[],
@@ -820,7 +842,7 @@ function openCreateAsset() {
   // Default expiry: 30 years from today
   const exp = new Date(); exp.setFullYear(exp.getFullYear() + 30)
   const expStr = exp.toISOString().slice(0, 10)
-  Object.assign(assetForm, { name: '', ip: '', os_type: 'linux', port: 22, zone_id: '', enabled: true, groups: [], date_expired: expStr, allowedUserIds: [], linkedCredIds: [] })
+  Object.assign(assetForm, { name: '', ip: '', os_type: 'linux', host_type: 'server', gateway_order: 0, port: 22, zone_id: '', enabled: true, groups: [], date_expired: expStr, allowedUserIds: [], linkedCredIds: [] })
   userFilter.value = ''; resetNewCred(); Object.assign(pushForm, { subjectCredId: '', error: '' }); newGroupName.value = ''; groupError.value = ''
   assetError.value = ''; showAssetDrawer.value = true
 }
@@ -832,7 +854,9 @@ function openEditAsset(h: any) {
   const linkedCreds = allCredentials.value.filter(c => (c.host_ids || []).includes(h.id)).map((c: any) => c.id)
   const expStr = h.date_expired ? h.date_expired.slice(0, 10) : ''
   Object.assign(assetForm, {
-    name: h.name, ip: h.ip, os_type: h.os_type || 'linux', port: h.port || 22,
+    name: h.name, ip: h.ip, os_type: h.os_type || 'linux',
+    host_type: h.host_type || 'server', gateway_order: h.gateway_order ?? 0,
+    port: h.port || 22,
     zone_id: h.zone_id || '', enabled: h.enabled, date_expired: expStr,
     groups: (h.group_ids || []).map((id: string) => ({ id, label: groupById.value.get(id)?.name })).filter((g: PickerItem) => g.label),
     allowedUserIds: authorizedUserIds,
@@ -852,6 +876,10 @@ async function saveAsset() {
     const p: any = {
       name: assetForm.name, ip: assetForm.ip, port: assetForm.port,
       os_type: assetForm.os_type, enabled: assetForm.enabled,
+      host_type: assetForm.host_type,
+      // Only meaningful for a gateway; sent as 0 otherwise so switching an asset
+      // back to a server does not leave a stale ordering behind on the row.
+      gateway_order: assetForm.host_type === 'gateway' ? (assetForm.gateway_order || 0) : 0,
       zone_id: assetForm.zone_id || null,
       group_ids: assetForm.groups.map(g => g.id),
     }
@@ -1333,4 +1361,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEsc))
 .cred-item-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cred-item-name { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cred-item-meta { font-size: 11px; color: var(--text2); }
+.af-hint { font-size: 11.5px; color: var(--text2); margin-top: 4px; line-height: 1.45; }
 </style>
