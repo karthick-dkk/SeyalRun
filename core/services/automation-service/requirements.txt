@@ -14,3 +14,8 @@ asyncssh==2.18.0
 redis[asyncio]==5.2.1
 croniter==3.0.3
 ansible-core==2.18.18
+# Imported directly by plugins/executors/ansible_playbook.py. It arrives
+# transitively via ansible-core today, but a direct import belongs in the
+# direct pins — otherwise the service breaks the day that transitive
+# dependency changes, for reasons nothing here would explain.
+pyyaml==6.0.3
