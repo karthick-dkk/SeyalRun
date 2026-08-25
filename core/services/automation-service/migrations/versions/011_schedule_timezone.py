@@ -9,7 +9,7 @@ A deploy that silently moved everyone's nightly job to a different hour would be
 a worse bug than the one being fixed.
 
 Revision ID: 011
-Revises: 010
+Revises: auto_010
 Create Date: 2026-08-23
 """
 
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "011"
-down_revision = "010"
+down_revision = "auto_010"
 branch_labels = None
 depends_on = None
 
