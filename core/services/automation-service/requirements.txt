@@ -19,3 +19,4 @@ ansible-core==2.18.18
 # direct pins — otherwise the service breaks the day that transitive
 # dependency changes, for reasons nothing here would explain.
 pyyaml==6.0.3
+python-multipart>=0.0.31
