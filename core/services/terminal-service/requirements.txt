@@ -15,5 +15,9 @@ asyncssh==2.18.0
 # parameters need it, and it validates at ROUTE REGISTRATION, so a missing
 # python-multipart is not a 500 on upload — the whole service refuses to
 # import and crash-loops.
+# Pinned: 0.0.20 carried three HIGH CVEs Trivy flags —
+# CVE-2026-24486 (path-traversal arbitrary file write, fixed 0.0.22),
+# CVE-2026-42561 (DoS via excessive part headers, fixed 0.0.27) and
+# CVE-2026-53539 (DoS via crafted form-urlencoded bodies, fixed 0.0.30).
 python-multipart==0.0.31
 redis[asyncio]==5.2.1
