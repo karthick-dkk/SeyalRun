@@ -32,6 +32,14 @@ VIEW = ROOT / "services/frontend/src/views/TerminalView.vue"
 WATERMARK = ROOT / "services/frontend/src/components/terminal/TermWatermark.vue"
 
 
+def _template_of(src: str) -> str:
+    """The <template> block only — bindings live there, and prose about a fixed
+    binding lives in <script>."""
+    i = src.find("<template>")
+    j = src.rfind("</template>")
+    return src[i:j] if i != -1 and j != -1 else src
+
+
 def _load_zmodem():
     spec = importlib.util.spec_from_file_location("_zmodem_under_test", ZMODEM)
     mod = importlib.util.module_from_spec(spec)
@@ -44,21 +52,8 @@ Z = _load_zmodem()
 
 # ── the detector, executed ───────────────────────────────────────────────────
 
-def _template_of(src: str) -> str:
-    """The <template> block only — bindings live there, and prose about a fixed
-    binding lives in <script>."""
-    i = src.find("<template>")
-    j = src.rfind("</template>")
-    return src[i:j] if i != -1 and j != -1 else src
-
-
-def test_template_extraction_works():
-    assert "<div class=\"ssh-app\"" in _template_of(VIEW.read_text())
-    assert "function closeAll" not in _template_of(VIEW.read_text())
-
-
 def test_module_loads():
-    assert Z.MODE_BLOCK == "block" and Z.MODE_ALLOW == "allow"
+    assert Z.ZMODEM_CANCEL and Z.notice()
 
 
 @pytest.mark.parametrize("payload", [
@@ -73,10 +68,8 @@ def test_detects_zmodem_start(payload: str):
 
 
 @pytest.mark.parametrize("payload", [
-    "",
-    "no transfer here",
-    "** stars ** but no ZDLE",
-    "rz",                          # merely mentioning the command is not a transfer
+    "", "no transfer here", "** stars ** but no ZDLE",
+    "rz",                          # merely naming the command is not a transfer
     "sz file.txt",                 # the command line alone — the frame is what counts
     "**\x18",                      # truncated header, no format byte
     "**\x18Z",                     # not a ZMODEM format byte
@@ -86,11 +79,8 @@ def test_does_not_fire_on_ordinary_output(payload: str):
 
 
 def test_detection_is_on_framing_not_the_command_name():
-    """So it catches sz/rz however they were invoked — an alias, a script, a
-    wrapper — because what is detected is the protocol starting."""
+    """So it catches sz/rz however they were invoked — alias, script, wrapper."""
     src = ZMODEM.read_text()
-    assert re.search(r"_ZMODEM_START\s*=\s*re\.compile", src)
-    # The pattern must not simply look for the words rz/sz.
     pattern = re.search(r'_ZMODEM_START = re\.compile\(r"([^"]+)"\)', src).group(1)
     assert "rz" not in pattern and "sz" not in pattern
     assert r"\x18" in pattern, "the pattern must match ZDLE"
@@ -100,94 +90,64 @@ def test_cancel_sequence_is_a_real_zmodem_abort():
     assert Z.ZMODEM_CANCEL.startswith("\x18" * 8), "eight CANs is the canonical abort"
 
 
-def test_block_notice_points_at_the_supported_path():
+def test_notice_points_at_the_supported_path():
     """Obstruction without a route forward just gets worked around."""
-    n = Z.notice(Z.MODE_BLOCK)
+    n = Z.notice()
     assert "Files" in n and "blocked" in n.lower()
-    assert Z.notice(Z.MODE_ALLOW) == "", "allow mode must not inject anything into the stream"
 
 
-# ── the gate is wired, and defaults closed ───────────────────────────────────
+# ── there is no transport, and no way to switch one on ───────────────────────
 
-def test_default_mode_is_one_of_the_two_supported_values():
-    """The default moved from block to allow once the transport gained grant
-    enforcement — the reason to block was that ZMODEM bypassed the permission
-    model, and it no longer does. What must stay true is that the value is one the
-    gate understands: a typo would fall through to the permissive branch."""
-    m = re.search(r'zmodem_mode:\s*str\s*=\s*"([^"]+)"', CONFIG.read_text())
-    assert m, "zmodem_mode default not found"
-    assert m.group(1) in ("allow", "block"), f"unsupported default {m.group(1)!r}"
+def test_zmodem_transport_is_gone():
+    """SFTP is the only transfer path. A working ZMODEM transport was built and
+    then removed on purpose: its audit row cannot name the file (the filename
+    lives inside the protocol stream), `rz` writes wherever the shell is rather
+    than inside sftp_root, and it needs lrzsz on every managed host. Keeping it
+    behind a flag would have left a switch that quietly undoes the /tmp
+    confinement."""
+    zsrc = ZMODEM.read_text()
+    for gone in ("MODE_ALLOW", "def direction(", "def is_finished(", "notice_denied"):
+        assert gone not in zsrc, f"transport-era helper still present: {gone}"
+
+    tsrc = TERMINAL.read_text()
+    for gone in ("zmodem_active", "zmodem_actions", "zmodem_mode"):
+        assert gone not in tsrc, f"transport state still present: {gone}"
+
+    cfg = CONFIG.read_text()
+    assert "zmodem_mode" not in cfg, "a mode setting implies a mode other than blocked"
 
 
-def test_block_mode_still_cancels():
-    """Deployments that want the /tmp confinement set this back to block, so that
-    path has to keep working."""
+def test_no_zmodem_client_remains_in_the_frontend():
+    """The client library sat between the WebSocket and xterm; leaving it there
+    keeps a byte path that can corrupt terminal output for no benefit."""
+    fe = ROOT / "services/frontend"
+    assert not (fe / "src/composables/useZmodem.ts").exists()
+    assert "zmodem" not in (fe / "package.json").read_text()
+    assert "zmodem" not in (fe / "src/components/terminal/TermSession.vue").read_text().lower()
+
+
+def test_every_detection_is_cancelled_and_audited():
     src = TERMINAL.read_text()
-    blk = src[src.index("if mode == _zmodem.MODE_BLOCK:"):][:700]
-    assert "ZMODEM_CANCEL" in blk and "notice(mode)" in blk
+    block = src[src.index("_zmodem.detect(data)"):][:800]
+    assert "ZMODEM_CANCEL" in block, "the transfer must actually be cancelled"
+    assert "_audit_zmodem" in block, "the attempt must be recorded"
+    assert "_zmodem.notice()" in block, "the operator must be told where to go instead"
 
 
-def test_transport_checks_the_same_grants_as_the_files_panel():
-    """A transfer channel that ignored the per-host grants would make them
-    advisory — which is exactly what R-11 was."""
-    src = TERMINAL.read_text()
-    assert "/internal/authz/resolve" in src, "the gate must resolve the host's grants"
-    gate = src[src.index("allowed_actions = await zmodem_actions()"):][:900]
-    assert "zdir in allowed_actions" in gate, "the direction must be checked against the grants"
-    assert "zdir is not None" in gate, (
-        "an unclassifiable opener must be refused, not guessed — guessing the "
-        "direction means guessing which permission to check"
-    )
-
-
-def test_grant_lookup_fails_closed():
-    """An unreachable identity-service must not become 'everything permitted' on
-    a file-transfer path."""
-    src = TERMINAL.read_text()
-    fn = src[src.index("async def zmodem_actions()"):][:1200]
-    assert "__unresolved__" in fn, "the failure path must yield a grant set that matches nothing"
-
-
-def test_authorized_transfers_pass_through_untouched():
-    """Re-checking mid-stream would corrupt the protocol; the decision is made
-    once, at the opening frame."""
-    src = TERMINAL.read_text()
-    assert "and not zmodem_active" in src, "only opening frames may be policed"
-    assert "_zmodem.is_finished(data)" in src, "the transfer window must close again"
-
-
-def test_gate_cancels_and_audits_in_the_output_path():
-    src = TERMINAL.read_text()
-    assert "_zmodem.detect(data)" in src, "the gate must run on the output stream"
-    block = src[src.index("_zmodem.detect(data)"):][:900]
-    assert "ZMODEM_CANCEL" in block, "a blocked transfer must actually be cancelled"
-    assert "_audit_zmodem" in block, "the attempt must be audited"
-
-
-def test_attempts_are_audited_in_both_modes():
+def test_blocked_attempts_are_recorded_as_failures():
     src = TERMINAL.read_text()
     fn = src[src.index("async def _audit_zmodem"):]
     fn = fn[: fn.index("\nasync def handle_terminal")]
-    assert "terminal.zmodem_attempt" in fn
-    # Outcome is keyed on what actually happened, not on the mode. With the
-    # transport enabled there are now three ways an attempt ends — started,
-    # finished, or refused because the direction is not granted — and keying on
-    # mode alone would have recorded a grant refusal as a success.
-    assert 'result="success" if reason in ("transfer started", "transfer finished") else "failure"' in fn, (
-        "every non-transfer outcome (policy block, missing grant, unknown direction) "
-        "must record as a failure"
-    )
-    assert "direction" in fn, "the row must say which way the bytes were going"
-    assert "reason" in fn, "and why it ended that way"
+    assert "terminal.zmodem_blocked" in fn
+    assert 'result="failure"' in fn
 
 
 def test_gate_runs_before_the_data_is_recorded_or_sent():
-    """Cancelling after the frame has already been forwarded to the browser would
-    let the transfer start."""
+    """Cancelling after the frame reached the browser would let it start."""
     src = TERMINAL.read_text()
     gate = src.index("_zmodem.detect(data)")
     frames = src.index('frames.append({"t": round(time.monotonic() - t0, 3), "d": data})', gate - 2000)
-    assert gate < frames, "the gate must precede recording and the WS send"
+    assert gate < frames
 
 
 # ── watermark ────────────────────────────────────────────────────────────────
@@ -232,7 +192,7 @@ _BINDING_EVIDENCE = {
     "Ctrl/Cmd -": "adjustFontSize",
     "Ctrl/Cmd S": "editSnip",
     "F11": "toggleFullscreen",
-    "Esc": "keydown.esc.window",
+    "Esc": "onWindowKeydown",   # a real window listener, not the bogus .window modifier
     "Double-click": "dblclick",
     "Double-click tab": "renameTab",
     "Right-click host": "contextmenu",
