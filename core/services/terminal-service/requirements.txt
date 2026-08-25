@@ -15,5 +15,5 @@ asyncssh==2.18.0
 # parameters need it, and it validates at ROUTE REGISTRATION, so a missing
 # python-multipart is not a 500 on upload — the whole service refuses to
 # import and crash-loops.
-python-multipart==0.0.20
+python-multipart==0.0.31
 redis[asyncio]==5.2.1
