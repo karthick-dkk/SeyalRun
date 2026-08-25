@@ -32,12 +32,104 @@ echo "======================================================"
 echo "  SeyalRun v2.0 — Installer"
 echo "======================================================"
 
-# ── Step 0: prerequisites ─────────────────────────────────────────────────────
+# ── Step 0: platform detection and prerequisites ──────────────────────────────
+info "[0/8] Detecting platform..."
+
+# Architecture. Images are published for linux/amd64 and linux/arm64 only, so a
+# machine that is neither must be told now rather than after eight steps of
+# setup — docker pull would otherwise fail with a manifest error that reads like
+# a network problem.
+case "$(uname -m)" in
+  x86_64|amd64)          ARCH="amd64" ;;
+  aarch64|arm64)         ARCH="arm64" ;;
+  *) fail "unsupported architecture '$(uname -m)'. SeyalRun publishes linux/amd64 and linux/arm64." ;;
+esac
+
+# Distribution family. ID_LIKE is checked as well as ID because derivatives
+# (Rocky, Alma, Oracle, Pop!_OS) name themselves but declare the family they
+# behave like, and matching only on ID means every new derivative is unsupported
+# until someone adds it by hand.
+OS_ID="linux"; OS_NAME="unknown"; PKG=""
+if [ -r /etc/os-release ]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  OS_ID="${ID:-linux}"; OS_NAME="${PRETTY_NAME:-$OS_ID}"
+  case " ${ID:-} ${ID_LIKE:-} " in
+    *" debian "*|*" ubuntu "*)                      PKG="apt" ;;
+    *" rhel "*|*" fedora "*|*" centos "*)           PKG="dnf" ;;
+    *" amzn "*)                                     PKG="dnf" ;;
+    *" suse "*|*" opensuse "*)                      PKG="zypper" ;;
+  esac
+  # Amazon Linux 2 predates dnf; RHEL/CentOS 7 likewise.
+  [ "$PKG" = "dnf" ] && ! command -v dnf >/dev/null 2>&1 && PKG="yum"
+fi
+ok "platform: ${OS_NAME} (${ARCH})"
+
+SUDO=""
+[ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+
+pkg_install() {
+  case "$PKG" in
+    apt)    $SUDO apt-get update -qq && $SUDO apt-get install -y -qq "$@" ;;
+    dnf)    $SUDO dnf install -y -q "$@" ;;
+    yum)    $SUDO yum install -y -q "$@" ;;
+    zypper) $SUDO zypper --non-interactive install "$@" ;;
+    *)      return 1 ;;
+  esac
+}
+
 info "[0/8] Checking prerequisites..."
-command -v docker >/dev/null 2>&1 || fail "docker not found. Install Docker first: https://docs.docker.com/engine/install/"
-docker compose version >/dev/null 2>&1 || fail "docker compose (v2 plugin) not found. Install it: https://docs.docker.com/compose/install/"
-command -v openssl >/dev/null 2>&1 || fail "openssl not found (needed to generate secrets and a TLS cert)."
-ok "docker, docker compose, openssl all present"
+
+# openssl first: it is in every base repo, so needing it is never a reason to
+# reach for Docker's installer.
+if ! command -v openssl >/dev/null 2>&1; then
+  info "openssl missing — installing from the distribution repository..."
+  pkg_install openssl || fail "could not install openssl automatically. Install it and re-run."
+fi
+
+# Docker. Installed automatically from the DISTRIBUTION's packages, not by
+# piping get.docker.com into a shell: the convenience script adds Docker's own
+# apt/yum repository and runs unreviewed remote code as root, which is a large
+# thing to do silently inside another installer. Set SEYALRUN_NO_INSTALL=1 to
+# skip all of this and be told what to install instead.
+if ! command -v docker >/dev/null 2>&1; then
+  if [ -n "${SEYALRUN_NO_INSTALL:-}" ] || [ -z "$PKG" ]; then
+    fail "docker not found. Install Docker: https://docs.docker.com/engine/install/"
+  fi
+  info "docker missing — installing from ${OS_NAME} packages..."
+  case "$PKG" in
+    apt)         pkg_install docker.io docker-compose-v2 || pkg_install docker.io ;;
+    dnf|yum)     pkg_install docker docker-compose-plugin || pkg_install docker ;;
+    zypper)      pkg_install docker docker-compose ;;
+  esac
+  command -v docker >/dev/null 2>&1 ||     fail "automatic Docker install did not succeed. Install it: https://docs.docker.com/engine/install/"
+  # Package installs leave the service down on RHEL-family and Amazon Linux.
+  $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
+fi
+
+# Compose v2 is a plugin and may be absent even where docker is present.
+if ! docker compose version >/dev/null 2>&1; then
+  if [ -n "${SEYALRUN_NO_INSTALL:-}" ] || [ -z "$PKG" ]; then
+    fail "docker compose (v2 plugin) not found. Install it: https://docs.docker.com/compose/install/"
+  fi
+  info "docker compose v2 missing — installing..."
+  case "$PKG" in
+    apt)     pkg_install docker-compose-v2 || true ;;
+    dnf|yum) pkg_install docker-compose-plugin || true ;;
+    zypper)  pkg_install docker-compose ;;
+  esac
+  docker compose version >/dev/null 2>&1 ||     fail "docker compose v2 still unavailable. Install it: https://docs.docker.com/compose/install/"
+fi
+
+# Reachable, not merely installed: a stopped daemon or a user outside the docker
+# group both look exactly like a working install until the first pull fails.
+if ! docker info >/dev/null 2>&1; then
+  $SUDO systemctl start docker >/dev/null 2>&1 || true
+  docker info >/dev/null 2>&1 || fail \
+    "docker is installed but not reachable. Start it ('systemctl start docker'), and if you are not root add yourself to the docker group ('usermod -aG docker $USER') then log out and back in."
+fi
+
+ok "docker, docker compose, openssl all present (${OS_NAME}, ${ARCH})"
 
 # ── Step 1: install directory ─────────────────────────────────────────────────
 info "[1/8] Setting up ${INSTALL_DIR}..."
