@@ -120,3 +120,42 @@ def test_docker_is_checked_for_reachability_not_just_presence():
     src = INSTALL.read_text()
     assert "docker info" in src
     assert "docker group" in src or "usermod -aG docker" in src
+
+
+# ── repo URL and offline install ─────────────────────────────────────────────
+
+def test_repo_url_matches_the_actual_repository():
+    """The default pointed at karthick-dkk/seyalrun_zabbix, which does not exist
+    (the repo is karthick-dkk/SeyalRun) — so every default fetch hung until
+    timeout. This is the bug that blocked a real deploy."""
+    src = INSTALL.read_text()
+    assert "seyalrun_zabbix" not in src, "the old, non-existent repo name is still referenced"
+    assert "karthick-dkk/SeyalRun/main" in src
+
+
+def test_db_init_script_is_placed_where_compose_mounts_it():
+    """The DB compose mounts ./core/docker-init/<engine>. Fetching the init
+    script to a bare docker-init/ (the old path) means the per-service databases
+    are never created and every migration fails against a missing database."""
+    src = INSTALL.read_text()
+    assert 'fetch "core/docker-init/postgres/init-dbs.sh"' in src
+    db = (ROOT / "docker-compose.db.yml").read_text()
+    assert "./core/docker-init/postgres" in db, "compose mount path changed — update the fetch"
+
+
+def test_offline_image_archive_is_supported():
+    """A locked-down host cannot pull. SEYALRUN_IMAGE_ARCHIVE loads a
+    docker-save tarball instead — the path an air-gapped staging box needs."""
+    src = INSTALL.read_text()
+    assert "SEYALRUN_IMAGE_ARCHIVE" in src
+    block = src[src.index('if [[ -n "${SEYALRUN_IMAGE_ARCHIVE'):][:700]
+    assert "docker load" in block
+
+
+def test_staged_files_are_not_refetched():
+    """So an operator can scp the files and run the installer with no GitHub
+    access at all, not just no Docker Hub access."""
+    src = INSTALL.read_text()
+    fn = src[src.index("fetch() {"):]
+    fn = fn[: fn.index("}")]
+    assert '[[ -f "$2" ]]' in fn, "fetch must skip a file that is already present"

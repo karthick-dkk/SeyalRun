@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SeyalRun v2.0 — one-line installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/karthick-dkk/SeyalRun/main/install.sh | bash
 #
 # Pulls prebuilt images from Docker Hub (docker.io/karthickdk02/seyalrun-*) —
 # no source code, no local build. Fully non-interactive: every choice has a
@@ -11,14 +11,14 @@
 #   SEYALRUN_HOST=seyalrun.example.com \
 #   SEYALRUN_VERSION=2.0.0 \
 #   FRAME_ANCESTORS=https://zabbix.example.com \
-#     curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
+#     curl -fsSL https://raw.githubusercontent.com/karthick-dkk/SeyalRun/main/install.sh | bash
 #
 # Safe to re-run: an existing .env / TLS cert / database is reused, not
 # regenerated or overwritten.
 
 set -euo pipefail
 
-REPO_RAW_BASE="${SEYALRUN_REPO_RAW_BASE:-https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main}"
+REPO_RAW_BASE="${SEYALRUN_REPO_RAW_BASE:-https://raw.githubusercontent.com/karthick-dkk/SeyalRun/main}"
 INSTALL_DIR="${SEYALRUN_DIR:-$PWD/seyalrun}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -138,14 +138,24 @@ cd "${INSTALL_DIR}"
 ok "using ${INSTALL_DIR}"
 
 # ── Step 2: download compose files ────────────────────────────────────────────
-info "[2/8] Downloading deploy files from ${REPO_RAW_BASE}..."
-fetch() { curl -fsSL "${REPO_RAW_BASE}/$1" -o "$2"; }
+# A file already present is used as-is and not re-fetched, so an operator can
+# stage everything (scp/rsync) and run this offline — the same hosts that cannot
+# reach Docker Hub usually cannot reach GitHub either.
+info "[2/8] Fetching deploy files from ${REPO_RAW_BASE} (staged files are kept)..."
+fetch() {
+  [[ -f "$2" ]] && { echo "  using staged $2"; return 0; }
+  curl -fsSL "${REPO_RAW_BASE}/$1" -o "$2"
+}
 fetch "docker-compose.prod.yml" "docker-compose.yml"
 fetch "docker-compose.db.yml"   "docker-compose.db.yml"
 fetch ".env.example"            ".env.example"
-mkdir -p docker-init/postgres docker-init/mysql ops schema/postgres schema/mysql
-fetch "docker-init/postgres/init-dbs.sh" "docker-init/postgres/init-dbs.sh"
-fetch "docker-init/mysql/init-dbs.sh"    "docker-init/mysql/init-dbs.sh"
+# The DB compose mounts ./core/docker-init/<engine> — the init script must land
+# there, not at a bare docker-init/, or the per-service databases are never
+# created and every migration then fails against a database that does not exist.
+mkdir -p core/docker-init/postgres core/docker-init/mysql ops schema/postgres schema/mysql
+fetch "core/docker-init/postgres/init-dbs.sh" "core/docker-init/postgres/init-dbs.sh"
+fetch "core/docker-init/mysql/init-dbs.sh"    "core/docker-init/mysql/init-dbs.sh"
+chmod +x core/docker-init/postgres/init-dbs.sh core/docker-init/mysql/init-dbs.sh 2>/dev/null || true
 if [[ -n "${SEYALRUN_DB_HOST:-}" ]]; then
   # External/bare-metal DB mode — need the same DB-bootstrap script and
   # schema files the source-tree Quickstart uses (see ops/init-db.sh).
@@ -154,7 +164,7 @@ if [[ -n "${SEYALRUN_DB_HOST:-}" ]]; then
   fetch "schema/mysql/schema.sql"     "schema/mysql/schema.sql"
   chmod +x ops/init-db.sh
 fi
-ok "deploy files downloaded"
+ok "deploy files ready"
 
 # ── Step 3: generate .env ─────────────────────────────────────────────────────
 info "[3/8] Generating .env..."
@@ -245,10 +255,26 @@ else
   ok "database engine: ${SEYALRUN_DB_ENGINE:-postgres} (Dockerized)"
 fi
 
-# ── Step 6: pull + start ──────────────────────────────────────────────────────
-info "[6/8] Pulling images (this takes a few minutes on first run)..."
-"${COMPOSE[@]}" pull
-ok "images pulled"
+# ── Step 6: load or pull images ───────────────────────────────────────────────
+# Air-gapped / restricted hosts cannot reach Docker Hub. Point
+# SEYALRUN_IMAGE_ARCHIVE at a `docker save | gzip` tarball produced on a machine
+# that CAN pull (same architecture as this host), and the images are loaded from
+# it instead of pulled. This is the path a locked-down staging box needs — the
+# host only has to reach the file, not the registry.
+if [[ -n "${SEYALRUN_IMAGE_ARCHIVE:-}" ]]; then
+  [[ -f "$SEYALRUN_IMAGE_ARCHIVE" ]] || fail "SEYALRUN_IMAGE_ARCHIVE=$SEYALRUN_IMAGE_ARCHIVE not found"
+  info "[6/8] Loading images from ${SEYALRUN_IMAGE_ARCHIVE} (offline)..."
+  if [[ "$SEYALRUN_IMAGE_ARCHIVE" == *.gz ]]; then
+    gunzip -c "$SEYALRUN_IMAGE_ARCHIVE" | docker load
+  else
+    docker load -i "$SEYALRUN_IMAGE_ARCHIVE"
+  fi
+  ok "images loaded from archive"
+else
+  info "[6/8] Pulling images (this takes a few minutes on first run)..."
+  "${COMPOSE[@]}" pull
+  ok "images pulled"
+fi
 
 if [[ -n "${SEYALRUN_DB_HOST:-}" ]]; then
   info "Starting redis..."
