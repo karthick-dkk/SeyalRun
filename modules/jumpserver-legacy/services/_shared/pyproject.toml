@@ -15,6 +15,7 @@ dependencies = [
     "tenacity>=8.3.0",
     "pydantic>=2.8.0",
     "pydantic-settings>=2.4.0",
+    "python-multipart>=0.0.31",
 ]
 
 [project.optional-dependencies]
