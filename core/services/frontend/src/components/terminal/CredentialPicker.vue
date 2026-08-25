@@ -7,6 +7,17 @@
       </div>
 
       <div class="cp-body">
+        <!-- Deep links arrive from Zabbix, where the person at the keyboard may not
+             be the person signed into SeyalRun. The session records under THIS
+             identity, so say so before anything connects. -->
+        <div v-if="deepLink" class="cp-deeplink">
+          <div><strong>Requested from Zabbix.</strong> Nothing connects until you choose a login below.</div>
+          <div class="cp-deeplink-id">
+            Signed in as <strong>{{ signedInAs }}</strong> — the session is recorded under this
+            identity. Not you? Log out and back in as yourself first.
+          </div>
+        </div>
+
         <p class="cp-hint">Select a login:</p>
 
         <div
@@ -100,6 +111,9 @@ const props = defineProps<{
   credentials: any[]
   /** Whether this host's authorization grants ad-hoc accounts. */
   manualAllowed: boolean
+  /** Opened from a Zabbix deep link rather than a click in this app. */
+  deepLink?: boolean
+  signedInAs?: string
 }>()
 const emit = defineEmits<{
   (e: 'close'): void
@@ -260,4 +274,9 @@ async function submitManual(mode: ConnectMode) {
 .cp-manual-note {
   margin: 2px 0 0; font-size: 11px; line-height: 1.5; color: #8b949e;
 }
+.cp-deeplink {
+  margin: 0 0 12px; padding: 9px 11px; border-radius: 6px; font-size: 12px; line-height: 1.5;
+  background: rgba(31, 111, 235, .10); border: 1px solid rgba(31, 111, 235, .35);
+}
+.cp-deeplink-id { margin-top: 5px; color: #8b949e; }
 </style>

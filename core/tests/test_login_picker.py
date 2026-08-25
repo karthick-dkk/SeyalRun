@@ -178,3 +178,42 @@ def test_manual_flow_does_not_claim_the_secret_is_discarded():
     # flag, and a whole-file check reports the explanation as the defect.
     assert "ephemeral:" not in _code_only(src), "the ephemeral flag does nothing server-side"
     assert "saved to" in src, "the UI must state that the account is stored"
+
+
+# ── one connect UI, including the Zabbix deep link ───────────────────────────
+
+def test_the_old_connect_dialog_is_gone():
+    """Two connect UIs meant one of them drifted: the deep-link dialog rendered
+    blank "Connect as" rows and offered no SFTP, because every improvement went
+    into the picker and nobody was looking at the other one."""
+    src = VIEW.read_text()
+    for gone in ("zbxConfirm", "confirmZbxCred", "closeZbxConfirm"):
+        assert gone not in src, f"the old connect dialog survives: {gone}"
+
+
+def test_deep_links_use_the_same_picker():
+    src = VIEW.read_text()
+    fn = src[src.index("async function confirmZbxConnect"):]
+    fn = fn[: fn.index("\n}\n") + 3]
+    assert "credPicker.visible = true" in fn
+    assert "credPicker.deepLink = true" in fn
+
+
+def test_a_deep_link_never_auto_connects():
+    """A link can be followed by someone who did not choose it, so it must always
+    require an explicit choice — the one property the old dialog provided that
+    the picker had to inherit."""
+    src = VIEW.read_text()
+    fn = src[src.index("async function confirmZbxConnect"):]
+    fn = fn[: fn.index("\n}\n") + 3]
+    assert "rememberedCredential" not in fn, "a saved login must not fire from a deep link"
+    assert "connectPane(" not in fn, "nothing may connect before the user picks"
+
+
+def test_deep_link_warns_whose_identity_records_the_session():
+    """Deep links arrive from Zabbix, where the person at the keyboard may not be
+    the person signed into SeyalRun."""
+    picker = PICKER.read_text()
+    assert "deepLink" in picker
+    assert "recorded under this" in picker
+    assert "signedInAs" in picker

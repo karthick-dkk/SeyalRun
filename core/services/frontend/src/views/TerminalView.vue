@@ -310,35 +310,13 @@
       :host="credPicker.host"
       :credentials="credPicker.credentials"
       :manual-allowed="credPicker.manualAllowed"
+      :deep-link="credPicker.deepLink"
+      :signed-in-as="auth.user?.username || ''"
       @close="closePicker"
       @pick="onCredPicked"
     />
 
     <!-- ── Zabbix deep-link confirmation — never auto-connect without an explicit click ── -->
-    <div v-if="zbxConfirm.visible" class="cred-picker-overlay" @click.self="closeZbxConfirm">
-      <div class="cred-picker">
-        <div class="cred-picker-header">
-          <span>Connect to {{ zbxConfirm.host?.name }} ({{ zbxConfirm.host?.ip }})?</span>
-          <button class="cred-picker-close" @click="closeZbxConfirm">✕</button>
-        </div>
-        <div class="cred-picker-body">
-          <p class="cred-picker-hint">Requested from Zabbix. Nothing connects until you click below.</p>
-          <p style="padding:0 16px 8px;font-size:12px;color:#8b949e">
-            Signed into SeyalRun as <strong style="color:#e6edf3">{{ auth.user?.username || '(unknown)' }}</strong> —
-            the session will be recorded under this identity. Not you? Log out and back in as yourself first.
-          </p>
-          <div v-if="zbxConfirm.error" style="padding:8px 16px;color:#f85149;font-size:13px">{{ zbxConfirm.error }}</div>
-          <button
-            v-for="cred in zbxConfirm.credentials"
-            :key="cred.id"
-            class="cred-picker-item"
-            @click="confirmZbxCred(cred)"
-          >
-            ▶ Connect as {{ cred.username || cred.name }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -392,8 +370,8 @@ const hostsLoading = ref(false)
 const hostsError = ref('')
 const hostFilter = ref('')
 const credPicker = reactive<{
-  visible: boolean; host: any; targetPaneId: string; credentials: any[]; manualAllowed: boolean
-}>({ visible: false, host: null, targetPaneId: '', credentials: [], manualAllowed: false })
+  visible: boolean; host: any; targetPaneId: string; credentials: any[]; manualAllowed: boolean; deepLink: boolean
+}>({ visible: false, host: null, targetPaneId: '', credentials: [], manualAllowed: false, deepLink: false })
 
 const LOGIN_STORE_KEY = 'seyalrun.login.default'
 
@@ -411,9 +389,6 @@ function rememberedCredential(hostId: string): string {
 // A link that opens this page and auto-connects (Zabbix deep-link) must never establish
 // a live session with zero human awareness — even when there's exactly one authorized
 // credential and the normal flow would otherwise skip straight past the picker.
-const zbxConfirm = reactive<{ visible: boolean; host: any; targetPaneId: string; credentials: any[]; error: string }>({
-  visible: false, host: null, targetPaneId: '', credentials: [], error: ''
-})
 
 // Panes and split — see composables/useTerminalPanes.ts
 const {
@@ -632,40 +607,36 @@ async function onCredPicked(p: { credentialId: string; mode: ConnectMode }) {
 
 // Zabbix deep-link entry point only — always requires an explicit click before a live
 // session opens, regardless of how many authorized credentials are available.
+/** Zabbix deep-link entry point.
+ *
+ *  Uses the SAME picker as an in-app click — there is no second connect UI to
+ *  keep in step, which is how the dialog it replaces ended up rendering blank
+ *  "Connect as" rows that nobody noticed. What it must NOT do is honour a
+ *  remembered login and connect automatically: a link can be followed by someone
+ *  who did not choose it, so a deep link always requires an explicit choice.
+ *  That is the property the old dialog existed to provide, and it is kept.
+ */
 async function confirmZbxConnect(paneId: string, host: any) {
   let creds: any[] = []
-  let error = ''
+  let manualAllowed = false
   try {
     const resp = await api.get('/ssh/credentials', { params: { host_id: host.id } })
-    creds = resp.data ?? []
-  } catch (e: any) {
-    error = e?.response?.data?.detail || 'Failed to resolve authorized credentials'
-  }
-  zbxConfirm.host = host
-  zbxConfirm.targetPaneId = paneId
-  zbxConfirm.credentials = creds
-  zbxConfirm.error = !error && creds.length === 0 ? 'You are not authorized to connect to this host.' : error
-  zbxConfirm.visible = true
+    creds = Array.isArray(resp.data) ? resp.data : (resp.data?.credentials ?? [])
+    manualAllowed = Array.isArray(resp.data) ? false : !!resp.data?.manual_allowed
+  } catch { /* the picker shows its empty state */ }
+  credPicker.host = host
+  credPicker.targetPaneId = paneId
+  credPicker.credentials = creds
+  credPicker.manualAllowed = manualAllowed
+  credPicker.deepLink = true
+  credPicker.visible = true
 }
 
-function confirmZbxCred(cred: any) {
-  const host = zbxConfirm.host
-  const paneId = zbxConfirm.targetPaneId
-  closeZbxConfirm()
-  if (!host) return
-  connectPane(paneId, host, cred.id)
-}
 
-function closeZbxConfirm() {
-  zbxConfirm.visible = false
-  zbxConfirm.host = null
-  zbxConfirm.targetPaneId = ''
-  zbxConfirm.credentials = []
-  zbxConfirm.error = ''
-}
 
 function closePicker() {
   credPicker.manualAllowed = false
+  credPicker.deepLink = false
   credPicker.visible = false
   credPicker.host = null
   credPicker.targetPaneId = ''

@@ -24,10 +24,9 @@
             <th class="col-name hv-th-sort" @click="toggleSort('name')">Host <span class="hv-sort-arrow" v-if="sortKey==='name'">{{ sortDir===1?'▲':'▼' }}</span></th>
             <th class="col-ip hv-th-sort" @click="toggleSort('ip')">IP <span class="hv-sort-arrow" v-if="sortKey==='ip'">{{ sortDir===1?'▲':'▼' }}</span></th>
             <th class="col-port">Port</th>
-            <th class="col-gw">Gateway</th>
-            <th class="col-sessions">Sessions</th>
+            <th class="col-gw">Zone</th>
+            <th class="col-groups">Groups</th>
             <th v-if="isAdmin" class="col-creds">Credentials</th>
-            <th v-if="isAdmin" class="col-users">Users</th>
             <th class="col-actions">Actions</th>
           </tr>
         </thead>
@@ -44,29 +43,27 @@
               <td class="col-ip hv-mono" :title="host.ip">{{ host.ip }}</td>
               <td class="col-port hv-mono">{{ host.port || 22 }}</td>
               <td class="col-gw">
-                <span v-if="zoneGateway(host.zone_id)" class="hv-gw-cell">
-                  <span class="hv-dot" :class="gwDotClass(host.zone_id)" :title="gwHint(host.zone_id)"></span>
-                  <span class="hv-gw-name" :title="gwHint(host.zone_id)">{{ zoneGateway(host.zone_id)!.name }}</span>
-                  <button class="hv-btn hv-gw-ping"
+                <span v-if="host.zone_id" class="hv-gw-cell">
+                  <!-- The zone is what an operator configures; its gateway is a
+                       property of the zone, and a zone may now hold several, so
+                       naming one of them here would be misleading. -->
+                  <span class="hv-gw-name" :title="zoneHint(host.zone_id)">{{ zoneName(host.zone_id) }}</span>
+                  <button v-if="zoneGateway(host.zone_id)" class="hv-btn hv-gw-ping"
                     :class="{ 'is-spin': gwPending.has(zoneGateway(host.zone_id)!.id), 'is-ok': gwResults[zoneGateway(host.zone_id)!.id] === true, 'is-fail': gwResults[zoneGateway(host.zone_id)!.id] === false }"
                     :title="gwHint(host.zone_id)"
                     @click.stop="testGateway(host.zone_id)">▶</button>
                 </span>
                 <span v-else class="hv-none">—</span>
               </td>
-              <td class="col-sessions">
-                <router-link v-if="sessionCounts[host.id]" :to="`/sessions?host_id=${host.id}`" class="hv-sess-count" :title="`${sessionCounts[host.id]} session(s)`">{{ sessionCounts[host.id] }}</router-link>
+              <td class="col-groups">
+                <span v-if="groupNames(host).length" class="hv-tags">
+                  <span v-for="g in groupNames(host)" :key="g" class="hv-tag hv-tag-group">{{ g }}</span>
+                </span>
                 <span v-else class="hv-none">—</span>
               </td>
               <td v-if="isAdmin" class="col-creds">
                 <span v-if="hostCreds(host.id).length" class="hv-tags">
                   <span v-for="c in hostCreds(host.id)" :key="c.id" class="hv-tag hv-tag-cred" :title="c.name">{{ c.username }}</span>
-                </span>
-                <span v-else class="hv-none">—</span>
-              </td>
-              <td v-if="isAdmin" class="col-users">
-                <span v-if="hostUsers(host.id).length" class="hv-tags">
-                  <span v-for="uid in hostUsers(host.id)" :key="uid" class="hv-tag hv-tag-user">{{ userMap[uid] || uid.slice(0, 8) }}</span>
                 </span>
                 <span v-else class="hv-none">—</span>
               </td>
@@ -130,6 +127,7 @@ const isAdmin = computed(() => auth.isAdmin)
 
 const hosts = ref<any[]>([])
 const zones = ref<any[]>([])
+const hostGroups = ref<any[]>([])
 const gateways = ref<any[]>([])
 const credentials = ref<any[]>([])
 const authorizations = ref<any[]>([])
@@ -148,7 +146,6 @@ const gwPending = reactive(new Set<string>())
 const expandedHost = ref<string | null>(null)
 const hostSessions = reactive<Record<string, any[]>>({})
 const hostSessionsLoading = reactive<Record<string, boolean>>({})
-const sessionCounts = reactive<Record<string, number>>({})
 
 const editModal = reactive({
   visible: false,
@@ -178,6 +175,20 @@ const filteredHosts = computed(() => {
 })
 
 // ── Data helpers ──────────────────────────────────────────────────────────
+
+/** Group names for a host. Groups are how authorization is granted at scale, so
+ *  seeing them on the host list is what makes "who can reach this" answerable
+ *  without opening each asset. */
+function groupNames(host: any): string[] {
+  const byId = new Map(hostGroups.value.map((g: any) => [g.id, g.name]))
+  return (host.group_ids || []).map((id: string) => byId.get(id)).filter(Boolean) as string[]
+}
+
+function zoneHint(zoneId: string | null): string {
+  const gwCount = gateways.value.filter(gw => gw.zone_id === zoneId).length
+  if (!gwCount) return 'Zone has no gateway — connections go direct'
+  return gwCount === 1 ? 'Zone with 1 gateway' : `Zone with ${gwCount} gateways (all are hops, in order)`
+}
 
 function zoneName(zoneId: string | null): string {
   if (!zoneId) return '—'
@@ -213,13 +224,6 @@ function hostCreds(hostId: string): any[] {
   return credentials.value.filter(c => c.host_ids?.includes(hostId))
 }
 
-function hostUsers(hostId: string): string[] {
-  const ids = new Set<string>()
-  for (const a of authorizations.value) {
-    if (a.host_id === hostId && a.user_id) ids.add(a.user_id)
-  }
-  return [...ids]
-}
 
 function reachClass(host: any): string {
   if (host.is_reachable === true) return 'dot-green'
@@ -257,23 +261,17 @@ async function loadAll() {
     // still get their host list — so those three degrade to an empty array on failure
     // instead of rejecting the whole batch and blanking the page.
     const hostsR = await api.get('/hosts')
-    const [zonesR, credsR, authzR] = await Promise.all([
+    const [zonesR, credsR, authzR, groupsR] = await Promise.all([
       api.get('/zones').catch(() => ({ data: [] })),
       api.get('/credentials').catch(() => ({ data: [] })),
       api.get('/authorizations').catch(() => ({ data: [] })),
+      api.get('/host-groups').catch(() => ({ data: [] })),
     ])
+    hostGroups.value = groupsR.data
     hosts.value = hostsR.data
     zones.value = zonesR.data
     credentials.value = credsR.data
     authorizations.value = authzR.data
-
-    // Session counts per host (non-blocking) for the Sessions column.
-    api.get('/ssh/sessions').then(r => {
-      for (const k of Object.keys(sessionCounts)) delete sessionCounts[k]
-      for (const sess of (r.data || [])) {
-        if (sess.host_id) sessionCounts[sess.host_id] = (sessionCounts[sess.host_id] || 0) + 1
-      }
-    }).catch(() => { /* sessions unavailable for this role */ })
 
     // Build user_id → username map
     const unknownIds = new Set<string>()
@@ -520,11 +518,7 @@ onMounted(() => { loadAll() })
 .col-ip     { width: 130px; max-width: 130px; }
 .col-port   { width: 54px; }
 .col-gw       { min-width: 160px; }
-.col-sessions { min-width: 90px; }
-.hv-sess-count { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; padding: 1px 8px; border-radius: 99px; background: rgba(88,166,255,0.14); border: 1px solid rgba(88,166,255,0.35); color: var(--accent2); font-size: 12px; font-weight: 700; text-decoration: none; }
-.hv-sess-count:hover { background: rgba(88,166,255,0.24); }
 .col-creds  { min-width: 110px; }
-.col-users  { min-width: 90px; }
 .col-actions { width: 96px; }
 
 /* ── Name cell ─────────────────────────────────────────────────────────── */
@@ -748,4 +742,6 @@ onMounted(() => { loadAll() })
 .hv-sess-badge--pending    { background: rgba(59,130,246,0.18); color: var(--accent2); }
 .hv-sess-badge--error      { background: rgba(210,153,34,0.2); color: var(--warn); }
 .hv-btn-play { text-decoration: none; }
+.hv-tag-group { background: rgba(31, 111, 235, .16); color: #79c0ff; }
+.col-groups { min-width: 120px; }
 </style>
