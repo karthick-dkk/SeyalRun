@@ -190,3 +190,50 @@ def test_missing_ss_and_lsof_does_not_block_install():
     fn = src[src.index("port_taken() {"):]
     fn = fn[: fn.index("\n}")]
     assert "return 1" in fn, "no probe tool available must mean 'assume free', not error"
+
+
+# ── /opt base path + lifecycle control script ────────────────────────────────
+
+def test_default_install_dir_is_opt_seyalrun():
+    src = INSTALL.read_text()
+    assert 'INSTALL_DIR="${SEYALRUN_DIR:-/opt/seyalrun}"' in src, \
+        "the base install path must default to /opt/seyalrun"
+
+
+def test_opt_creation_uses_privilege_and_hands_over_ownership():
+    """/opt is root-owned. It must be created with privilege and chowned to the
+    user, or every later write (.env, TLS, compose) would need sudo."""
+    src = INSTALL.read_text()
+    assert "priv mkdir -p" in src
+    assert "priv chown" in src
+
+
+def test_privilege_helper_supports_unattended_sudo():
+    """A host whose sudo needs a password must still install non-interactively
+    when SUDO_PASSWORD is provided."""
+    src = INSTALL.read_text()
+    fn = src[src.index("priv() {"):]
+    fn = fn[: fn.index("\n}")]
+    assert "SUDO_PASSWORD" in fn and "sudo -S" in fn
+
+
+def test_control_script_is_generated_with_lifecycle_commands():
+    src = INSTALL.read_text()
+    assert 'CTL="${INSTALL_DIR}/seyalrunctl"' in src
+    block = src[src.index("cat > \"$CTL\""):][:900]
+    for verb in ("start)", "stop)", "restart)", "status", "logs)"):
+        assert verb in block, f"control script missing '{verb}'"
+    assert "chmod +x" in src[src.index("cat > \"$CTL\""):][:1100]
+
+
+def test_control_script_embeds_the_actual_compose_invocation():
+    """It must match how THIS install brought the stack up (dockerized vs
+    external DB, chosen ports), not a hardcoded guess."""
+    src = INSTALL.read_text()
+    block = src[src.index("cat > \"$CTL\""):][:900]
+    assert "COMPOSE=(${COMPOSE[@]})" in block, "the control script must embed the computed COMPOSE array"
+
+
+def test_control_script_is_put_on_path():
+    src = INSTALL.read_text()
+    assert "/usr/local/bin/seyalrunctl" in src
