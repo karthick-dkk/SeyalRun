@@ -159,3 +159,34 @@ def test_staged_files_are_not_refetched():
     fn = src[src.index("fetch() {"):]
     fn = fn[: fn.index("}")]
     assert '[[ -f "$2" ]]' in fn, "fetch must skip a file that is already present"
+
+
+# ── edge port override + pre-flight conflict check ───────────────────────────
+
+def test_edge_ports_are_overridable():
+    """A host often already runs something on 8080/8443. Both must be settable."""
+    src = INSTALL.read_text()
+    assert "SEYALRUN_HTTP_PORT" in src and "SEYALRUN_HTTPS_PORT" in src
+    assert 's|^EDGE_HTTP_PORT=.*|EDGE_HTTP_PORT=' in src
+    assert 's|^EDGE_HTTPS_PORT=.*|EDGE_HTTPS_PORT=' in src
+
+
+def test_port_conflict_fails_early_and_names_the_fix():
+    """The edge-proxy is the last container to start, so a clash otherwise
+    surfaces as a cryptic bind error after the whole stack is up. It must fail in
+    step 5 and name the override variable."""
+    src = INSTALL.read_text()
+    assert "port_taken" in src
+    block = src[src.index("for pair in"):][:700]
+    assert "fail " in block and "already in use" in block
+    assert "SEYALRUN_HTTP_PORT" in block or "${var}" in block, "the error must name the override var"
+    # and it must run before Step 6 (pull/load), not after the stack is up
+    assert src.index("port_taken") < src.index("[6/8]")
+
+
+def test_missing_ss_and_lsof_does_not_block_install():
+    """A host with neither tool should skip the check, not fail every install."""
+    src = INSTALL.read_text()
+    fn = src[src.index("port_taken() {"):]
+    fn = fn[: fn.index("\n}")]
+    assert "return 1" in fn, "no probe tool available must mean 'assume free', not error"

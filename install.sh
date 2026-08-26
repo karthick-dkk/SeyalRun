@@ -10,8 +10,14 @@
 #
 #   SEYALRUN_HOST=seyalrun.example.com \
 #   SEYALRUN_VERSION=2.0.0 \
+#   SEYALRUN_HTTP_PORT=8081 SEYALRUN_HTTPS_PORT=8443 \   # if 8080/8443 are taken
 #   FRAME_ANCESTORS=https://zabbix.example.com \
 #     curl -fsSL https://raw.githubusercontent.com/karthick-dkk/SeyalRun/main/install.sh | bash
+#
+# Air-gapped host (no Docker Hub / GitHub): stage the compose files and an image
+# archive, then:
+#   SEYALRUN_IMAGE_ARCHIVE=/tmp/seyalrun-images.tar.gz \
+#     bash install.sh
 #
 # Safe to re-run: an existing .env / TLS cert / database is reused, not
 # regenerated or overwritten.
@@ -206,8 +212,37 @@ rm -f .env.bak
 
 # ── Step 5: DB + CORS + Zabbix-embed config ───────────────────────────────────
 info "[5/8] Configuring database and origins..."
+
+# Edge port overrides. A host often already runs something on 8080/8443 (its own
+# nginx, another app), and the edge-proxy is the LAST container to start — so
+# without this a port clash surfaces as a cryptic "bind: address already in use"
+# at the very end, after the whole stack is up. Override with
+# SEYALRUN_HTTP_PORT / SEYALRUN_HTTPS_PORT.
+[[ -n "${SEYALRUN_HTTP_PORT:-}" ]]  && sed -i.bak "s|^EDGE_HTTP_PORT=.*|EDGE_HTTP_PORT=${SEYALRUN_HTTP_PORT}|"   .env
+[[ -n "${SEYALRUN_HTTPS_PORT:-}" ]] && sed -i.bak "s|^EDGE_HTTPS_PORT=.*|EDGE_HTTPS_PORT=${SEYALRUN_HTTPS_PORT}|" .env
+rm -f .env.bak
+
+EDGE_HTTP_PORT="$(grep '^EDGE_HTTP_PORT=' .env | cut -d= -f2)"
+EDGE_HTTP_PORT="${EDGE_HTTP_PORT:-8080}"
 EDGE_HTTPS_PORT="$(grep '^EDGE_HTTPS_PORT=' .env | cut -d= -f2)"
 EDGE_HTTPS_PORT="${EDGE_HTTPS_PORT:-8443}"
+
+# Fail NOW, not after the stack is up, if a chosen port is already taken — and
+# name the override so the fix is obvious. Listing listening ports needs no sudo;
+# a host with neither ss nor lsof simply skips the check rather than blocking.
+port_taken() {
+  if command -v ss >/dev/null 2>&1; then ss -ltn 2>/dev/null | grep -q ":$1 "
+  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else return 1; fi
+}
+for pair in "HTTP:${EDGE_HTTP_PORT}:SEYALRUN_HTTP_PORT" "HTTPS:${EDGE_HTTPS_PORT}:SEYALRUN_HTTPS_PORT"; do
+  name="${pair%%:*}"; rest="${pair#*:}"; port="${rest%%:*}"; var="${rest#*:}"
+  if port_taken "$port"; then
+    fail "edge ${name} port ${port} is already in use on this host. Re-run with ${var}=<free port>, e.g. ${var}=$((port+1))."
+  fi
+done
+ok "edge ports free: HTTP ${EDGE_HTTP_PORT}, HTTPS ${EDGE_HTTPS_PORT}"
+
 sed -i.bak "s|^FRONTEND_ORIGIN=.*|FRONTEND_ORIGIN=https://${SEYALRUN_HOST}:${EDGE_HTTPS_PORT}|" .env
 # Pin the image tag when asked. Without this the compose default (:latest)
 # wins and a reinstall silently moves to whatever the newest stable release
