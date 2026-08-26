@@ -71,6 +71,12 @@ server {
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto https;
         proxy_read_timeout 60s;
+        # SFTP upload allows 1 GiB (terminal-service MAX_TRANSFER_BYTES); nginx's
+        # 1 MiB default would reject any real file here with a raw HTML 413 before
+        # the request ever reached the app. 1 MiB of headroom over 1 GiB keeps the
+        # app's own limit the authority so the user sees its friendly message at
+        # the boundary instead of nginx's page.
+        client_max_body_size 1025m;
     }
 
     location /webhook/ {
