@@ -237,3 +237,13 @@ def test_control_script_embeds_the_actual_compose_invocation():
 def test_control_script_is_put_on_path():
     src = INSTALL.read_text()
     assert "/usr/local/bin/seyalrunctl" in src
+
+
+def test_control_script_uses_absolute_dir_not_bash_source():
+    """Called through the /usr/local/bin symlink, dirname "$BASH_SOURCE" resolves
+    to /usr/local/bin — which has no compose files, so every command silently
+    operates on nothing. The install dir must be embedded absolutely."""
+    src = INSTALL.read_text()
+    block = src[src.index("cat > \"$CTL\""):][:900]
+    assert 'cd "${INSTALL_DIR}"' in block, "control script must cd to the embedded absolute dir"
+    assert 'dirname "${BASH_SOURCE' not in block, "BASH_SOURCE-derived cd breaks under the symlink"
