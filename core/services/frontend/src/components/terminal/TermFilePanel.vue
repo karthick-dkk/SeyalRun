@@ -1,5 +1,13 @@
 <template>
-  <aside class="fm" @click.stop>
+  <aside
+    class="fm"
+    :class="{ 'fm-drag': dragActive }"
+    @click.stop
+    @dragover.prevent="onDragOver"
+    @dragleave.prevent="onDragLeave"
+    @drop.prevent="onDrop"
+  >
+    <div v-if="dragActive" class="fm-drop-hint">Drop to upload into {{ DEFAULT_PATH }}</div>
     <header class="fm-head">
       <svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.5 2h9.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
       <span class="fm-title">Files</span>
@@ -98,11 +106,16 @@ defineEmits<{ (e: 'close'): void }>()
 // it, and it is the conventional drop point for these transfers. The server
 // applies the same default, so the two cannot disagree.
 const DEFAULT_PATH = '/tmp'
+// Mirrors terminal-service MAX_TRANSFER_BYTES. Checked client-side so a too-big
+// file is refused before a gigabyte crosses the wire, not after — the server
+// still enforces it, this is only to fail fast with a clear message.
+const MAX_UPLOAD_BYTES = 1024 ** 3   // 1 GiB
 const cwd = ref(DEFAULT_PATH)
 const pathInput = ref(DEFAULT_PATH)
 const entries = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
+const dragActive = ref(false)
 
 function humanSize(n: number): string {
   if (n < 1024) return `${n} B`
@@ -163,11 +176,14 @@ async function download(e: any) {
   }
 }
 
-async function onUpload(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+async function uploadFile(file: File) {
   error.value = ''
+  if (file.size > MAX_UPLOAD_BYTES) {
+    // Fail fast: refuse before the upload starts rather than streaming a
+    // gigabyte only to have the server reject it at the end.
+    error.value = `${humanSize(file.size)} exceeds the ${MAX_UPLOAD_BYTES / 1024 ** 3} GiB upload limit`
+    return
+  }
   loading.value = true
   try {
     const fd = new FormData()
@@ -182,6 +198,26 @@ async function onUpload(ev: Event) {
     fail(e, 'Upload refused')
   } finally {
     loading.value = false
+  }
+}
+
+// Drag a file onto the panel to upload it — same destination, grant and limit as
+// the Upload button; a directory drop (no File entry) is simply ignored.
+function onDragOver() { if (!loading.value) dragActive.value = true }
+function onDragLeave() { dragActive.value = false }
+async function onDrop(ev: DragEvent) {
+  dragActive.value = false
+  if (loading.value) return
+  const file = ev.dataTransfer?.files?.[0]
+  if (file) await uploadFile(file)
+}
+
+async function onUpload(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  try {
+    if (file) await uploadFile(file)
+  } finally {
     input.value = ''
   }
 }
@@ -264,10 +300,18 @@ onMounted(() => go(DEFAULT_PATH))
 
 <style scoped>
 .fm {
+  position: relative;
   display: flex; flex-direction: column;
   width: 340px; min-width: 340px;
   background: #0d1117; border-left: 1px solid #21262d; color: #c9d1d9;
   font-size: 12px; overflow: hidden;
+}
+.fm-drag { outline: 2px dashed #388bfd; outline-offset: -2px; }
+.fm-drop-hint {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(13, 17, 23, .8); color: #58a6ff; font-weight: 600;
+  pointer-events: none; text-align: center; padding: 0 16px;
 }
 .fm-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #21262d; }
 .fm-title { font-weight: 600; color: #e6edf3; }
