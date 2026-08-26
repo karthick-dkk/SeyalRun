@@ -116,7 +116,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppShell from '@/components/layout/AppShell.vue'
-import api, { terminalUrl } from '@/api/client'
+import api, { terminalUrl, markInternalConnect } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -298,8 +298,10 @@ async function loadAll() {
       )]
       await Promise.all(usedZoneIds.map(async (zid: string) => {
         try {
-          const zr = await api.get(`/zones/${zid}`)
-          for (const gw of zr.data.gateways || []) allGws.push({ ...gw, zone_id: zid })
+          // /zones/{id} has no GET (only PUT/DELETE) — it 405s. The gateway list for a
+          // zone is its own endpoint, which returns a bare array of gateways.
+          const zr = await api.get(`/zones/${zid}/gateways`)
+          for (const gw of (Array.isArray(zr.data) ? zr.data : [])) allGws.push({ ...gw, zone_id: zid })
         } catch { /* zone may have no gateways */ }
       }))
     }
@@ -314,6 +316,7 @@ async function loadAll() {
 // ── Actions ───────────────────────────────────────────────────────────────
 
 function openTerminal(host: any) {
+  markInternalConnect(host.id)   // in-app click → the new tab may honour a remembered login
   window.open(terminalUrl(`host_id=${host.id}&autoconnect=1`), '_blank')
 }
 
