@@ -110,3 +110,30 @@ export function terminalUrl(query = ''): string {
   const parts = [query, tok ? `_session=${encodeURIComponent(tok)}` : ''].filter(Boolean)
   return `/#/terminal${parts.length ? '?' + parts.join('&') : ''}`
 }
+
+/** In-app connect handshake.
+ *
+ *  A terminal opened from INSIDE the app (the Hosts/Assets connect icon) may honour a
+ *  remembered login and connect automatically. A terminal reached by following a link
+ *  from OUTSIDE (a Zabbix deep link, a pasted URL) must not — it always requires an
+ *  explicit login choice, because a link can be followed by someone who did not choose
+ *  it. Both open with the same `host_id=…&autoconnect=1` URL (the Zabbix host module
+ *  builds that exact shape too), so the URL cannot tell them apart, and a query flag
+ *  would be forgeable by any such link. Instead the in-app opener drops a short-lived,
+ *  same-origin marker that a cross-origin link physically cannot write; the terminal
+ *  tab consumes it once. No marker → treat as a deep link (the safe default). */
+const INTERNAL_CONNECT_TTL_MS = 15_000
+
+export function markInternalConnect(hostId: string): void {
+  try { localStorage.setItem(`sr_ti:${hostId}`, String(Date.now())) } catch { /* storage blocked (e.g. 3rd-party iframe) — falls back to the explicit picker */ }
+}
+
+export function consumeInternalConnect(hostId: string): boolean {
+  try {
+    const key = `sr_ti:${hostId}`
+    const raw = localStorage.getItem(key)
+    if (!raw) return false
+    localStorage.removeItem(key)          // consume-on-read: the opener's own tab wins any race
+    return Date.now() - Number(raw) < INTERNAL_CONNECT_TTL_MS
+  } catch { return false }
+}

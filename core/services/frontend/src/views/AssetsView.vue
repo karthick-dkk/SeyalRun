@@ -534,7 +534,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppShell from '@/components/layout/AppShell.vue'
 import AsyncPicker, { type PickerItem } from '@/components/common/AsyncPicker.vue'
-import api, { getToken, terminalUrl } from '@/api/client'
+import api, { getToken, terminalUrl, markInternalConnect } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useConfirm } from '@/composables/useConfirm'
 
@@ -714,6 +714,7 @@ async function syncFromZabbix() {
 
 // ── SSH connect ────────────────────────────────────────────────────────────
 function connectSSH(h: any) {
+  markInternalConnect(h.id)   // in-app click → the new tab may honour a remembered login
   window.open(terminalUrl(`host_id=${encodeURIComponent(h.id)}&autoconnect=1`), '_blank')
 }
 

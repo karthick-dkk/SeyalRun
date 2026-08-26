@@ -327,7 +327,7 @@ import TermSession from '@/components/terminal/TermSession.vue'
 import TermFilePanel from '@/components/terminal/TermFilePanel.vue'
 import TermWatermark from '@/components/terminal/TermWatermark.vue'
 import CredentialPicker, { type ConnectMode } from '@/components/terminal/CredentialPicker.vue'
-import api from '@/api/client'
+import api, { consumeInternalConnect } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useTerminalTheme } from '@/composables/useTerminalTheme'
 import { useTerminalPanes, type Pane } from '@/composables/useTerminalPanes'
@@ -794,7 +794,16 @@ async function handleUrlParams() {
   if (!target && targetZbxHostId) target = hosts.value.find(h => h.zabbix_hostid === targetZbxHostId)
 
   if (target && auto) {
-    await confirmZbxConnect(activePaneId.value, target)
+    // An in-app connect (Hosts/Assets terminal icon) leaves a same-origin marker that a
+    // Zabbix/external deep link cannot; only that path honours a remembered login and
+    // auto-connects. Everything else — a Zabbix deep link, a pasted URL — takes the
+    // deep-link path, which always requires an explicit login choice.
+    const internal = !zbxHost && !ltToken && consumeInternalConnect(target.id)
+    if (internal) {
+      await connectWithCredPicker(activePaneId.value, target)
+    } else {
+      await confirmZbxConnect(activePaneId.value, target)
+    }
   }
 }
 
