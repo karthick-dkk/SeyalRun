@@ -9,6 +9,10 @@
           <button class="btn btn-primary btn-sm" @click="openCreate" :disabled="!!expandedId">+ Authorization</button>
         </div>
       </div>
+      <p class="authz-model-note">
+        <span class="authz-model-dot"></span>
+        <span><strong>Actions are per-rule, not combined.</strong> When more than one rule covers the same user and host, only the best-matching rule’s actions apply — they are not merged across rules. Put every action a login needs (<code>ssh</code>, <code>sftp</code>, <code>upload</code>, <code>download</code>) on one rule.</span>
+      </p>
       <table class="table">
         <thead>
           <tr>
@@ -610,6 +614,14 @@ onMounted(load)
   font-size: 12px; color: var(--accent2);
 }
 .bulk-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent2); box-shadow: 0 0 5px var(--accent2); flex-shrink: 0; }
+.authz-model-note {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 0 14px 12px; padding: 8px 12px;
+  background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.3); border-radius: 6px;
+  font-size: 12px; line-height: 1.5; color: var(--accent2);
+}
+.authz-model-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--accent2); box-shadow: 0 0 5px var(--accent2); flex-shrink: 0; }
+.authz-model-note code { font-family: ui-monospace, monospace; font-size: 11px; padding: 1px 4px; border-radius: 3px; background: rgba(59,130,246,0.14); }
 
 /* ── Sections (checkbox columns) ────────────────────────────────────────────── */
 .eg-section { border: 1px solid var(--border); border-radius: 7px; overflow: hidden; display: flex; flex-direction: column; background: var(--bg2); }
