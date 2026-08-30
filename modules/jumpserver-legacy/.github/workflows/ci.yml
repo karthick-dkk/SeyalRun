@@ -78,7 +78,6 @@ jobs:
           - automation-bridge
           - zbx-sync
           - launch-token
-          - webhook-receiver
     steps:
       - uses: actions/checkout@v4
 
@@ -110,7 +109,6 @@ jobs:
           - automation-bridge
           - zbx-sync
           - launch-token
-          - webhook-receiver
     steps:
       - uses: actions/checkout@v4
 
@@ -135,7 +133,6 @@ jobs:
           - automation-bridge
           - zbx-sync
           - launch-token
-          - webhook-receiver
     steps:
       - uses: actions/checkout@v4
 

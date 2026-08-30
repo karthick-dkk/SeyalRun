@@ -89,26 +89,6 @@ services:
       timeout: 5s
       retries: 3
 
-  webhook-receiver:
-    <<: *sidecar-common
-    image: seyalrun/webhook-receiver:latest
-    container_name: webhook_recv
-    platform: linux/arm64
-    ports:
-      - "127.0.0.1:8004:8004"
-    environment:
-      WR_LOG_LEVEL: "WARNING"
-      WR_REDIS_URL: "redis://:${REDIS_PASSWORD}@${INFRA_HOST:-192.168.250.1}:6379/4"
-      WR_WEBHOOK_HMAC_SECRET: "${WEBHOOK_HMAC_SECRET}"
-      WR_ZBX_SYNC_URL: "http://zbx_sync:8002"
-      GIT_SHA: "${GIT_SHA:-unknown}"
-    healthcheck:
-      test: ["CMD", "python", "-c",
-        "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
 networks:
   pravesh_net:
     external: true

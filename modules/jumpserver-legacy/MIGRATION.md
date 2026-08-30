@@ -21,7 +21,7 @@ before.
 
 | Component | Verdict | Replacement |
 |---|---|---|
-| `services/webhook-receiver` | Delete | `core/services/zabbix-integration-service` already does HMAC + IP allowlist + rate limiting + replay protection + pre-bound dispatch, and does not fail open |
+| `services/webhook-receiver` | Deleted ✓ | `core/services/zabbix-integration-service` already does HMAC + IP allowlist + rate limiting + replay protection + pre-bound dispatch, and does not fail open |
 | `services/zbx-sync` | Port, then delete | `run_sync()` host-diff logic → `SessionBroker.sync_targets()` on the JumpServer broker, driven by inventory-service |
 | `services/launch-token` | Port, then delete | `SessionBroker.mint_launch_token()`. The Redis one-use JTI logic is sound and should be carried over; the token signing must move onto `libs/servicetoken` conventions |
 | `services/playbook-studio` (API, catalog, builder) | Port, then delete | `core/services/automation-service` as an `ActionExecutor` plugin, plus `za_playbook_*` tables |

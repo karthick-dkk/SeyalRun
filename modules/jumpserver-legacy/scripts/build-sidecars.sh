@@ -3,7 +3,7 @@
 # Run this ON the server: bash /opt/pravesh/scripts/build-sidecars.sh
 set -euo pipefail
 
-SERVICES=(automation-bridge zbx-sync launch-token webhook-receiver)
+SERVICES=(automation-bridge zbx-sync launch-token)
 BUILD_DIR=/opt/pravesh/services
 
 echo "=== Building SeyalRun sidecars (ARM64) ==="
