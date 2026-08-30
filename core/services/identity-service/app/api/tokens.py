@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs.apiscopes import SCOPE_CATALOG, validate_agent_scopes
+
 from ..audit import log_action
 from ..database import get_session
 from ..deps import current_user_id, require_service_token
@@ -25,6 +27,15 @@ async def list_tokens(
     return result.scalars().all()
 
 
+@router.get("/scopes")
+async def list_grantable_scopes():
+    """The scopes an admin may put on a token — for the issuance UI. Reads are the
+    baseline; actions (automation:run, inventory:write, sessions:open,
+    notifications:ack) are opt-in. credentials:* and admin:* are intentionally
+    absent — no token can read a secret or administer identity/access."""
+    return {"catalog": SCOPE_CATALOG}
+
+
 @router.post("", response_model=ApiTokenCreated, status_code=status.HTTP_201_CREATED)
 async def create_token(
     payload: ApiTokenCreate,
@@ -32,6 +43,17 @@ async def create_token(
     user_id: str = Depends(current_user_id),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
 ):
+    # Refuse a token nobody could use safely: only the fine-grained agent scopes
+    # (or the legacy coarse read/write) may be granted. credentials:* / admin:* are
+    # rejected here — even though the gateway would also deny them, failing at
+    # issuance is clearer than minting a token that silently can't do what its
+    # scopes claim.
+    bad = validate_agent_scopes(payload.scopes)
+    if bad:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"scopes not grantable to a token: {sorted(bad)} — pick from the agent scope catalog or use read/write",
+        )
     raw_token = generate_pat()
     token = ZAApiToken(
         user_id=user_id,
