@@ -476,8 +476,9 @@ async def gateway(path: str, request: Request):
         # so an agent token can only ever do LESS than the human who owns it. Legacy
         # coarse read/write scopes still satisfy this (see libs/apiscopes), so no
         # existing token breaks.
-        _scopes = identity.get("scopes")
-        if _scopes and not scope_allows(_scopes, path.split("/", 1)[0], request.method, path):
+        if identity.get("is_pat") and not scope_allows(
+            identity.get("scopes") or [], path.split("/", 1)[0], request.method, path
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="forbidden: token scope does not permit this action",

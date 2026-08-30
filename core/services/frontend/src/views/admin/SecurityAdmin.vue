@@ -335,10 +335,22 @@
           <div class="form-group"><label class="form-label">Name</label><input v-model="tokenForm.name" class="input" placeholder="e.g. ci-pipeline" /></div>
           <div class="form-group">
             <label class="form-label">Scopes</label>
-            <div style="display:flex;gap:14px;flex-wrap:wrap">
-              <label v-for="s in scopeOptions" :key="s" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2)">
-                <input type="checkbox" :value="s" v-model="tokenForm.scopes" /> {{ s }}
-              </label>
+            <div class="scope-picker">
+              <div class="scope-group-title">Read</div>
+              <div class="scope-grid">
+                <label v-for="s in scopeReads" :key="s.scope" class="scope-item">
+                  <input type="checkbox" :value="s.scope" v-model="tokenForm.scopes" />
+                  <span>{{ s.label }} <code>{{ s.scope }}</code></span>
+                </label>
+              </div>
+              <div class="scope-group-title">Actions</div>
+              <div class="scope-grid">
+                <label v-for="s in scopeActions" :key="s.scope" class="scope-item">
+                  <input type="checkbox" :value="s.scope" v-model="tokenForm.scopes" />
+                  <span>{{ s.label }} <code>{{ s.scope }}</code></span>
+                </label>
+              </div>
+              <p class="scope-note">A token can only ever do what its owner's role already allows — scopes just narrow it. Credentials and admin are never grantable, and a token can never read a secret.</p>
             </div>
           </div>
           <div class="form-group"><label class="form-label">Expires (optional)</label><input v-model="tokenForm.expires_at" type="datetime-local" class="input" /></div>
@@ -346,7 +358,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn" @click="closeTokenModal">Cancel</button>
-          <button class="btn btn-primary" @click="createToken" :disabled="savingToken">{{ savingToken ? 'Creating…' : 'Create' }}</button>
+          <button class="btn btn-primary" @click="createToken" :disabled="savingToken || !tokenForm.scopes.length">{{ savingToken ? 'Creating…' : 'Create' }}</button>
         </div>
       </div>
     </div>
@@ -384,7 +396,11 @@ const dayOptions = [
   { value: 0, label: 'Sun' }, { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' },
   { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' }, { value: 6, label: 'Sat' },
 ]
-const scopeOptions = ['read', 'metrics:read', 'automation:run', 'admin']
+// Fetched from GET /api-tokens/scopes so the picker always matches what the server
+// will actually grant (credentials:* / admin:* are intentionally absent).
+const scopeCatalog = ref<Array<{ scope: string; label: string; kind: string }>>([])
+const scopeReads = computed(() => scopeCatalog.value.filter(s => s.kind === 'read'))
+const scopeActions = computed(() => scopeCatalog.value.filter(s => s.kind === 'action'))
 
 const commandGroups = ref<any[]>([])
 const commandFilters = ref<any[]>([])
@@ -710,10 +726,14 @@ const tokenError = ref('')
 const savingToken = ref(false)
 const createdToken = ref<any>(null)
 
-function openCreateToken() {
-  Object.assign(tokenForm, { name: '', scopes: ['read'], expires_at: '' })
+async function openCreateToken() {
+  Object.assign(tokenForm, { name: '', scopes: [], expires_at: '' })
   tokenError.value = ''
   showTokenModal.value = true
+  if (!scopeCatalog.value.length) {
+    try { scopeCatalog.value = (await api.get('/api-tokens/scopes')).data.catalog || [] }
+    catch { /* catalog unavailable — the token can still be created, server validates */ }
+  }
 }
 function closeTokenModal() { showTokenModal.value = false }
 
@@ -784,3 +804,12 @@ onMounted(() => {
   loadApiTokens()
 })
 </script>
+
+<style scoped>
+.scope-picker { display: flex; flex-direction: column; gap: 6px; }
+.scope-group-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text3, #8b949e); margin-top: 4px; }
+.scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+.scope-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); cursor: pointer; }
+.scope-item code { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text3, #8b949e); }
+.scope-note { margin: 6px 0 0; font-size: 11px; line-height: 1.5; color: var(--text3, #8b949e); }
+</style>

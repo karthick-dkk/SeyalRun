@@ -197,6 +197,10 @@ async def verify_pat(token: str) -> dict:
         "role": data.get("role", "user"),
         "roles": data.get("roles") or [data.get("role", "user")],
         "scopes": data.get("scopes") or [],
+        # Marks a PAT caller so the gateway enforces scopes even when the list is
+        # empty — an empty-scope token must be denied everything, not (as a falsy
+        # scopes list would) fall through to full role access like a session caller.
+        "is_pat": True,
     }
 
 
