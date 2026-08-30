@@ -107,6 +107,31 @@ def _authz_host_groups(authz: ZAAuthorization) -> set[str]:
     return hg
 
 
+def _union_best_rank_actions(ranked_actions: list[tuple[int, list[str]]]) -> list[str]:
+    """Union the actions of every rule at the LOWEST (best) rank, order-preserving.
+
+    The security property lives here. Rules at the same rank are peers of equal
+    specificity, so combining their actions is faithful to the admin's intent and
+    cannot change a deterministic outcome (same-rank order was arbitrary). Rules
+    at a WORSE rank contribute nothing — a broader group grant (rank 2/3) is fully
+    shadowed by any direct rule (rank 0/1), so a narrow direct rule still restricts
+    a user below their group's access. That shadowing is the ONLY way this differs
+    from a naive union-everything, and it is exactly what keeps this from widening
+    an intentional restriction.
+    """
+    if not ranked_actions:
+        return []
+    best = min(rank for rank, _ in ranked_actions)
+    out: list[str] = []
+    for rank, actions in ranked_actions:
+        if rank != best:
+            continue
+        for act in actions or []:
+            if act not in out:
+                out.append(act)
+    return out
+
+
 class AuditEntry(BaseModel):
     user_id: str | None = None
     username: str = ""
@@ -394,9 +419,19 @@ async def authz_resolve(
     host_id: str = Query(...),
     session: AsyncSession = Depends(get_session),
 ):
-    """Return {credential_id, actions} from the best-matching za_authorizations row
-    for (user_id, host_id). Used by terminal-service to default credential and
-    verify 'ssh' is in the allowed actions. Returns nulls if no match."""
+    """Resolve the credential and allowed actions for (user_id, host_id).
+
+    The CREDENTIAL comes from the single best-matching row (you connect with one
+    credential). The ACTIONS are the UNION across every matching row AT THAT SAME
+    best rank — same-rank rows are peers of equal specificity, and which one the
+    DB returned first was arbitrary (no ORDER BY), so unioning them cannot change
+    a deterministic outcome, only stop one peer grant from silently shadowing
+    another's actions (splitting a login's grants over two direct rows used to
+    drop whichever the DB didn't happen to return). A MORE-specific rule (lower
+    rank) still shadows a broader one entirely, so a narrow direct rule can still
+    restrict a user below a group grant — that is deterministic and preserved.
+    Used by terminal-service to default credential and gate actions. Nulls if no
+    match."""
     group_result = await session.execute(
         select(ZAUserGroupMember.group_id).where(ZAUserGroupMember.user_id == user_id)
     )
@@ -448,8 +483,10 @@ async def authz_resolve(
         if key and key not in _group_member_hosts:
             _group_member_hosts[key] = await _hosts_in_groups(_authz_host_groups(_a))
 
-    best: ZAAuthorization | None = None
-    best_rank = 4
+    # Collect every rule that covers (user, host) in-window, with its rank. No
+    # early break: we need ALL rows at the best rank to union their actions, not
+    # just the first one the DB happened to return.
+    qualifying: list[tuple[int, ZAAuthorization]] = []
     for authz in _candidates:
         if authz.date_start and authz.date_start > now:
             continue
@@ -461,16 +498,18 @@ async def authz_resolve(
         group = _covers_by_group(authz)
         if not direct and not group:
             continue
-        rank = _rank(authz)
-        if rank < best_rank:
-            best, best_rank = authz, rank
-            if rank == 0:
-                break  # direct host match with a credential — can't do better
+        qualifying.append((_rank(authz), authz))
 
-    if best is None:
+    if not qualifying:
         return {"credential_id": None, "credential_ids": [], "actions": []}
+
+    best_rank = min(rank for rank, _ in qualifying)
+    # Credential: the first row at the best rank — same choice the old best-match
+    # loop made (it stopped at the first row to reach the minimum rank).
+    best = next(a for rank, a in qualifying if rank == best_rank)
     cred_ids = list(best.credential_ids or ([best.credential_id] if best.credential_id else []))
-    return {"credential_id": cred_ids[0] if cred_ids else None, "credential_ids": cred_ids, "actions": best.actions or []}
+    actions = _union_best_rank_actions([(rank, a.actions or []) for rank, a in qualifying])
+    return {"credential_id": cred_ids[0] if cred_ids else None, "credential_ids": cred_ids, "actions": actions}
 
 
 @router.post("/tokens/verify", response_model=TokenVerifyResponse)
