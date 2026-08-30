@@ -11,7 +11,7 @@
       </div>
       <p class="authz-model-note">
         <span class="authz-model-dot"></span>
-        <span><strong>Actions are per-rule, not combined.</strong> When more than one rule covers the same user and host, only the best-matching rule’s actions apply — they are not merged across rules. Put every action a login needs (<code>ssh</code>, <code>sftp</code>, <code>upload</code>, <code>download</code>) on one rule.</span>
+        <span><strong>How actions combine.</strong> Rules at the same level are combined — a login gets the union of their actions. A more-specific rule overrides a broader one: a direct <em>user + host</em> rule replaces a <em>group</em> rule’s actions for that host, so you can use one to restrict a user below their group’s access.</span>
       </p>
       <table class="table">
         <thead>
