@@ -10,6 +10,7 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from libs.apiscopes import scope_allows
 from libs.obsmetrics import ServiceMetrics
 from libs.securelog import configure_logging
 from libs.servicetoken import mint
@@ -468,6 +469,19 @@ async def gateway(path: str, request: Request):
             identity.get("roles") or [identity.get("role", "user")], request.method, path
         ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden: your role does not permit this action")
+
+        # Fine-grained PAT scopes (programmatic / AI-agent tokens). A session or
+        # cookie caller carries no scopes and is governed by role alone; a PAT is
+        # ADDITIONALLY confined to its scopes — effective access is scopes ∩ role,
+        # so an agent token can only ever do LESS than the human who owns it. Legacy
+        # coarse read/write scopes still satisfy this (see libs/apiscopes), so no
+        # existing token breaks.
+        _scopes = identity.get("scopes")
+        if _scopes and not scope_allows(_scopes, path.split("/", 1)[0], request.method, path):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="forbidden: token scope does not permit this action",
+            )
         # Preserve the caller's true (pre-elevation) primary role — downstream_role()
         # below can "vouch" a support/custom write up to X-User-Role: admin (see its
         # own docstring), which is right for simple admin-gated CRUD guards but means
