@@ -280,6 +280,24 @@ services:
       timeout: 5s
       retries: 5
 
+  mcp-server:
+    image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-mcp-server:${SEYALRUN_VERSION:-latest}
+    restart: unless-stopped
+    networks: [seyalrun_net]
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      GATEWAY_URL: "http://api-gateway:8000"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8110/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
 networks:
   seyalrun_net:
     driver: bridge
