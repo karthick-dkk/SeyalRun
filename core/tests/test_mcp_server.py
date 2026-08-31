@@ -49,11 +49,33 @@ def test_whoami_is_always_available_and_maps_to_auth_session():
 
 # ── MCP protocol basics ──────────────────────────────────────────────────────
 
-def test_initialize_advertises_tools_and_server():
+def test_initialize_advertises_tools_resources_and_server():
     r = _run({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     assert r["result"]["protocolVersion"]
     assert "tools" in r["result"]["capabilities"]
+    assert "resources" in r["result"]["capabilities"]
     assert r["result"]["serverInfo"]["name"] == "seyalrun"
+
+
+def test_resources_list_and_scope_backing():
+    r = _run({"jsonrpc": "2.0", "id": 9, "method": "resources/list"})
+    res = r["result"]["resources"]
+    uris = {x["uri"] for x in res}
+    assert "seyalrun://inventory/hosts" in uris and "seyalrun://audit/recent" in uris
+    for x in res:
+        assert x["uri"].startswith("seyalrun://") and x["mimeType"] == "application/json"
+    # every resource is backed by an agent-grantable read scope
+    for rsc in mcp.RESOURCES:
+        assert rsc["scope"] in AGENT_GRANTABLE and rsc["scope"].endswith(":read")
+
+
+def test_resources_read_unknown_and_no_token():
+    r1 = _run({"jsonrpc": "2.0", "id": 10, "method": "resources/read",
+               "params": {"uri": "seyalrun://nope"}}, pat="sr_x")
+    assert "error" in r1
+    r2 = _run({"jsonrpc": "2.0", "id": 11, "method": "resources/read",
+               "params": {"uri": "seyalrun://inventory/hosts"}}, pat=None)
+    assert "error" in r2 and "token" in r2["error"]["message"].lower()
 
 
 def test_tools_list_returns_declared_tools_with_schema():

@@ -80,8 +80,54 @@ TOOLS = [
 _TOOLS_BY_NAME = {t["name"]: t for t in TOOLS}
 
 
+# ── Resources ────────────────────────────────────────────────────────────────
+# Read-only context an agent can pull by URI. Each maps to a gateway GET carrying
+# the agent's PAT, so a resource the token lacks the scope for comes back as a
+# gateway 403 — same enforcement as the tools.
+RESOURCES = [
+    {"uri": "seyalrun://inventory/hosts", "name": "Hosts",
+     "description": "All hosts SeyalRun can broker sessions to.",
+     "scope": "inventory:read", "path": "/api/v1/hosts"},
+    {"uri": "seyalrun://inventory/zones", "name": "Zones",
+     "description": "Network zones and gateway topology.",
+     "scope": "inventory:read", "path": "/api/v1/zones"},
+    {"uri": "seyalrun://automation/templates", "name": "Automation templates",
+     "description": "Available automation job-templates.",
+     "scope": "automation:read", "path": "/api/v1/job-templates"},
+    {"uri": "seyalrun://audit/recent", "name": "Recent audit log",
+     "description": "The tamper-evident audit log (most recent entries).",
+     "scope": "audit:read", "path": "/api/v1/audit/logs"},
+    {"uri": "seyalrun://metrics/dashboard", "name": "Metrics",
+     "description": "Platform metrics dashboard.",
+     "scope": "metrics:read", "path": "/api/v1/metrics/dashboard"},
+]
+_RESOURCES_BY_URI = {r["uri"]: r for r in RESOURCES}
+
+
 def _public_tool(t: dict) -> dict:
     return {"name": t["name"], "description": t["description"], "inputSchema": t["schema"]}
+
+
+def _public_resource(r: dict) -> dict:
+    return {"uri": r["uri"], "name": r["name"], "description": r["description"],
+            "mimeType": "application/json"}
+
+
+async def _read_resource(res: dict, pat):
+    if not pat:
+        raise _ToolAuthError("no API token — send Authorization: Bearer sr_...")
+    try:
+        async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=30) as client:
+            resp = await client.get(res["path"], headers={"Authorization": f"Bearer {pat}"})
+    except httpx.HTTPError as exc:
+        raise _ToolAuthError(f"gateway unreachable: {exc}")
+    if resp.status_code >= 400:
+        raise _ToolAuthError(f"gateway {resp.status_code}: {resp.text[:200]}")
+    return {"contents": [{"uri": res["uri"], "mimeType": "application/json", "text": resp.text}]}
+
+
+class _ToolAuthError(Exception):
+    pass
 
 
 def _result(req_id, result):
@@ -131,13 +177,25 @@ async def handle(msg: dict, pat):
     req_id = msg.get("id")
     if method == "initialize":
         return _result(req_id, {"protocolVersion": PROTOCOL_VERSION,
-                                "capabilities": {"tools": {}}, "serverInfo": SERVER_INFO})
+                                "capabilities": {"tools": {}, "resources": {}},
+                                "serverInfo": SERVER_INFO})
     if method in ("notifications/initialized", "notifications/cancelled"):
         return None
     if method == "ping":
         return _result(req_id, {})
     if method == "tools/list":
         return _result(req_id, {"tools": [_public_tool(t) for t in TOOLS]})
+    if method == "resources/list":
+        return _result(req_id, {"resources": [_public_resource(r) for r in RESOURCES]})
+    if method == "resources/read":
+        uri = (msg.get("params") or {}).get("uri")
+        res = _RESOURCES_BY_URI.get(uri)
+        if res is None:
+            return _error(req_id, -32602, f"unknown resource: {uri}")
+        try:
+            return _result(req_id, await _read_resource(res, pat))
+        except _ToolAuthError as exc:
+            return _error(req_id, -32002, str(exc))
     if method == "tools/call":
         params = msg.get("params") or {}
         tool = _TOOLS_BY_NAME.get(params.get("name"))
