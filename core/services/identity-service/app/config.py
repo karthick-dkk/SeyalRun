@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     # Zabbix module is actually deployed; left blank, /auth/zbx-sso-init 503s.
     zabbix_module_secret: str = ""
 
+    # JumpServer delegated identity (optional module). Blank = disabled — the
+    # jumpserver IdP plugin returns None and login falls through to other providers.
+    jumpserver_api_url: str = ""
+    # Trust root for a self-signed JumpServer. TLS verification is always ON
+    # (Phase 0 fixed the verify=False gaps); this only supplies the CA to trust,
+    # it is not a way to turn verification off.
+    jumpserver_ca_bundle: str = ""
+
     # Used only to resolve a Zabbix hostid -> SeyalRun host_id for a kiosk login
     # (see auth.py::_resolve_kiosk_host); never used for anything user-facing.
     inventory_service_url: str = "http://inventory-service:8102"

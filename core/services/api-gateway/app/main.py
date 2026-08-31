@@ -108,7 +108,7 @@ app.add_middleware(
 # module's own entry point (HMAC-authenticated inside identity-service, not by a
 # SeyalRun session) — it must be reachable before any SeyalRun login exists.
 _PUBLIC_PATHS = {
-    "auth/login", "auth/sso-exchange", "auth/zbx-sso-init",
+    "auth/login", "auth/sso-exchange", "auth/zbx-sso-init", "auth/jumpserver-login",
     # Email-based authorization approval — the click itself carries no session;
     # the single-use token in the query string is the only credential (see
     # identity-service/app/api/authorizations.py::authorization_email_action).

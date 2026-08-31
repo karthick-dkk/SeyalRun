@@ -20,6 +20,7 @@ from ..deps import require_service_token
 from ..mailer import MailError, send_mail
 from ..models import ZARole, ZAUser
 from ..plugins.idp.local import LocalIdentityProvider
+from ..plugins.idp.jumpserver import JumpServerProvider
 from ..plugins.idp.zabbix_sso import ZabbixSSOProvider
 from ..redis_client import redis_client
 from ..sessions import create_session, elevate
@@ -27,6 +28,7 @@ from .._pwpolicy import validate_new_password
 from ..schemas import (
     ChangePasswordRequest,
     LoginRequest,
+    JumpServerLoginRequest,
     SSOExchangeRequest,
     SSOInitRequest,
     SSOInitResponse,
@@ -39,6 +41,7 @@ router = APIRouter(prefix="/auth", tags=["auth"], dependencies=[Depends(require_
 
 _local = LocalIdentityProvider()
 _zabbix_sso = ZabbixSSOProvider()
+_jumpserver = JumpServerProvider()
 
 # Highest-privilege first — used to pick the JWT's primary `role`.
 _ROLE_PRECEDENCE = ["superadmin", "admin", "automation", "support", "audit", "guest", "user"]
@@ -431,6 +434,48 @@ async def sso_exchange(payload: SSOExchangeRequest, request: Request, session: A
     await log_action(
         session, user_id=user.id, username=user.username,
         action="login_sso" if not (mfa_pending or mfa_setup_required) else "login_sso_mfa_pending",
+        resource_type="session", ip_address=ip, result="success",
+    )
+
+    return TokenResponse(
+        access_token=token, user=await _user_out(session, user),
+        mfa_required=mfa_pending, mfa_method=user.mfa_method if mfa_pending else None,
+        mfa_setup_required=mfa_setup_required, needs_setup_wizard=needs_setup_wizard,
+    )
+
+
+@router.post("/jumpserver-login", response_model=TokenResponse)
+async def jumpserver_login(payload: JumpServerLoginRequest, request: Request, session: AsyncSession = Depends(get_session)):
+    """Delegated login for a deployment that fronts JumpServer: exchange a valid
+    JumpServer access token for a SeyalRun session. Disabled (401) unless
+    jumpserver_api_url is configured. Mirrors /sso-exchange's session mint plus the
+    IP and MFA gates, so this parallel credential path carries the same protections
+    (a valid external token must not bypass a user's IP allowlist or enrolled MFA)."""
+    identity = await _jumpserver.authenticate(session=session, jms_token=payload.jms_token)
+    if identity is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="invalid JumpServer token or JumpServer login not configured")
+
+    user = (await session.execute(select(ZAUser).where(ZAUser.id == identity["id"]))).scalar_one()
+
+    from ..grouppolicy import ip_login_allowed
+
+    ip = _client_ip(request)
+    if not await ip_login_allowed(session, user, ip):
+        await log_action(
+            session, user_id=user.id, username=user.username, action="login_denied_ip",
+            resource_type="session", ip_address=ip, result="failure",
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="login not permitted from this IP")
+
+    settings = get_settings()
+    roles, primary = await _resolve_roles(session, user.id, user.role_id)
+    token, mfa_pending, mfa_setup_required, needs_setup_wizard = await _mint_session(
+        session, user, roles, primary, settings, pwc=user.must_change_password)
+
+    await log_action(
+        session, user_id=user.id, username=user.username,
+        action="login_jumpserver" if not (mfa_pending or mfa_setup_required) else "login_jumpserver_mfa_pending",
         resource_type="session", ip_address=ip, result="success",
     )
 

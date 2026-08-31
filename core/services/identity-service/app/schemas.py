@@ -28,6 +28,10 @@ class SSOExchangeRequest(BaseModel):
     sso_code: str
 
 
+class JumpServerLoginRequest(BaseModel):
+    jms_token: str
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
