@@ -22,15 +22,22 @@ SERVER_INFO = {"name": "seyalrun", "version": "2.0-beta"}
 
 
 def _tool(name, scope, method, path, description, properties=None, required=None, query=None):
+    # scope=None marks an always-available tool (no scope gate — e.g. whoami, which
+    # any authenticated token may call to introspect itself).
+    tail = "always available" if scope is None else f"requires scope: {scope}"
     return {
         "name": name, "scope": scope, "method": method, "path": path,
         "query": set(query or []),
         "schema": {"type": "object", "properties": properties or {}, "required": required or []},
-        "description": f"{description}  (requires scope: {scope})",
+        "description": f"{description}  ({tail})",
     }
 
 
 TOOLS = [
+    _tool("whoami", None, "GET", "/api/v1/auth/session",
+          "Who am I: this token's identity, role, and the exact scopes it holds. Call "
+          "this first to learn which other tools you are allowed to use — each tool "
+          "lists the scope it needs."),
     _tool("list_hosts", "inventory:read", "GET", "/api/v1/hosts",
           "List the hosts SeyalRun can broker sessions to."),
     _tool("get_host", "inventory:read", "GET", "/api/v1/hosts/{host_id}",

@@ -194,6 +194,10 @@ async def auth_session(request: Request):
         "username": identity.get("username", ""),
         "role_name": identity.get("role", "user"),
         "roles": identity.get("roles") or [identity.get("role", "user")],
+        # An agent/PAT caller can introspect its own effective scopes here (the MCP
+        # `whoami` tool relays this) — is_pat true means scope enforcement applies.
+        "scopes": identity.get("scopes") or [],
+        "is_pat": bool(identity.get("is_pat")),
         "must_change_password": bool(identity.get("pwc")),
         # Surfaced for symmetry with must_change_password — a tab that reloads
         # mid-gate (pending MFA verify, or group-forced enrollment) can at least

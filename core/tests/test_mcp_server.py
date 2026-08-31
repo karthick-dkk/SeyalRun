@@ -32,10 +32,19 @@ def _run(msg, pat=None):
 
 def test_every_tool_requires_an_agent_grantable_scope():
     for t in mcp.TOOLS:
+        if t["scope"] is None:
+            continue  # always-available introspection tool (whoami)
         assert t["scope"] in AGENT_GRANTABLE, (
             f"tool {t['name']} needs {t['scope']}, which is not agent-grantable — "
             "the MCP surface must never expose a capability outside the catalog"
         )
+
+
+def test_whoami_is_always_available_and_maps_to_auth_session():
+    w = mcp._TOOLS_BY_NAME["whoami"]
+    assert w["scope"] is None                    # no scope gate
+    assert w["path"] == "/api/v1/auth/session"    # relays the gateway's own identity
+    assert "always available" in w["description"]
 
 
 # ── MCP protocol basics ──────────────────────────────────────────────────────
@@ -51,10 +60,10 @@ def test_tools_list_returns_declared_tools_with_schema():
     r = _run({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     tools = r["result"]["tools"]
     names = {t["name"] for t in tools}
-    assert {"list_hosts", "run_automation", "query_audit", "create_host", "ack_notification"} <= names
+    assert {"whoami", "list_hosts", "run_automation", "query_audit", "create_host", "ack_notification"} <= names
     for t in tools:
         assert t["inputSchema"]["type"] == "object"
-        assert "requires scope:" in t["description"]
+        assert ("requires scope:" in t["description"]) or ("always available" in t["description"])
 
 
 def test_notifications_are_not_answered():
