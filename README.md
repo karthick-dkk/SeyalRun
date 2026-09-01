@@ -199,6 +199,34 @@ Deployments carrying rows written before v2.0.0's audit fix cannot verify and
 must be re-baselined (same script, without `--check`) before their log is used
 as evidence.
 
+## AI agents & MCP
+
+SeyalRun is consumable by AI agents and MCP clients, under the *same* permission
+and audit boundary as a human operator.
+
+- **Fine-grained API tokens.** A Personal Access Token (Admin → Security) carries
+  per-domain scopes — `inventory:read`, `automation:run`, `sessions:open`,
+  `notifications:ack`, etc. The api-gateway enforces `scopes ∩ role ∩ authorization`
+  on every request, so a token can only ever do a subset of what the human who issued
+  it can. `credentials:*` and `admin:*` are never grantable, and an empty-scope token
+  is denied everything — a token can never read a secret or administer access.
+
+- **MCP server.** The `mcp-server` service exposes SeyalRun as Model Context Protocol
+  tools + resources over `POST /mcp` (streamable-HTTP). An agent authenticates with its
+  scoped PAT; every tool/resource forwards that token to the api-gateway, so there is
+  one security path and every agent action lands in the tamper-evident audit chain.
+  Tools cover reads (hosts, zones, automation, audit, metrics, notifications), the
+  agent's own capabilities (`whoami`), and pre-approved actions (`run_automation`,
+  `create_host`, `ack_notification`). Interactive shell is intentionally **not** an
+  agent tool — the safe "act on a host" primitive is an allowlisted, recorded playbook.
+
+  → **[core/services/mcp-server/README.md](core/services/mcp-server/README.md)** for the
+  endpoint, scopes, tool/resource catalog, and examples.
+
+- **Delegated identity (optional).** With `jumpserver_api_url` set, a deployment that
+  fronts JumpServer can accept its users via `/auth/jumpserver-login`, and Zabbix users
+  via the existing SSO — both auto-provisioned onto SeyalRun's RBAC roles.
+
 ## Compliance posture
 
 `docs/compliance/` ships with the code, because evidence is only credible
