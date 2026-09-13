@@ -94,6 +94,21 @@ server {
         proxy_read_timeout 60s;
     }
 
+    # RFC 9728 protected-resource metadata. The 401 from /mcp points a client here
+    # to discover where tokens come from, so it must reach mcp-server rather than
+    # falling through to the SPA location below and answering an MCP client HTML.
+    location = /.well-known/oauth-protected-resource {
+        set $upstream_mcp_meta mcp-server:8110;
+        proxy_ssl_name     mcp-server;
+        proxy_pass         ${INTERNAL_PROTO}://$upstream_mcp_meta;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+        proxy_read_timeout 60s;
+    }
+
     location /webhook/ {
         set $upstream_zint zabbix-integration-service:8106;
         proxy_ssl_name     zabbix-integration-service;
