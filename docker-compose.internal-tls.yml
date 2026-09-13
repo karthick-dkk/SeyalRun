@@ -146,6 +146,19 @@ services:
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8107/health')"]
 
+  mcp-server:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      GATEWAY_URL: https://api-gateway:8000
+    volumes:
+      - ${INTERNAL_TLS_DIR}/mcp-server.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/mcp-server-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8110/health')"]
+
   edge-proxy:
     environment:
       INTERNAL_PROTO: https

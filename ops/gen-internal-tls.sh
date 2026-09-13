@@ -31,6 +31,7 @@ SERVICES=(
   automation-service
   zabbix-integration-service
   metrics-service
+  mcp-server
 )
 
 mkdir -p "$OUT"

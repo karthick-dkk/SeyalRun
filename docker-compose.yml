@@ -300,6 +300,28 @@ services:
       timeout: 5s
       retries: 5
 
+  # MCP server for AI agents. Present in every deployment mode so the /mcp route
+  # edge-proxy already publishes has an upstream here too, not only in prod.
+  mcp-server:
+    build:
+      context: ./core
+      dockerfile: services/mcp-server/Dockerfile
+    restart: unless-stopped
+    networks: [seyalrun_net]
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      GATEWAY_URL: "http://api-gateway:8000"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8110/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
 networks:
   seyalrun_net:
     driver: bridge
