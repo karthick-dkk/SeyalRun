@@ -85,6 +85,51 @@ log is presented as evidence.
 rather than a verification.** Any future claim that the chain verifies must cite
 `verify_chain()` output, never a row count.
 
+## R-12 — salt-ssh writes credential passwords to disk for the duration of a run
+
+**Severity: Medium.** PCI DSS Req 3.
+
+`core/services/automation-service/app/plugins/executors/salt_ssh.py` generates a
+salt-ssh roster per job run. A password-type credential is written into that
+roster as `passwd:` in cleartext, because salt-ssh has no encrypted-roster
+mechanism — there is no equivalent of `ansible-vault`, which is what closed this
+same gap on the Ansible path (see `ansible_playbook.py::build_inventory`, where
+passwords go into a vault-encrypted `host_vars` file and SSH keys never leave a
+per-run ssh-agent).
+
+So the two automation engines do NOT have the same credential-at-rest posture,
+and that asymmetry is deliberate rather than an oversight:
+
+- SSH-key credentials have full parity — the key is loaded into the same per-run
+  ssh-agent and the roster only says `priv: agent-forwarding`. No key material
+  reaches the disk.
+- Password credentials do not. The value is in the roster file.
+
+**Compensating controls actually in place:**
+
+- The roster is created with `0o600` inside a `tempfile.TemporaryDirectory()`
+  that is removed when the run ends, successful or not.
+- Every password is registered with the run's masking scope *before* the roster
+  is written, so it cannot surface in streamed output or the persisted job log
+  even if salt echoes the roster back in an error.
+- automation-service runs as a non-root user; the file is unreadable to other
+  users in the container, and the container's filesystem is not shared.
+
+**Residual risk.** An attacker with code execution *inside automation-service*,
+or with host-level access to the container's filesystem, during the seconds a job
+is running, can read a target host's password. That is a narrower window than a
+persistent roster file would be, but it is strictly worse than the Ansible path.
+
+**Accepted** by the product owner on 2026-09-20, in preference to restricting
+salt-ssh to key-based credentials only (the alternative considered, which would
+have kept the no-plaintext-on-disk property but excluded password-only hosts from
+salt-ssh entirely).
+
+**Remediation if the residual becomes unacceptable:** restrict `salt_ssh_*`
+templates to SSH-key credentials and refuse password credentials at `validate()`.
+
+---
+
 ## R-11 — Authorizations grant sftp/upload/download, which nothing enforces
 
 **Severity: High.** PCI DSS Req 7.1 / SOC 2 CC6.
