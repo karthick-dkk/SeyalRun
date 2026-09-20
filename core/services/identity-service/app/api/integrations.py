@@ -37,7 +37,6 @@ STATE_KEY = "integrations"
 
 # config blocks this API accepts, and which of their fields are secret
 _CONFIG_KINDS: dict[str, tuple[str, ...]] = {
-    "salt": ("eauth_password",),
     "galaxy": ("api_key",),
 }
 
