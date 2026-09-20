@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..audit import log_action
+from .integrations import get_integration_state
 from ..config import get_settings
 from ..database import get_session
 from ..deps import require_service_token
@@ -399,8 +400,31 @@ async def zbx_sso_init(request: Request):
     return SSOInitResponse(sso_code=code)
 
 
+async def _require_idp_enabled(session: AsyncSession, name: str) -> None:
+    """Refuse a delegated-login path whose IdP plugin an admin switched off.
+
+    Read straight from the DB (this is identity-service's own table) rather than
+    cached, because the blast radius of a stale answer here is a login that should
+    have been refused — and these paths run once per login, not per request, so
+    there is no hot path to protect.
+
+    `local` is intentionally not checkable: disabling the local provider would
+    lock every admin out of the console with no way back in, which is not a
+    configuration change but a self-inflicted outage.
+    """
+    if name == "local":
+        return
+    state = await get_integration_state(session)
+    if name in ((state.get("disabled") or {}).get("idp") or []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"identity provider '{name}' is disabled",
+        )
+
+
 @router.post("/sso-exchange", response_model=TokenResponse)
 async def sso_exchange(payload: SSOExchangeRequest, request: Request, session: AsyncSession = Depends(get_session)):
+    await _require_idp_enabled(session, "zabbix_sso")
     identity = await _zabbix_sso.authenticate(session=session, sso_code=payload.sso_code)
     if identity is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired sso_code")
@@ -451,6 +475,7 @@ async def jumpserver_login(payload: JumpServerLoginRequest, request: Request, se
     jumpserver_api_url is configured. Mirrors /sso-exchange's session mint plus the
     IP and MFA gates, so this parallel credential path carries the same protections
     (a valid external token must not bypass a user's IP allowlist or enrolled MFA)."""
+    await _require_idp_enabled(session, "jumpserver")
     identity = await _jumpserver.authenticate(session=session, jms_token=payload.jms_token)
     if identity is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,

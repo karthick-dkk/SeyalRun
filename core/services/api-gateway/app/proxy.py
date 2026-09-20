@@ -52,6 +52,7 @@ SERVICE_ROUTES: dict[str, tuple[str, str]] = {
     "api-tokens": ("identity_service_url", "identity-service"),
     "audit": ("identity_service_url", "identity-service"),
     "settings": ("identity_service_url", "identity-service"),
+    "integrations": ("identity_service_url", "identity-service"),
     "hosts": ("inventory_service_url", "inventory-service"),
     "host-groups": ("inventory_service_url", "inventory-service"),
     "credentials": ("inventory_service_url", "inventory-service"),

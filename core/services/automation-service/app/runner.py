@@ -14,6 +14,7 @@ import redis.asyncio as aioredis
 from libs.servicetoken import mint
 
 from . import audit
+from . import integration_state
 from .config import get_settings
 from . import _masking
 from .database import SessionLocal
@@ -131,6 +132,31 @@ async def execute(
     """
     if settings is None:
         settings = get_settings()
+
+    # Disabled-executor gate. Enforced HERE rather than at each caller because
+    # every dispatch path — ad-hoc run, schedule tick, re-run, approval release,
+    # Zabbix trigger — funnels through this function, and a check added to five
+    # call sites is a check a sixth call site will one day forget. Refused as a
+    # failed run rather than a silent no-op, so an admin who turned an executor
+    # off still sees that something tried to use it.
+    executor_name = getattr(executor, "name", "") or ""
+    if executor_name and await integration_state.executor_disabled(executor_name):
+        reason = f"executor '{executor_name}' is disabled in Settings → Integration"
+        async with SessionLocal() as session:
+            run = await session.get(ZAJobRun, run_id)
+            if run is not None:
+                run.status = "failed"
+                run.finished_at = datetime.now(timezone.utc)
+                run.output_lines = list(run.output_lines or []) + [f"[refused] {reason}"]
+                await session.commit()
+        await audit.log_action(
+            user_id=_actor_id(getattr(request, "triggered_by", None)),
+            action="job.refused", resource_type="job_run", resource_id=run_id,
+            details={"executor": executor_name, "template": template_name, "reason": "executor_disabled"},
+            result="failure",
+        )
+        logger.warning("refused job run %s: %s", run_id, reason)
+        return
 
     effective_timeout = settings.job_exec_timeout_seconds
     if timeout_seconds:

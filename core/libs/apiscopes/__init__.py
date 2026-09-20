@@ -65,6 +65,7 @@ _SEGMENT_SCOPES: dict[str, tuple[str, str]] = {
     "login-acls": ("admin:read", "admin:write"),
     "api-tokens": ("admin:read", "admin:write"),
     "settings": ("admin:read", "admin:write"),
+    "integrations": ("admin:read", "admin:write"),
     "log-backend": ("admin:read", "admin:write"),
 }
 

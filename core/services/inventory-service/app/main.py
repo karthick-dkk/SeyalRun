@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from sqlalchemy import text
 
 from libs.obsmetrics import ServiceMetrics
 from libs.securelog import configure_logging
-from libs.pluginbase import discover_plugins, CredentialKind
+from libs.pluginbase import describe_plugins, discover_plugins, CredentialKind
 
 from .api import credentials, hosts, log_backend, rotation, zones
 from .config import get_settings
+from .deps import require_service_token
 from .database import engine
 
 settings = get_settings()
@@ -53,3 +54,17 @@ async def health():
 @app.get("/metrics")
 async def metrics():
     return _metrics.snapshot()
+
+
+# ── Integration page: what plugins did this service actually load? ───────────
+# Reports the live discovery registry rather than a hand-kept list, so a plugin
+# that failed to import cannot show up here as present. api-gateway fans this
+# out across services for GET /api/v1/integrations/plugins.
+@app.get("/api/v1/internal/plugins", dependencies=[Depends(require_service_token)])
+async def internal_plugins():
+    out = []
+    out += describe_plugins("credentials", getattr(app.state, "credential_kinds", {}) or {}, "inventory-service")
+    from .vault import _key_providers
+    out += describe_plugins("kms", _key_providers(), "inventory-service")
+
+    return {"service": "inventory-service", "plugins": out}

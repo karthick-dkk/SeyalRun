@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from sqlalchemy import text
 
 from libs.obsmetrics import ServiceMetrics
 from libs.securelog import configure_logging
-from libs.pluginbase import discover_plugins, IdentityProvider
+from libs.pluginbase import describe_plugins, discover_plugins, IdentityProvider
 
-from .api import access_review, audit, auth, authorizations, command_filters, internal, login_acls, mail_settings, settings as settings_api, tokens, users
+from .api import access_review, audit, auth, authorizations, command_filters, integrations, internal, login_acls, mail_settings, settings as settings_api, tokens, users
 from .config import get_settings
+from .deps import require_service_token
 from .database import engine
 from .redis_client import redis_client
 
@@ -38,6 +39,8 @@ app.include_router(settings_api.router, prefix="/api/v1")
 app.include_router(mail_settings.router, prefix="/api/v1")
 app.include_router(internal.router, prefix="/api/v1")
 app.include_router(access_review.router, prefix="/api/v1")
+app.include_router(integrations.router, prefix="/api/v1")
+app.include_router(integrations.internal_router, prefix="/api/v1")
 
 _metrics = ServiceMetrics()
 app.middleware("http")(_metrics.middleware)
@@ -63,3 +66,15 @@ async def health():
 @app.get("/metrics")
 async def metrics():
     return _metrics.snapshot()
+
+
+# ── Integration page: what plugins did this service actually load? ───────────
+# Reports the live discovery registry rather than a hand-kept list, so a plugin
+# that failed to import cannot show up here as present. api-gateway fans this
+# out across services for GET /api/v1/integrations/plugins.
+@app.get("/api/v1/internal/plugins", dependencies=[Depends(require_service_token)])
+async def internal_plugins():
+    out = []
+    out += describe_plugins("idp", getattr(app.state, "idp_plugins", {}) or {}, "identity-service")
+
+    return {"service": "identity-service", "plugins": out}

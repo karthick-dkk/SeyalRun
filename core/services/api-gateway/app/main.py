@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from libs.apiscopes import scope_allows
 from libs.obsmetrics import ServiceMetrics
 from libs.securelog import configure_logging
+from libs.pluginbase import AXES
 from libs.servicetoken import mint
 
 from . import http as _http
@@ -326,6 +327,81 @@ async def integration_info(request: Request):
         "reachable": reachable, "version": version,
         "token_configured": bool(api_token), "token_valid": token_valid,
     }
+
+
+# Services that own a plugin axis. Declared here rather than derived from
+# SERVICE_ROUTES because that map is keyed by URL segment, and several segments
+# share one service — fanning out per segment would query the same service
+# repeatedly and report its plugins that many times.
+_PLUGIN_SERVICES: tuple[tuple[str, str], ...] = (
+    ("identity_service_url", "identity-service"),
+    ("inventory_service_url", "inventory-service"),
+    ("terminal_service_url", "terminal-service"),
+    ("automation_service_url", "automation-service"),
+    ("zabbix_integration_service_url", "zabbix-integration-service"),
+)
+
+
+@app.get("/api/v1/integrations/plugins")
+async def integrations_plugins(request: Request):
+    """Every plugin every service actually loaded, for the Integration page.
+
+    Declared before the catch-all proxy so it wins over the routed `integrations`
+    segment; the rest of /api/v1/integrations/* still proxies to identity-service.
+
+    Superadmin only — same tier as the rest of platform configuration (the
+    `integrations` segment is in rbaccore's _SYSTEM group). A service that is down
+    is reported as unreachable rather than silently contributing nothing, because
+    "no plugins" and "could not ask" must not look the same on an admin page.
+    """
+    try:
+        identity = await resolve_identity(request.headers.get("authorization"))
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    roles = identity.get("roles") or [identity.get("role", "user")]
+    if not rbac.is_authorized(roles, "GET", "integrations"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden: superadmin only")
+
+    plugins: list[dict] = []
+    unreachable: list[str] = []
+    for attr, audience in _PLUGIN_SERVICES:
+        base = getattr(settings, attr, "")
+        if not base:
+            unreachable.append(audience)
+            continue
+        try:
+            tok = mint("api-gateway", audience, settings.service_jwt_secret)
+            r = await _http.client.get(
+                f"{base}/api/v1/internal/plugins",
+                headers={"X-Service-Token": tok}, timeout=4.0,
+            )
+            if r.status_code != 200:
+                unreachable.append(audience)
+                continue
+            plugins.extend((r.json() or {}).get("plugins") or [])
+        except Exception:  # noqa: BLE001 - one dead service must not blank the page
+            unreachable.append(audience)
+
+    state = {"disabled": {}, "config": {}}
+    try:
+        tok = mint("api-gateway", "identity-service", settings.service_jwt_secret)
+        r = await _http.client.get(
+            f"{settings.identity_service_url}/api/v1/internal/integration-state",
+            headers={"X-Service-Token": tok}, timeout=4.0,
+        )
+        if r.status_code == 200:
+            body = r.json() or {}
+            state["disabled"] = body.get("disabled") or {}
+    except Exception:  # noqa: BLE001 - unknown state means "nothing disabled", the
+        # same as a fresh deployment; the plugin list is still worth showing.
+        pass
+
+    for p in plugins:
+        p["enabled"] = p["name"] not in (state["disabled"].get(p["axis"]) or [])
+
+    return {"plugins": plugins, "axes": {k: {"label": v[0], "togglable": v[1], "locked_reason": v[2]}
+                                         for k, v in AXES.items()},
+            "unreachable": unreachable}
 
 
 @app.get("/api/v1/admin/attest")

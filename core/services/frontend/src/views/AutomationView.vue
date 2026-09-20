@@ -1186,8 +1186,21 @@ function openCreate() {
   Object.assign(editDlg.form, _blankPlaybookForm()); editDlg.error = ''; editDlg.visible = true
   _otherDefaultParams = {}; confirmTesting.value = false; codeFullscreen.value = false
 }
+// Action types this dialog can actually express. Anything else (salt_master, the
+// built-in account-lifecycle types) is refused rather than opened: the form below
+// coerces action_type to ansible_playbook/bash_script, so opening one of those and
+// saving would silently rewrite the template into a different kind of job.
+const EDITABLE_ACTION_TYPES = ['ansible_playbook', 'bash_script']
+
 function openEdit(t: any) {
   if (t.action_type === 'chain') { openEditChain(t); return }
+  if (!EDITABLE_ACTION_TYPES.includes(t.action_type)) {
+    window.alert(
+      `"${t.name}" is a ${t.action_type} template. This editor only edits Ansible and Bash ` +
+      `templates — editing it here would convert it. Use the API to change it.`,
+    )
+    return
+  }
   editDlg.isEdit = true; editDlg.editingId = t.id
   const fields = (t.survey_schema?.fields || []) as any[]
   Object.assign(editDlg.form, {

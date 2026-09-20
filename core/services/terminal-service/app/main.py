@@ -5,14 +5,15 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, WebSocket
+from fastapi import Depends, FastAPI, WebSocket
 from sqlalchemy import text
 
 from libs.obsmetrics import ServiceMetrics
-from libs.pluginbase import CommandFilterMatcher, discover_plugins
+from libs.pluginbase import CommandFilterMatcher, SessionBroker, describe_plugins, discover_plugins
 from libs.securelog import configure_logging
 
 from .config import get_settings
+from .deps import require_service_token
 from .database import engine
 from .api.sessions import router as sessions_router
 from .api.internal import router as internal_router
@@ -67,6 +68,10 @@ async def lifespan(app: FastAPI):
         "app.plugins.command_filters", CommandFilterMatcher
     )
     logger.info("command filter matchers loaded", extra={"matchers": list(app.state.filter_matchers.keys())})
+    # Empty in a default deployment: no broker plugin means terminal-service
+    # connects natively. Discovered anyway so the Integration page can show the
+    # axis exists rather than silently omitting an extension point.
+    app.state.session_brokers: dict[str, Any] = discover_plugins("app.plugins.brokers", SessionBroker)
     reaper = asyncio.create_task(_reap_pending_loop())
     yield
     reaper.cancel()
@@ -114,3 +119,16 @@ async def health():
 @app.get("/metrics")
 async def metrics():
     return _metrics.snapshot()
+
+
+# ── Integration page: what plugins did this service actually load? ───────────
+# Reports the live discovery registry rather than a hand-kept list, so a plugin
+# that failed to import cannot show up here as present. api-gateway fans this
+# out across services for GET /api/v1/integrations/plugins.
+@app.get("/api/v1/internal/plugins", dependencies=[Depends(require_service_token)])
+async def internal_plugins():
+    out = []
+    out += describe_plugins("command_filters", getattr(app.state, "filter_matchers", {}) or {}, "terminal-service")
+    out += describe_plugins("brokers", getattr(app.state, "session_brokers", {}) or {}, "terminal-service")
+
+    return {"service": "terminal-service", "plugins": out}

@@ -47,7 +47,7 @@ _INVENTORY = ["hosts", "host-groups", "credentials", "credential-templates"]
 _ZONES = ["zones"]
 _AUTOMATION = ["projects", "job-templates", "schedules", "job-runs",
                "secret-management-jobs", "trigger-bindings", "triggers"]
-_SYSTEM = ["log-backend", "settings", "command-filters",
+_SYSTEM = ["log-backend", "settings", "integrations", "command-filters",
            "command-groups", "login-acls", "housekeeping"]  # excluded from admin + support
 # A Personal Access Token is the caller's OWN credential: every handler in
 # identity-service/app/api/tokens.py scopes by current_user_id, so a token can
