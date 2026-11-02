@@ -9,7 +9,7 @@
 # e.g.:
 #
 #   SEYALRUN_HOST=seyalrun.example.com \
-#   SEYALRUN_VERSION=2.0.0 \
+#   SEYALRUN_VERSION=2.0.1 \
 #   SEYALRUN_HTTP_PORT=8081 SEYALRUN_HTTPS_PORT=8443 \   # if 8080/8443 are taken
 #   FRAME_ANCESTORS=https://zabbix.example.com \
 #     curl -fsSL https://raw.githubusercontent.com/karthick-dkk/SeyalRun/main/install.sh | bash

@@ -26,10 +26,10 @@ system that has to answer "what was running on this date", set an immutable
 version instead:
 
 ```sh
-SEYALRUN_VERSION=2.0.0 curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
+SEYALRUN_VERSION=2.0.1 curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
 ```
 
-Current release: **v2.0.0**. Images are published for `linux/amd64` and
+Current release: **v2.0.1**. Images are published for `linux/amd64` and
 `linux/arm64`.
 <img width="2842" height="1622" alt="image" src="https://github.com/user-attachments/assets/1ca5e5cf-fad5-4964-8224-0ac56c62bff8" />
 
