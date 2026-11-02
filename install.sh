@@ -347,10 +347,14 @@ fi
 
 # ── Step 7: migrations + seed ─────────────────────────────────────────────────
 info "[7/8] Running migrations..."
+# `compose run` attaches stdin, and under `curl ... | bash` stdin IS the rest of
+# this script: the container swallows it, bash hits EOF and exits 0 after the
+# migrations, silently skipping the seed and step 8. Every `compose run` here
+# reads from /dev/null for that reason.
 run_migration() {
   local svc="$1"
   for i in $(seq 1 10); do
-    if "${COMPOSE[@]}" run --rm --no-deps "$svc" python -m alembic upgrade head 2>&1 | tail -2; then
+    if "${COMPOSE[@]}" run --rm --no-deps -T "$svc" python -m alembic upgrade head </dev/null 2>&1 | tail -2; then
       return 0
     fi
     echo "    ${svc} migration attempt ${i} failed — retrying in 3s"
@@ -366,7 +370,7 @@ done
 ok "all migrations applied"
 
 info "Seeding superadmin account..."
-"${COMPOSE[@]}" run --rm --no-deps identity-service python -m app.seed
+"${COMPOSE[@]}" run --rm --no-deps -T identity-service python -m app.seed </dev/null
 ok "superadmin ready"
 
 # ── Step 8: bring the full stack up ───────────────────────────────────────────
