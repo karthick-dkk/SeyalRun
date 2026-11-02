@@ -32,6 +32,7 @@ jobs:
           - frontend
           - identity-service
           - inventory-service
+          - mcp-server
           - metrics-service
           - recording-service
           - terminal-service
