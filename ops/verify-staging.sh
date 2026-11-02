@@ -126,7 +126,7 @@ fi
 if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
   login_resp=$(curl -sk --max-time 10 -X POST "${EDGE_HTTPS}/api/v1/auth/login" \
     -H 'Content-Type: application/json' \
-    -d "{\"username\":\"admin\",\"password\":\"${SEYALRUN_ADMIN_PASSWORD}\"}")
+    -d "{\"username\":\"Admin\",\"password\":\"${SEYALRUN_ADMIN_PASSWORD}\"}")
   TOKEN=$(echo "$login_resp" | json_get access_token)
   if [[ -n "$TOKEN" ]]; then
     ok "superadmin login returns a JWT"
@@ -178,7 +178,7 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
     fi
 
     # Login ACL CRUD — resolve the admin user id first
-    ADMIN_USER_ID=$(curl -sk --max-time 10 "${EDGE_HTTPS}/api/v1/users" "${AUTH[@]}" | python3 -c "import sys,json; users=json.load(sys.stdin); print(next((u['id'] for u in users if u.get('username')=='admin'),''))" 2>/dev/null)
+    ADMIN_USER_ID=$(curl -sk --max-time 10 "${EDGE_HTTPS}/api/v1/users" "${AUTH[@]}" | python3 -c "import sys,json; users=json.load(sys.stdin); print(next((u['id'] for u in users if u.get('username')=='Admin'),''))" 2>/dev/null)
     la_resp=$(curl -sk --max-time 10 -X POST "${EDGE_HTTPS}/api/v1/login-acls" "${AUTH[@]}" \
       -H 'Content-Type: application/json' \
       -d "{\"name\":\"verify-staging-acl\",\"action\":\"allow\",\"user_id\":\"${ADMIN_USER_ID}\",\"days_of_week\":[0,1,2,3,4,5,6]}")
@@ -280,7 +280,9 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
     WEBHOOK_SECRET=$(ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" \
       "grep '^ZABBIX_WEBHOOK_HMAC_SECRET=' ${REMOTE_DIR}/.env | cut -d= -f2" 2>/dev/null)
     if [[ -n "$WEBHOOK_SECRET" ]]; then
-      WH_PAYLOAD='{"triggerid":"0","eventid":"verify-0","hostname":"none","severity":0,"value":0}'
+      # Unique per run: the receiver rejects a repeated signature as a replay, so a
+      # fixed payload only passes on the first verify within the replay window.
+      WH_PAYLOAD="{\"triggerid\":\"0\",\"eventid\":\"verify-$(date +%s)-$$\",\"hostname\":\"none\",\"severity\":0,\"value\":0}"
       WH_SIG=$(printf '%s' "$WH_PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $2}')
       wh_ok=$(curl -sk -o/dev/null -w '%{http_code}' --max-time 10 \
         -X POST "${EDGE_HTTPS}/webhook/zabbix" \

@@ -68,7 +68,7 @@ async def _alert_stalled_runs(session, now) -> None:
     from datetime import timedelta
 
     from .models import ZAJobRun
-    from .notifications import create_notification
+    from .runner import create_notification
 
     stale_approval = now - timedelta(seconds=STALE_APPROVAL_SECONDS)
     stuck_cutoff = now - timedelta(
