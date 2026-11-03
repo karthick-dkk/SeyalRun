@@ -130,3 +130,9 @@ curl -sk -X POST "$SR/mcp" -H "Authorization: Bearer $TOK" -H 'Content-Type: app
 | `GATEWAY_URL` | `http://api-gateway:8000` | Internal api-gateway base URL |
 
 Runs on port `8110`; the edge-proxy routes `/mcp` to it. Health at `GET /health`.
+
+**MCP is served on 443 only.** The advertised URLs (`resource` in
+`/.well-known/oauth-protected-resource` and the `WWW-Authenticate` pointer) carry
+no port, so agents always connect to `https://<host>/mcp`. Run the edge on 443
+(`SEYALRUN_HTTPS_PORT=443` at install, or `EDGE_HTTPS_PORT=443` in `.env`) on any
+host that agents use; on the default 8443 the UI works, but MCP clients will not.
