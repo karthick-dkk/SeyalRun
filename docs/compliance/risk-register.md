@@ -130,9 +130,86 @@ templates to SSH-key credentials and refuse password credentials at `validate()`
 
 ---
 
-## R-11 — Authorizations grant sftp/upload/download, which nothing enforces
+## R-13 — Legacy `read`/`write` PAT scopes bypass per-domain scoping — PARTIAL
 
-**Severity: High.** PCI DSS Req 7.1 / SOC 2 CC6.
+**Severity: High.** PCI DSS Req 7.2 / SOC 2 CC6.3. Architecture review F-1.
+
+A new token defaulted to `["read"]`, and the coarse `read` scope satisfies every
+GET the owner's role allows — users, audit, credential metadata — which is what
+fine-grained scopes exist to keep out of a token.
+
+**Fixed in 2.0.2:** no default scope (an empty list is refused), and
+`validate_agent_scopes` refuses `read`/`write` at issuance
+(`core/libs/apiscopes`, `identity-service/app/api/tokens.py`).
+`ops/verify-staging.sh` asserts on a live stack that a legacy issue gets 400 and
+that an `inventory:read` token held by an admin gets 403 on `/users`.
+
+**Accepted residual:** tokens already issued with `read`/`write` keep working so
+no integration breaks on upgrade. The token list flags them "legacy — reissue".
+Revoke and reissue them with fine-grained scopes; a later release may stop
+honouring them.
+
+## R-14 — No separation of duties on job approval — CLOSED
+
+**Severity: High.** PCI DSS Req 6.5.1 / SOC 2 CC8.1. Architecture review F-2.
+**Closed in 2.0.2**: `approve_run` refuses the requester (403), matching the
+grant-approval block; `job.approve` is written fail-closed before anything is
+dispatched (503 and no run if the audit write fails) and `job.reject` is audited.
+A requester may still withdraw (reject) their own run. Single-admin deployments
+need a second admin/superadmin for templates that require approval or target
+production-tagged hosts. `core/tests/test_job_attribution.py`.
+
+## R-15 — Redis has no authentication — CLOSED
+
+**Severity: High.** SOC 2 CC6.1. Architecture review F-4.
+Sessions, JIT-elevation flags and lockout counters live in Redis; any container
+on the bridge network could read or forge them. **Closed in 2.0.2**: Redis runs
+with `--requirepass`, compose refuses to start without `REDIS_PASSWORD`, and
+install.sh / `ops/ensure-redis-password.sh` generate it on fresh and upgraded
+installs. `core/tests/test_redis_auth.py` executes both against sample `.env`
+files. TLS to Redis is still only for non-co-located deployments (`rediss://`).
+
+## R-16 — Containers keep default Linux capabilities — CLOSED
+
+**Severity: Medium.** CIS Docker 5.3 / 5.25. Architecture review F-9.
+**Closed in 2.0.2**: every service in `docker-compose.yml` and
+`docker-compose.prod.yml` has `cap_drop: [ALL]` and `no-new-privileges:true`.
+Redis adds back only CHOWN/SETUID/SETGID for its root-to-redis drop.
+`core/tests/test_container_hardening.py`. The upstream Postgres/MySQL containers
+in `docker-compose.db.yml` are out of scope (a production deployment uses a
+managed database).
+
+## R-17 — MCP `ack_notification` called a route that does not exist — CLOSED
+
+**Severity: Low.** Architecture review F-12. The tool posted to
+`/notifications/{id}/ack`; automation-service serves `/notifications/{id}/read`.
+**Closed in 2.0.2**, with `core/tests/test_mcp_route_contract.py` resolving every
+MCP tool and resource through the gateway's routing to a declared route.
+
+## R-18 — User-triggered job audit rows were dropped — CLOSED
+
+**Severity: High.** PCI DSS Req 10.2. Found while fixing R-14.
+Runs store `triggered_by = "user:<uuid>"` and the runner passed that marker
+straight into `za_audit_logs.user_id`, a `String(36)` column. At 41 characters it
+was rejected by identity-service, and the best-effort forwarder logged the error
+and moved on, so on Postgres **no `job.start`/`job.finish` row was stored for any
+run a person started** (scheduled and Zabbix runs were unaffected). The R-3 test
+passed because it was a hand-written mirror fed a bare UUID. Machine markers
+such as `zabbix_event:9` would also have been stored as user ids.
+
+**Closed in 2.0.2**: `automation-service/app/_attribution.py` resolves every
+marker form, and `core/tests/test_job_attribution.py` loads that exact file and
+asserts the output fits the column. Job audit history from before 2.0.2 is
+missing user-triggered runs; `za_job_runs` still holds those runs (who, when,
+what) for reconstruction.
+
+---
+
+## R-11 — Authorizations grant sftp/upload/download, which nothing enforces — CLOSED
+
+**Severity: High.** PCI DSS Req 7.1 / SOC 2 CC6. **Closed**: SFTP shipped (terminal parity Increment 1). Every operation in `terminal-service/app/api/sftp.py` resolves the same `za_authorization` record SSH uses and checks the specific action (`sftp` browses, `upload`/`download` move bytes), each audited with a result, transfers fail-closed.
+
+Original finding:
 
 `AuthorizationsAdmin.vue:312` offers `['ssh', 'sftp', 'upload', 'download']` as
 grantable actions on a host. A grep across `identity-service` and
@@ -210,7 +287,7 @@ chain.
 
 ## R-3 — Automation job execution is not audited — CLOSED
 
-**Severity: High.** PCI DSS Req 10.2. **Closed**: `job.start` and `job.finish` are emitted from `runner.execute()` with executor, template, target hosts, exit code and attempt count.
+**Severity: High.** PCI DSS Req 10.2. **Closed**: `job.start` and `job.finish` are emitted from `runner.execute()` with executor, template, target hosts, exit code and attempt count. **Note:** until 2.0.2 the rows for *user*-triggered runs were dropped on write — see R-18.
 
 Original finding:
 

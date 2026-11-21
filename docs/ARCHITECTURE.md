@@ -451,38 +451,38 @@ The path to HA is clear: leader election for the scheduler, SSO codes and job di
 | R-4 | Medium | Recording playback and presigned URLs are not audited | Partial: integrity is protected, access is not audited |
 | R-7 | Medium | Audit forwarding from satellite services is best-effort, so a dropped event is undetectable | Open |
 | R-8 | Low | No chain lock for engines other than Postgres/MySQL | Open; latent until a third engine is added |
+| R-13 | High | Legacy `read`/`write` PAT scopes (F-1) | Partial (2.0.2): no longer issued; existing tokens honoured and flagged for reissue |
+
+Closed in 2.0.2: R-11 (SFTP grants enforced), R-14 (F-2), R-15 (F-4), R-16 (F-9),
+R-17 (F-12), and R-18 — user-triggered job audit rows were being dropped because
+the raw `user:<id>` marker overflowed `za_audit_logs.user_id`.
 
 ### 9.2 Additional findings from this architecture review
 
-Each finding below was **verified in the code** for this review. They are not yet in the risk register.
+Each finding below was **verified in the code** for this review. Those fixed in 2.0.2 are struck through and tracked in the risk register as R-13 to R-17.
 
 | # | Finding | Impact | Recommendation |
 |---|---|---|---|
-| F-1 | **Legacy `read`/`write` PAT scopes bypass per-domain scoping**, and the default for a new token is `["read"]` (`libs/apiscopes`, `identity schemas.py`) | A default token can read any segment the issuer's role allows, including credential metadata, users and audit. Secrets themselves still need MFA reveal | Default to an empty scope list and stop issuing legacy scopes; migrate existing tokens |
-| F-2 | **No separation of duties on job approval.** The requester can approve their own run, and approve/reject writes no audit row | A single admin can push a change to production alone, untraced | Block self-approval as grant approval already does; audit `job.approve`/`job.reject` |
+| F-1 | ~~**Legacy `read`/`write` PAT scopes bypass per-domain scoping**, and the default for a new token is `["read"]` (`libs/apiscopes`, `identity schemas.py`)~~ **Fixed in 2.0.2 (R-13, partial)** | A default token can read any segment the issuer's role allows, including credential metadata, users and audit. Secrets themselves still need MFA reveal | Default to an empty scope list and stop issuing legacy scopes; migrate existing tokens |
+| F-2 | ~~**No separation of duties on job approval.** The requester can approve their own run, and approve/reject writes no audit row~~ **Fixed in 2.0.2 (R-14)** | A single admin can push a change to production alone, untraced | Block self-approval as grant approval already does; audit `job.approve`/`job.reject` |
 | F-3 | **SSH host keys are not verified in automation.** Ansible and salt-ssh use `StrictHostKeyChecking=no`; asyncssh is strict only if `SSH_KNOWN_HOSTS_PATH` is set | Possible man-in-the-middle on the management network, which could capture credentials | Ship a managed known_hosts per zone and make it strict by default |
-| F-4 | **Redis has no authentication** | Any container on the network could read or forge sessions and elevation flags | `requirepass`/ACL, plus TLS when not co-located |
+| F-4 | ~~**Redis has no authentication**~~ **Fixed in 2.0.2 (R-15)** | Any container on the network could read or forge sessions and elevation flags | `requirepass`/ACL, plus TLS when not co-located |
 | F-5 | **Internal TLS is off by default** | Plaintext on the bridge network (service tokens limit the damage) | Make the internal-TLS overlay the default in `install.sh` |
 | F-6 | **Audit chain and recording digests are unkeyed SHA-256** | A DB superuser who disables the trigger can rewrite history and recompute the hashes | HMAC with a key outside the DB, or periodic external anchoring |
 | F-7 | **The webhook replay guard keys on the signature only** (no timestamp), and the Zabbix SSO handshake has no replay check | A captured request can be replayed after 300 s; a leaked module secret lets an attacker mint superadmin SSO | Signed timestamp plus a nonce, and a short validity window |
 | F-8 | **The gateway rate limiter fails open** when Redis is down | Brute-force protection disappears during a Redis outage (DB lockout still applies) | Fail closed for `auth/*` routes |
-| F-9 | **Containers lack `cap_drop: [ALL]` and `no-new-privileges`** | Weaker container breakout posture | Add both to every service |
+| F-9 | ~~**Containers lack `cap_drop: [ALL]` and `no-new-privileges`**~~ **Fixed in 2.0.2 (R-16)** | Weaker container breakout posture | Add both to every service |
 | F-10 | **CI:** built images are not scanned or signed, actions are pinned by tag rather than SHA, and the upstream Semgrep packs are advisory | Supply-chain integrity gap | Trivy image scan, cosign signing, SLSA provenance, SHA-pinned actions |
 | F-11 | **Backup covers only 2 of the 4 DBs** (identity, inventory), and there is no restore script | Terminal/recording and automation data is not backed up | Back up all four DBs plus Redis; add a tested restore runbook |
-| F-12 | **The MCP `ack_notification` tool calls `/notifications/{id}/ack`**, but the service exposes `/{id}/read` | The tool fails at runtime | Align the route and add a contract test |
+| F-12 | ~~**The MCP `ack_notification` tool calls `/notifications/{id}/ack`**, but the service exposes `/{id}/read`~~ **Fixed in 2.0.2 (R-17)** | The tool fails at runtime | Align the route and add a contract test |
 
-**Documentation drift to correct:**
-- `control-mapping.md` still lists KEK rotation as a gap (closed as R-6).
-- It says there is no logout endpoint (there is one, but it is not audited).
-- It cites zxcvbn for login passwords (zxcvbn applies to stored credentials only; login passwords need 8 characters).
-- It cites 151 tests (there are now 708).
-- R-11 (sftp/upload/download not enforced) is **stale**: terminal-service now enforces these grants (`api/sftp.py`).
+**Documentation drift** found in this review (KEK rotation listed as a gap, "no logout endpoint", zxcvbn cited for login passwords, a stale test count, R-11 still open) was corrected in `control-mapping.md` and `risk-register.md` in 2.0.2. Logout itself is still not audited.
 
 ### 9.3 Suggested roadmap
 
 | Horizon | Theme | Items |
 |---|---|---|
-| **Now (next patch)** | Close the verified gaps | F-1, F-2, F-4, F-12, F-9; refresh the compliance docs |
+| ~~**Now (next patch)**~~ | ~~Close the verified gaps~~ | **Done in 2.0.2:** F-1 (partial, see R-13), F-2, F-4, F-9, F-12; compliance docs refreshed. Still open from this tier: audit logout |
 | **Next quarter** | Harden by default | F-3 managed known_hosts; F-5 internal TLS on by default; F-7 replay windows; F-11 full backup and restore; F-10 signed images |
 | **Following** | Enterprise readiness | KMS/HSM `KeyProvider` (AWS KMS / Vault Transit); OIDC/SAML/LDAP IdPs; keyed audit anchoring (F-6); HA (scheduler leader election, Redis HA, replicated stateless tier) |
 
