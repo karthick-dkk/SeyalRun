@@ -17,6 +17,7 @@ from . import audit
 from . import integration_state
 from .config import get_settings
 from . import _masking
+from ._attribution import actor_user_id
 from .database import SessionLocal
 from .models import ZAJobRun, ZANotification
 
@@ -26,19 +27,11 @@ _redis: aioredis.Redis | None = None
 
 _SEVERITY_BY_STATUS = {"success": "info", "failed": "critical", "error": "critical"}
 
-# RunRequest.triggered_by is a user id, "zabbix:<event_id>" or "schedule:<id>".
-_NON_USER_TRIGGER_PREFIXES = ("zabbix:", "schedule:")
-
 
 def _actor_id(triggered_by: str | None) -> str | None:
     """The user id to attribute an audit row to, or None for machine triggers.
-
-    Writing "schedule:7" into user_id would make it look like a user account,
-    so machine-originated runs carry the trigger in details.triggered_by only.
-    """
-    if not triggered_by or triggered_by.startswith(_NON_USER_TRIGGER_PREFIXES):
-        return None
-    return triggered_by
+    See _attribution.actor_user_id for the marker formats."""
+    return actor_user_id(triggered_by)
 
 
 def get_redis() -> aioredis.Redis:

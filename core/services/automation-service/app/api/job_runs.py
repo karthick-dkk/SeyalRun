@@ -11,9 +11,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import audit
+from app._attribution import actor_user_id, is_requester
 from app._params import template_code_params
 from app.database import get_session, SessionLocal
-from app.deps import require_service_token, get_user_id, get_user_role, get_user_real_role
+from app.deps import require_service_token, get_user_id, get_user_name, get_user_role, get_user_real_role
 from app.models import ZAJobRun, ZAJobTemplate
 from app.config import get_settings
 from app.runner import get_redis
@@ -152,6 +154,8 @@ async def approve_run(
     run_id: str,
     request: Request,
     role: str = Depends(get_user_real_role),
+    user_id: str = Depends(get_user_id),
+    username: str = Depends(get_user_name),
     session: AsyncSession = Depends(get_session),
 ):
     run = await session.get(ZAJobRun, run_id)
@@ -164,6 +168,26 @@ async def approve_run(
         raise HTTPException(status_code=400, detail="job template no longer exists")
     if not _can_approve(role, tmpl.approver_role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient role to approve this run")
+    # Separation of duties (F-2): the approval gate exists so a second person signs
+    # off on a change, so the requester approving their own run defeats it. Mirrors
+    # the grant-approval block in identity-service/app/api/authorizations.py.
+    if is_requester(run.triggered_by, user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="the requester cannot approve their own run")
+
+    # Recorded before anything is dispatched, and fail-closed: an approval that
+    # cannot be attributed is exactly the untraced change this gate prevents.
+    try:
+        await audit.log_action(
+            user_id=user_id, username=username, action="job.approve",
+            resource_type="job_run", resource_id=run_id,
+            details={"template": tmpl.name, "template_id": tmpl.id,
+                     "requested_by": actor_user_id(run.triggered_by),
+                     "triggered_by": run.triggered_by, "approver_role": tmpl.approver_role or "admin"},
+            result="success", critical=True,
+        )
+    except audit.AuditWriteError:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="approval could not be recorded in the audit log; the run was not started")
 
     run.status = "pending"
     await session.commit()
@@ -201,6 +225,8 @@ async def reject_run(
     run_id: str,
     payload: RejectPayload,
     role: str = Depends(get_user_real_role),
+    user_id: str = Depends(get_user_id),
+    username: str = Depends(get_user_name),
     session: AsyncSession = Depends(get_session),
 ):
     run = await session.get(ZAJobRun, run_id)
@@ -219,6 +245,16 @@ async def reject_run(
     run.status = "rejected"
     run.ended_at = datetime.now(timezone.utc)
     await session.commit()
+    # Rejecting needs no second person (it starts nothing; a requester may withdraw
+    # their own run), but it is still a decision on a gated change, so it is recorded.
+    await audit.log_action(
+        user_id=user_id, username=username, action="job.reject",
+        resource_type="job_run", resource_id=run_id,
+        details={"template": tmpl.name if tmpl else None, "template_id": run.job_template_id,
+                 "requested_by": actor_user_id(run.triggered_by),
+                 "triggered_by": run.triggered_by, "reason": payload.reason},
+        result="success",
+    )
     return {"run_id": run_id, "status": "rejected"}
 
 
@@ -287,14 +323,14 @@ def _out(r: ZAJobRun, tmpl: ZAJobTemplate | None = None) -> dict:
     host_credentials = params.get("_host_credentials") or {}
     # Triggering principal: "user:<id>" | "schedule:<id>" | "zabbix_event:<id>" | "manual_trigger:...".
     tb = r.triggered_by or ""
-    trig_kind, _, trig_ref = tb.partition(":")
+    trig_kind = tb.partition(":")[0] if ":" in tb else ""
     return {
         "id": r.id, "job_template_id": r.job_template_id,
         "job_template_name": tmpl.name if tmpl else None,
         "action_type": tmpl.action_type if tmpl else params.get("action_type"),
         "triggered_by": r.triggered_by,
         "triggered_by_kind": trig_kind or None,
-        "triggered_by_user_id": trig_ref if trig_kind == "user" else None,
+        "triggered_by_user_id": actor_user_id(tb),
         "status": r.status,
         "params": params, "output_lines": r.output_lines,
         "exit_code": r.exit_code,

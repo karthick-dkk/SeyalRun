@@ -12,34 +12,7 @@ import json
 
 import pytest
 
-# ── Job attribution (R-3) — mirrors automation-service/app/runner.py::_actor_id ──
-
-_NON_USER_TRIGGER_PREFIXES = ("zabbix:", "schedule:")
-
-
-def actor_id(triggered_by: str | None) -> str | None:
-    if not triggered_by or triggered_by.startswith(_NON_USER_TRIGGER_PREFIXES):
-        return None
-    return triggered_by
-
-
-@pytest.mark.parametrize(
-    "triggered_by",
-    ["zabbix:10453", "schedule:7", "", None],
-)
-def test_machine_triggers_are_not_attributed_to_a_user(triggered_by):
-    """A scheduled or Zabbix-driven run must not land in user_id, or the audit
-    log would show "schedule:7" as though it were a user account."""
-    assert actor_id(triggered_by) is None
-
-
-def test_user_triggered_run_keeps_its_user_id():
-    assert actor_id("6f1c2f8e-0b1a-4a55-9a1e-3c0d5f6a7b88") == "6f1c2f8e-0b1a-4a55-9a1e-3c0d5f6a7b88"
-
-
-def test_a_user_id_beginning_with_a_word_like_scheduled_is_not_dropped():
-    """Prefix matching must be on the marker, not a loose substring."""
-    assert actor_id("scheduled-user-42") == "scheduled-user-42"
+# Job attribution (R-3) is tested against the real module in test_job_attribution.py.
 
 
 # ── Recording integrity (R-4) — mirrors recording-service/app/api/internal.py ──

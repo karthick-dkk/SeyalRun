@@ -10,9 +10,10 @@
           <span :class="statusClass(run.status)" style="font-size:14px">{{ run.status }}</span>
           <span v-if="run.params?._dry_run" class="badge" style="font-size:11px;color:var(--warn);border-color:rgba(210,153,34,0.4);background:rgba(210,153,34,0.08)" title="Ran with --check --diff — no changes were applied">DRY RUN</span>
           <template v-if="run.status === 'pending_approval'">
-            <button v-if="canApprove" class="btn btn-sm" style="color:var(--accent)" :disabled="approving" @click="approveRun">Approve</button>
-            <button v-if="canApprove" class="btn btn-sm text-danger" :disabled="approving" @click="rejectRun">Reject</button>
-            <span class="text-muted-sm" v-if="!canApprove">Waiting for approval</span>
+            <button v-if="canApprove && !isOwnRun" class="btn btn-sm" style="color:var(--accent)" :disabled="approving" @click="approveRun">Approve</button>
+            <button v-if="canApprove" class="btn btn-sm text-danger" :disabled="approving" @click="rejectRun">{{ isOwnRun ? 'Withdraw' : 'Reject' }}</button>
+            <span class="text-muted-sm" v-if="isOwnRun">Waiting for another approver — you requested this run</span>
+            <span class="text-muted-sm" v-else-if="!canApprove">Waiting for approval</span>
           </template>
           <button v-else-if="['pending','running'].includes(run.status)" class="btn btn-sm text-danger" @click="cancelRun">Cancel</button>
           <button v-else class="btn btn-sm" :disabled="rerunning" @click="rerun">{{ rerunning ? 'Re-running…' : '↻ Re-run' }}</button>
@@ -249,6 +250,11 @@ const canApprove = computed(() => {
   if (required === 'superadmin') return roles.includes('superadmin')
   return roles.includes('admin') || roles.includes('superadmin')
 })
+
+// The requester may not approve their own run (separation of duties); the backend
+// enforces it, this only avoids offering a button that can only fail.
+const isOwnRun = computed(() =>
+  !!auth.user?.id && run.value?.triggered_by_user_id === auth.user.id)
 
 const approving = ref(false)
 async function approveRun() {

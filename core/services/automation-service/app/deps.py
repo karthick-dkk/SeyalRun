@@ -40,6 +40,11 @@ def get_user_id(x_user_id: str = Header(..., alias="X-User-Id")) -> str:
     return x_user_id
 
 
+def get_user_name(x_user_name: str = Header(default="", alias="X-User-Name")) -> str:
+    """Display name for audit rows only — never use it for an authorization decision."""
+    return x_user_name
+
+
 def get_user_role(x_user_role: str = Header(default="user", alias="X-User-Role")) -> str:
     return x_user_role
 
