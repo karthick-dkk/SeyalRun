@@ -73,7 +73,7 @@ TOOLS = [
     _tool("list_notifications", "notifications:read", "GET", "/api/v1/notifications",
           "List notifications / alerts.",
           {"limit": {"type": "integer", "default": 50}}, query=["limit"]),
-    _tool("ack_notification", "notifications:ack", "POST", "/api/v1/notifications/{notification_id}/ack",
+    _tool("ack_notification", "notifications:ack", "POST", "/api/v1/notifications/{notification_id}/read",
           "Acknowledge a notification.",
           {"notification_id": {"type": "string"}}, ["notification_id"]),
 ]
