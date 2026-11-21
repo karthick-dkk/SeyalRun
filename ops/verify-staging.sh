@@ -22,12 +22,12 @@ if [[ -z "$HOST" ]]; then
   echo "Usage: $0 <HOST>  — e.g. $0 192.168.64.2" >&2
   exit 1
 fi
-SSH_USER="${SSH_USER:-test}"
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
-REMOTE_DIR="/opt/seyalrun-v2"
+# shellcheck source=ops/_staging-lib.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_staging-lib.sh"   # SSH_USER, REMOTE_DIR, SUDO_PASSWORD
+STAGING_NONINTERACTIVE=1
 # Read ports from the remote .env so the check works even when defaults are changed
-EDGE_HTTPS_PORT=$(ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "grep '^EDGE_HTTPS_PORT=' ${REMOTE_DIR}/.env 2>/dev/null | cut -d= -f2" 2>/dev/null)
-EDGE_HTTP_PORT=$(ssh  "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "grep '^EDGE_HTTP_PORT='  ${REMOTE_DIR}/.env 2>/dev/null | cut -d= -f2" 2>/dev/null)
+EDGE_HTTPS_PORT=$(rssh "grep '^EDGE_HTTPS_PORT=' ${REMOTE_DIR}/.env 2>/dev/null | cut -d= -f2" 2>/dev/null)
+EDGE_HTTP_PORT=$(rssh "grep '^EDGE_HTTP_PORT='  ${REMOTE_DIR}/.env 2>/dev/null | cut -d= -f2" 2>/dev/null)
 EDGE_HTTPS_PORT="${EDGE_HTTPS_PORT:-8443}"
 EDGE_HTTP_PORT="${EDGE_HTTP_PORT:-8080}"
 EDGE_HTTPS="https://${HOST}:${EDGE_HTTPS_PORT}"
@@ -45,15 +45,9 @@ except Exception:
     print('')"
 }
 
-# Runs "$1" as root on the remote host. Empty output (and non-zero exit)
-# if SUDO_PASSWORD is unset and passwordless sudo isn't configured.
-remote_sudo_out() {
-  if [[ -n "${SUDO_PASSWORD:-}" ]]; then
-    ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "sudo -S bash -c '$1'" <<< "$SUDO_PASSWORD" 2>/dev/null
-  else
-    ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "sudo -n bash -c '$1'" 2>/dev/null
-  fi
-}
+# Runs "$1" with docker rights on the host (see remote_docker). Empty output
+# if the SSH user is not in the docker group and sudo needs a password we lack.
+remote_sudo_out() { remote_docker "$1" 2>/dev/null; }
 
 echo "=== SeyalRun v2.0 staging verification: ${HOST} ==="
 
@@ -94,7 +88,7 @@ for port in 8101 8102 8103 8104 8105 8106 8107 8000 6379; do
 done
 
 # ── docker compose / Alembic (requires sudo on the host) ─────────────────────
-COMPOSE_FLAGS=$(ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "tr '\n' ' ' < ${REMOTE_DIR}/.compose-flags" 2>/dev/null)
+COMPOSE_FLAGS=$(rssh "tr '\n' ' ' < ${REMOTE_DIR}/.compose-flags" 2>/dev/null)
 if [[ -n "$COMPOSE_FLAGS" ]]; then
   ps_out=$(remote_sudo_out "cd ${REMOTE_DIR} && docker compose ${COMPOSE_FLAGS} ps --format \"{{.Service}} {{.State}} {{.Health}}\"")
   if [[ -n "$ps_out" ]]; then
@@ -115,8 +109,29 @@ if [[ -n "$COMPOSE_FLAGS" ]]; then
         bad "${service}: alembic current != head (${alembic_out})"
       fi
     done
+
+    # F-4: Redis must refuse a client that has no password. REDISCLI_AUTH is
+    # blanked so the healthcheck's credential does not leak into this probe.
+    redis_out=$(remote_sudo_out "cd ${REMOTE_DIR} && docker compose ${COMPOSE_FLAGS} exec -T -e REDISCLI_AUTH= redis redis-cli ping 2>&1")
+    [[ "$redis_out" == *NOAUTH* ]] \
+      && ok "redis refuses unauthenticated clients (NOAUTH)" \
+      || bad "redis answered without a password: ${redis_out:-<no output>}"
+
+    # F-9: PID 1 of every running service holds no capabilities (redis keeps
+    # the three it needs to drop to its own user) and cannot gain privileges.
+    # A for loop, not `while read <<< "$ps_out"`: ssh inside would swallow the list on stdin.
+    for svc in $(awk '{print $1}' <<< "$ps_out"); do
+      [[ "$svc" == postgres ]] && continue
+      st=$(remote_sudo_out "cd ${REMOTE_DIR} && docker compose ${COMPOSE_FLAGS} exec -T ${svc} sh -c 'grep -E \"^(CapEff|NoNewPrivs)\" /proc/1/status'" | tr -s ' \t\n' ' ')
+      cap=$(echo "$st" | sed -n 's/.*CapEff: \([0-9a-f]*\).*/\1/p'); nnp=$(echo "$st" | sed -n 's/.*NoNewPrivs: \([01]\).*/\1/p')
+      if [[ "$nnp" == 1 && ( "$cap" == 0000000000000000 || "$svc" == redis ) ]]; then
+        ok "container ${svc}: CapEff=${cap} NoNewPrivs=1"
+      else
+        bad "container ${svc}: CapEff=${cap:-?} NoNewPrivs=${nnp:-?} (want 0 / 1)"
+      fi
+    done
   else
-    note "could not run 'docker compose ps' on ${HOST} (set SUDO_PASSWORD to enable container/alembic checks)"
+    note "could not run 'docker compose ps' on ${HOST} (add ${SSH_USER} to the docker group, or set SUDO_PASSWORD)"
   fi
 else
   note "could not read ${REMOTE_DIR}/.compose-flags — has deploy-staging.sh run yet?"
@@ -264,7 +279,7 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
           "${AUTH[@]}" -H 'Content-Type: application/json' -d '{}' 2>/dev/null)
         RUN_ID=$(echo "$run_resp" | json_get run_id)
         if [[ -n "$RUN_ID" ]]; then
-          for i in $(seq 1 15); do
+          for _ in $(seq 1 15); do
             run_status=$(curl -sk --max-time 10 "${EDGE_HTTPS}/api/v1/job-runs/${RUN_ID}" "${AUTH[@]}" | json_get status 2>/dev/null)
             [[ "$run_status" =~ ^(success|failed|error|cancelled)$ ]] && break; sleep 1
           done
@@ -285,7 +300,7 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
     fi
 
     # ── Phase 3: Zabbix webhook HMAC check ───────────────────────────────────
-    WEBHOOK_SECRET=$(ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" \
+    WEBHOOK_SECRET=$(rssh \
       "grep '^ZABBIX_WEBHOOK_HMAC_SECRET=' ${REMOTE_DIR}/.env | cut -d= -f2" 2>/dev/null)
     if [[ -n "$WEBHOOK_SECRET" ]]; then
       # Unique per run: the receiver rejects a repeated signature as a replay, so a
@@ -315,6 +330,30 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
     echo "$metrics_resp" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'hosts' in d" 2>/dev/null \
       && ok "Phase 3 GET /metrics/dashboard returns aggregate data" \
       || bad "Phase 3 metrics dashboard failed: ${metrics_resp}"
+
+    # Read endpoints across the remaining services (absorbed from the retired validate-api.sh).
+    for ep in zones authorizations "audit/logs?limit=1" ssh/sessions recordings; do
+      code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/api/v1/${ep}" "${AUTH[@]}")
+      [[ "$code" == 200 ]] && ok "GET /api/v1/${ep} -> 200" || bad "GET /api/v1/${ep} -> ${code} (want 200)"
+    done
+
+    # Behavioural end-to-end checks that need two admins, a gated job and MCP
+    # (separation of duties, audit attribution, notification ack). Skippable
+    # with VERIFY_E2E=0 for a quick smoke run.
+    if [[ "${VERIFY_E2E:-1}" == 1 ]]; then
+      # Pin the edge's own self-signed cert rather than switching TLS checks off.
+      edge_cert=$(mktemp); rssh "cat ${REMOTE_DIR}/tls/cert.pem" > "$edge_cert" 2>/dev/null
+      e2e_out=$(SEYALRUN_ADMIN_PASSWORD="$SEYALRUN_ADMIN_PASSWORD" SEYALRUN_CA_FILE="$(test -s "$edge_cert" && echo "$edge_cert")" \
+                python3 "$(dirname "${BASH_SOURCE[0]}")/e2e-staging.py" "${EDGE_HTTPS}" 2>&1)
+      rm -f "$edge_cert"
+      while IFS= read -r line; do
+        case "$line" in
+          "PASS "*) ok "e2e: ${line#PASS }" ;;
+          "FAIL "*) bad "e2e: ${line#FAIL }" ;;
+          *)        [[ -n "$line" ]] && note "e2e: $line" ;;
+        esac
+      done <<< "$e2e_out"
+    fi
   fi
 else
   note "SEYALRUN_ADMIN_PASSWORD not set — skipping login/PAT/Security-tab CRUD checks"

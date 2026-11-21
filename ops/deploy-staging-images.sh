@@ -18,9 +18,6 @@ set -euo pipefail
 HOST="${1:-}"
 VERSION="${2:-}"
 [[ -n "$HOST" ]] || { echo "Usage: $0 <HOST> [VERSION]" >&2; exit 1; }
-SSH_USER="${SSH_USER:-test}"
-REMOTE_DIR="/opt/seyalrun-v2"
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
 ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
@@ -28,6 +25,8 @@ info() { echo -e "${CYAN}[->]${NC} $*"; }
 fail() { echo -e "${RED}[X]${NC} $*" >&2; exit 1; }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=ops/_staging-lib.sh
+source "${REPO_ROOT}/ops/_staging-lib.sh"   # SSH_USER, REMOTE_DIR, SUDO_PASSWORD
 
 info "Syncing compose files and ops/ to ${HOST}..."
 rsync -az \
@@ -35,7 +34,8 @@ rsync -az \
   --exclude='*' \
   "${REPO_ROOT}/" "${SSH_USER}@${HOST}:${REMOTE_DIR}/"
 
-ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "cd ${REMOTE_DIR} && VERSION_OVERRIDE='${VERSION}' bash -s" <<'REMOTE'
+_docker_direct || fail "${SSH_USER} cannot run docker on ${HOST} without sudo — add it to the docker group"
+rssh "cd ${REMOTE_DIR} && VERSION_OVERRIDE='${VERSION}' bash -s" <<'REMOTE'
 set -euo pipefail
 bash ops/ensure-redis-password.sh .env   # F-4: an older .env has no Redis password yet
 set -a; source .env; set +a
@@ -49,6 +49,9 @@ echo "[*] deploying image tag: ${SEYALRUN_VERSION:-latest}"
 FLAGS=(-f docker-compose.prod.yml -f docker-compose.db.yml)
 [[ -f tls/internal/ca.pem ]] && FLAGS+=(-f docker-compose.internal-tls.yml)
 FLAGS+=(--profile postgres-db)
+# verify-staging.sh reads these, so its container and Alembic checks inspect the
+# published images rather than whatever the last source build left behind.
+printf '%s\n' "${FLAGS[@]}" > .compose-flags
 
 echo "[*] pulling published images..."
 docker compose "${FLAGS[@]}" pull --quiet
@@ -70,4 +73,5 @@ REMOTE
 
 ok "staging is running from published images"
 info "Verifying..."
-SUDO_PASSWORD="${SUDO_PASSWORD:-}" SSH_USER="$SSH_USER" bash "${REPO_ROOT}/ops/verify-staging.sh" "$HOST"
+SUDO_PASSWORD="${SUDO_PASSWORD:-}" SSH_USER="$SSH_USER" REMOTE_DIR="$REMOTE_DIR" \
+  SEYALRUN_ADMIN_PASSWORD="${SEYALRUN_ADMIN_PASSWORD:-}" bash "${REPO_ROOT}/ops/verify-staging.sh" "$HOST"

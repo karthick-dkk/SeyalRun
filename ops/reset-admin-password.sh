@@ -55,7 +55,7 @@ fi
 COMPOSE=("${DOCKER[@]}" compose)
 if [[ -f .compose-flags ]]; then
   while IFS= read -r flag; do
-    # shellcheck disable=SC2206 — flags are two-word entries ("-f file" / "--profile name")
+    # shellcheck disable=SC2206 # flags are two-word entries ("-f file" / "--profile name")
     COMPOSE+=($flag)
   done < .compose-flags
 else

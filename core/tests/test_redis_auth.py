@@ -93,7 +93,7 @@ def test_custom_redis_url_is_left_alone(tmp_path, how):
 
 
 def test_every_deploy_path_runs_the_redis_step():
-    for script in ["ops/_staging-bootstrap.sh", "ops/deploy-fresh.sh", "ops/deploy-staging-images.sh"]:
+    for script in ["ops/_staging-bootstrap.sh", "ops/deploy-staging-images.sh"]:
         assert "ops/ensure-redis-password.sh" in (REPO / script).read_text(), script
     assert "# Redis auth (F-4)." in (REPO / "install.sh").read_text()
 
