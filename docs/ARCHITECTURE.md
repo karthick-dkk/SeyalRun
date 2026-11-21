@@ -408,17 +408,28 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    C["Commit"] --> P["Push main"]
-    P --> CI["CI: 708 tests ·<br/>Trivy · Semgrep · SBOM"]
-    CI --> S1["Staging: source build<br/>+ verify-staging (with login checks)"]
+    C["Commit"] --> P["Push main / release/**<br/>or open a PR"]
+    P --> CI["ci: pytest · frontend build ·<br/>compose render · shellcheck<br/>security-scan: Semgrep · Trivy · SBOM"]
+    CI --> S1["Staging: ops/deploy-staging.sh<br/>source build + verify-staging + e2e"]
     S1 --> T["Tag v*"]
-    T --> IMG["Publish 11 multi-arch images"]
-    IMG --> S2["Staging: real curl | bash install<br/>from published images + verify"]
+    T --> G["docker-publish gates:<br/>tag == pinned version · ci · security-scan"]
+    G --> IMG["Publish 11 multi-arch images"]
+    IMG --> S2["Staging: ops/deploy-staging-images.sh<br/>published images + verify-staging + e2e"]
     S2 -->|green| REL["Release"]
     S2 -->|red| C
 ```
 
-Step `S2` was added for v2.0.1. Installing from the published images is what exposed the install-path bugs fixed in this release.
+Step `S2` was added for v2.0.1. Installing from the published images is what exposed the install-path bugs fixed in that release.
+
+Since v2.0.2 each change runs CI once: pushes to `main`/`release/**` and pull requests, but not tags. A tag runs `ci` and `security-scan` as reusable workflows inside `docker-publish`, and the images are pushed only after both pass and the tag matches `SEYALRUN_VERSION` in `.env.example`, the README and `install.sh`. Before this, a tag started the tests in parallel with publishing, so a red tag still shipped its images.
+
+`verify-staging.sh` ends with `ops/e2e-staging.py`, which tests behaviour through the API:
+- self-approval is refused;
+- a second admin's approval runs the job;
+- the approval and the job's start, finish and rejection are audited to the right user;
+- MCP `ack_notification` marks the notification read.
+
+It removes everything it creates. Docker checks run as the SSH user when that user is in the `docker` group; sudo is needed only otherwise.
 
 ---
 

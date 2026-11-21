@@ -1,27 +1,35 @@
 name: security-scan
 
+# Same triggers as ci.yml (one run per change, gate for docker-publish), plus a
+# weekly run that catches newly disclosed CVEs in dependencies that did not change.
 on:
   push:
+    branches: [main, "release/**"]
   pull_request:
+  workflow_call:
   schedule:
-    - cron: "27 4 * * 1"   # weekly, catches newly-disclosed CVEs in pinned deps
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   semgrep:
     name: Semgrep static analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install semgrep
-        run: pip install semgrep
-
-      - name: Advisory scan (upstream rule packs)
-        run: |
-          semgrep --metrics=off --config p/python --config p/fastapi \
-            --config p/jwt --config p/secrets core/ modules/ || true
+          cache: pip
+          cache-dependency-path: .github/workflows/security-scan.yml
+      - run: pip install semgrep
 
       # Blocking. A bare `semgrep` exits 0 even with ERROR findings, which is
       # why 15 verify=False calls shipped past this very ruleset in the
@@ -31,36 +39,48 @@ jobs:
           semgrep --metrics=off --error --severity=ERROR \
             --config security/scanning/.semgrep.yml core/ modules/
 
-  trivy-fs:
-    name: Trivy filesystem + config scan
+      - name: Upstream rule packs (advisory, summary only)
+        if: always()
+        run: |
+          semgrep --metrics=off --config p/python --config p/fastapi \
+            --config p/jwt --config p/secrets --json -o semgrep-advisory.json core/ modules/ || true
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import collections, json
+          r = json.load(open("semgrep-advisory.json")).get("results", [])
+          print(f"### Semgrep advisory: {len(r)} finding(s)\n")
+          for rule, n in collections.Counter(x["check_id"] for x in r).most_common(15):
+              print(f"- `{rule}`: {n}")
+          PY
+
+  trivy:
+    name: Trivy vuln + misconfig + secret scan, SBOM
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - name: Trivy vulnerability + misconfig scan
+      # One job, one vulnerability-DB download: the SBOM step reuses the cache
+      # the scan just filled (they used to be two jobs that each fetched it).
+      - name: Scan (fails on fixable HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
-          # Fail the build on fixable HIGH/CRITICAL in dependencies or Dockerfiles.
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
           scanners: vuln,misconfig,secret
-
-  sbom:
-    name: Generate SBOM (CycloneDX)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Generate CycloneDX SBOM
+      - name: CycloneDX SBOM
+        if: always()
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
           format: cyclonedx
           output: sbom.cdx.json
-      - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v7
+          skip-setup-trivy: true
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: sbom-cyclonedx
           path: sbom.cdx.json
+          if-no-files-found: ignore

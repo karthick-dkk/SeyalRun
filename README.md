@@ -10,7 +10,7 @@ Pulls prebuilt images from Docker Hub (`docker.io/karthickdk02/seyalrun-*`) —
 no source checkout, no local build required.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/karthick-dkk/SeyalRun/main/install.sh | bash
 ```
 
 This installs into `./seyalrun`, generates a `.env` with random secrets, a
@@ -26,7 +26,7 @@ system that has to answer "what was running on this date", set an immutable
 version instead:
 
 ```sh
-SEYALRUN_VERSION=2.0.2 curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
+SEYALRUN_VERSION=2.0.2 curl -fsSL https://raw.githubusercontent.com/karthick-dkk/SeyalRun/main/install.sh | bash
 ```
 
 Current release: **v2.0.2**. Images are published for `linux/amd64` and
@@ -78,7 +78,7 @@ SEYALRUN_DB_HOST=192.168.64.8 \
 SEYALRUN_DB_USER=seyalrun \
 SEYALRUN_DB_PASSWORD='<your-db-password>' \
 SEYALRUN_DB_ENGINE=postgres \
-  curl -fsSL https://raw.githubusercontent.com/karthick-dkk/seyalrun_zabbix/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/karthick-dkk/SeyalRun/main/install.sh | bash
 ```
 
 `SEYALRUN_DB_USER` must be able to create databases on that instance.
@@ -176,13 +176,19 @@ by both paths.
 
 ## Verifying a deployment
 
-Two checks, both read-only.
+Two checks.
 
 ```sh
-ops/verify-staging.sh <host>          # 31 checks: edge, health, port exposure,
-                                      # container health, every service at Alembic head
-ops/rebaseline-identity-db.sh --check # runs the real verify_chain() over the audit log
+ops/verify-staging.sh <host>          # edge, health, port exposure, container health and
+                                      # privileges, Redis auth, every service at Alembic head
+ops/rebaseline-identity-db.sh --check # runs the real verify_chain() over the audit log (read-only)
 ```
+
+With `SEYALRUN_ADMIN_PASSWORD` set, `verify-staging.sh` also logs in and runs
+API checks plus `ops/e2e-staging.py` (separation of duties on job approval,
+audit attribution, MCP). These create test objects and delete them afterwards;
+`VERIFY_E2E=0` skips the end-to-end part. `REMOTE_DIR` (default
+`/opt/seyalrun-v2`) and `SSH_USER` pick where and as whom it looks on the host.
 
 The second one matters more than it looks. The audit log is a SHA-256 hash
 chain: each row stores `seq`, `prev_hash` and `entry_hash`, so editing or

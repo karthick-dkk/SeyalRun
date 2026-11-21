@@ -10,18 +10,49 @@ name: docker-publish
 #   DOCKERHUB_TOKEN     — Docker Hub access token (Account Settings ->
 #                          Security -> New Access Token; NOT your password)
 
+#
+# Nothing is pushed until the gates pass. Before, a tag ran tests and the
+# security scan as separate workflows in parallel with this one, so a failing
+# tag still published images; now they run here, as `needs:` of the push.
+
 on:
   push:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   DOCKERHUB_NAMESPACE: karthickdk02
 
 jobs:
+  release-version:
+    name: Tag matches the pinned version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: .env.example / README / install.sh advertise this version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: bash .github/scripts/check-release-version.sh "${TAG#v}"
+
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  security:
+    uses: ./.github/workflows/security-scan.yml
+
   build-and-push:
     name: Build & push ${{ matrix.service }}
+    needs: [release-version, ci, security]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
