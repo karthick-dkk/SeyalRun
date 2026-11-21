@@ -1,6 +1,6 @@
 #!/bin/bash
-# Runs ON the staging host (as root, via ops/deploy-staging.sh) inside the
-# rsynced repo at /opt/seyalrun-v2. Not meant to be run by hand.
+# Runs ON the staging host (via ops/deploy-staging.sh, as the SSH user when it
+# is in the docker group, else as root) inside the rsynced repo at $REMOTE_DIR. Not meant to be run by hand.
 #
 # - Generates .env from .env.example with random secrets if missing.
 # - Generates a self-signed TLS cert for edge-proxy if missing.
@@ -92,6 +92,22 @@ fi
 
 printf '%s\n' "${COMPOSE_FILES[@]}" "${COMPOSE_PROFILE[@]}" > .compose-flags
 
+# ── Edge ports must be free (or already ours) ───────────────────────────────
+# A shared staging box may already run something on 8080/8443. Fail with the
+# fix instead of letting compose die halfway through with "address in use".
+PROJECT="$(basename "$(pwd)")"
+for var in EDGE_HTTP_PORT EDGE_HTTPS_PORT; do
+  port="$(grep "^${var}=" .env | cut -d= -f2 | sed 's/[[:space:]]*#.*//')"
+  [[ -z "$port" && "$var" == EDGE_HTTP_PORT ]] && port=8080
+  [[ -z "$port" ]] && port=8443
+  if ss -ltnH "sport = :${port}" 2>/dev/null | grep -q . \
+     && [[ -z "$(docker ps -q --filter "publish=${port}" --filter "label=com.docker.compose.project=${PROJECT}")" ]]; then
+    echo "[X] port ${port} (${var}) is already in use on this host by something other than SeyalRun." >&2
+    echo "    Set ${var} to a free port in $(pwd)/.env and re-run." >&2
+    exit 1
+  fi
+done
+
 # ── Build + start ─────────────────────────────────────────────────────────
 # Built one service at a time (not in parallel) and retried on failure: this
 # host's network is flaky enough that concurrent large pip/npm downloads
@@ -100,10 +116,50 @@ echo "[*] docker compose build (one service at a time, this can take several min
 # Only services with a `build:` section (the DB overlay's services are
 # image-only and `docker compose build <svc>` errors on those).
 BUILD_SERVICES=$(awk '/^  [a-zA-Z0-9_-]+:/{svc=$1} /^    build:/{print svc}' docker-compose.yml | tr -d ':')
+
+# BuildKit hands RUN steps a copy of the host's /etc/resolv.conf. When the only
+# resolver there is systemd-resolved's loopback stub (127.0.0.53), the copy
+# points at nothing a build container can reach, and every pip/npm download
+# fails with "Temporary failure in name resolution" — while `docker run` works,
+# because dockerd substitutes the upstream servers for containers. Building on
+# the host network reaches the stub. (The classic builder would also work, but
+# it cannot evaluate the frontend's FROM --platform=$BUILDPLATFORM.)
+BUILD_FILES=()
+if ! grep -E '^nameserver' /etc/resolv.conf | grep -qvE '^nameserver[[:space:]]+127\.'; then
+  echo "[*] host DNS is a loopback stub only — image builds use the host network"
+  { echo "services:"; for svc in $BUILD_SERVICES; do printf '  %s:\n    build:\n      network: host\n' "$svc"; done; } > .compose-build-hostnet.yml
+  BUILD_FILES=(-f .compose-build-hostnet.yml)
+fi
+# STAGING_BASE_VERSION=<x.y.z> (set by deploy-staging.sh, which first checks that
+# no requirements.txt or Dockerfile changed since that release): Python services
+# are rebuilt as the published image of that version with this tree's source
+# copied over, instead of re-downloading every wheel. For hosts whose PyPI link
+# is too slow for a full build. Uses the real Dockerfile's final-stage COPY
+# lines, so new files ship exactly as a full build would ship them.
+overlay_build() {  # overlay_build SVC -> 0 if built, 1 if SVC is not a pip-based service
+  local svc="$1" df="core/services/$1/Dockerfile" gen
+  grep -q "pip install" "$df" || return 1
+  gen="$(mktemp)"
+  {
+    echo "FROM karthickdk02/seyalrun-${svc}:${STAGING_BASE_VERSION}"
+    echo "USER root"
+    echo "RUN rm -rf /app/app /app/libs /app/migrations"
+    awk '/^FROM /{n++} n>=2 && /^COPY / && !/--from=/' "$df"
+    awk '/^USER /{u=$0} END{print u}' "$df"
+  } > "$gen"
+  docker pull -q "karthickdk02/seyalrun-${svc}:${STAGING_BASE_VERSION}" >/dev/null
+  docker build -q -f "$gen" -t "${PROJECT}-${svc}" core >/dev/null
+  local rc=$?; rm -f "$gen"; return "$rc"
+}
+
 for svc in $BUILD_SERVICES; do
+  if [[ -n "${STAGING_BASE_VERSION:-}" ]] && overlay_build "$svc"; then
+    echo "[*] ${svc}: published ${STAGING_BASE_VERSION} image + this tree's source"
+    continue
+  fi
   for attempt in 1 2 3; do
     echo "[*] building ${svc} (attempt ${attempt}/3)..."
-    if docker compose "${COMPOSE_FILES[@]}" "${COMPOSE_PROFILE[@]}" build "${svc}"; then
+    if docker compose "${COMPOSE_FILES[@]}" "${BUILD_FILES[@]}" "${COMPOSE_PROFILE[@]}" build "${svc}"; then
       break
     elif [[ "$attempt" == 3 ]]; then
       echo "[X] failed to build ${svc} after 3 attempts" >&2

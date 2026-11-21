@@ -10,6 +10,8 @@
 #   ops/deploy-staging.sh <HOST>
 #
 # Environment: SSH_USER, REMOTE_DIR, SUDO_PASSWORD — see ops/_staging-lib.sh.
+# STAGING_BASE_VERSION=x.y.z reuses that release's published images for Python
+# deps when the host's PyPI link is too slow (refused if deps changed since).
 # sudo is only used when the SSH user is not in the docker group.
 #
 # Idempotent / safe to re-run: reuses the existing remote .env/TLS cert and
@@ -45,8 +47,18 @@ rsync -az --delete \
   "${REPO_ROOT}/" "${SSH_USER}@${HOST}:${REMOTE_DIR}/"
 log "repo synced"
 
+# STAGING_BASE_VERSION=x.y.z: reuse that release's published images for the
+# Python dependencies (see _staging-bootstrap.sh). Only valid while no
+# requirements file or Dockerfile has changed since the tag — checked here,
+# where the git history is.
+if [[ -n "${STAGING_BASE_VERSION:-}" ]]; then
+  git -C "$REPO_ROOT" diff --quiet "v${STAGING_BASE_VERSION}" -- '*requirements*.txt' 'core/services/*/Dockerfile' \
+    || fail "requirements or Dockerfiles changed since v${STAGING_BASE_VERSION} — do a full build (unset STAGING_BASE_VERSION)"
+  info "Python deps reused from published v${STAGING_BASE_VERSION} images (unchanged since that tag)"
+fi
+
 info "[3/5] Running bootstrap (build + up -d + migrations + seed) — this can take several minutes..."
-remote_docker "cd '${REMOTE_DIR}' && EDGE_HOST='${HOST}' bash ops/_staging-bootstrap.sh"
+remote_docker "cd '${REMOTE_DIR}' && EDGE_HOST='${HOST}' STAGING_BASE_VERSION='${STAGING_BASE_VERSION:-}' bash ops/_staging-bootstrap.sh"
 log "bootstrap complete"
 
 info "[4/5] Superadmin seed output (shown once, then removed from the host):"
