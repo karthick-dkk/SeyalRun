@@ -37,6 +37,7 @@ rsync -az \
 
 ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" "cd ${REMOTE_DIR} && VERSION_OVERRIDE='${VERSION}' bash -s" <<'REMOTE'
 set -euo pipefail
+bash ops/ensure-redis-password.sh .env   # F-4: an older .env has no Redis password yet
 set -a; source .env; set +a
 export INTERNAL_TLS_DIR="${INTERNAL_TLS_DIR:-$(pwd)/tls/internal}"
 [[ -n "${VERSION_OVERRIDE:-}" ]] && export SEYALRUN_VERSION="$VERSION_OVERRIDE"

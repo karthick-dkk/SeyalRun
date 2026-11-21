@@ -20,7 +20,17 @@ services:
     restart: unless-stopped
     # AOF persistence so rate-limit, webhook-dedup, and login-lockout counters
     # survive a restart (an attacker can't reset lockout by bouncing redis).
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec",
+              "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is not set in .env - run ops/ensure-redis-password.sh or re-run install.sh}"]
+    # Sessions, JIT-elevation flags and lockout counters live here, so any
+    # container on the network could read or forge them without auth (F-4).
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-}
+    # The image entrypoint starts as root, chowns /data and drops to the redis
+    # user, so it keeps exactly the three capabilities that needs.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
     networks: [seyalrun_net]
     read_only: true
     tmpfs:
@@ -36,6 +46,8 @@ services:
   identity-service:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-identity-service:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [seyalrun_net]
@@ -56,6 +68,8 @@ services:
   inventory-service:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-inventory-service:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [seyalrun_net]
@@ -73,6 +87,8 @@ services:
   terminal-service:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-terminal-service:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [seyalrun_net]
@@ -97,6 +113,8 @@ services:
   recording-service:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-recording-service:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [seyalrun_net]
@@ -119,6 +137,8 @@ services:
   api-gateway:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-api-gateway:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     networks: [seyalrun_net]
     volumes:
@@ -152,6 +172,8 @@ services:
   frontend:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-frontend:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     networks: [seyalrun_net]
     read_only: true
     tmpfs:
@@ -167,6 +189,8 @@ services:
   edge-proxy:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-edge-proxy:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     # CSP frame-ancestors is always 'self' plus these EXTRA origins (default none).
     # Set FRAME_ANCESTORS in .env to the Zabbix origin (e.g. https://zabbix.example.com,
     # unquoted host source) to allow the embedded dashboard to iframe this app. Never "*".
@@ -214,6 +238,8 @@ services:
   automation-service:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-automation-service:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [seyalrun_net]
@@ -239,6 +265,8 @@ services:
   zabbix-integration-service:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-zabbix-integration-service:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [seyalrun_net]
@@ -261,6 +289,8 @@ services:
   metrics-service:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-metrics-service:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [seyalrun_net]
@@ -283,6 +313,8 @@ services:
   mcp-server:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-mcp-server:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     networks: [seyalrun_net]
     read_only: true
     tmpfs:

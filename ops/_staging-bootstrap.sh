@@ -34,6 +34,8 @@ if [[ ! -f .env ]]; then
 else
   echo "[*] Reusing existing .env"
 fi
+# Redis auth (F-4): fresh or reused .env alike — compose won't start Redis without it.
+bash ops/ensure-redis-password.sh .env
 
 # ── TLS cert (self-signed, staging only) ────────────────────────────────────
 mkdir -p tls

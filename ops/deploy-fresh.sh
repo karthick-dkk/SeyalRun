@@ -112,6 +112,8 @@ else
   sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$(openssl rand -hex 16)|" .env
   ok ".env generated with random secrets"
 fi
+# Redis auth (F-4): fresh or reused .env alike — compose won't start Redis without it.
+bash ops/ensure-redis-password.sh .env
 
 # ── Step 3: TLS cert ──────────────────────────────────────────────────────────
 info "[3/8] Setting up TLS certificate..."

@@ -208,6 +208,25 @@ else
   ok ".env generated with random secrets"
 fi
 
+# Redis auth (F-4). Runs for a fresh AND a reused .env, so an in-place upgrade
+# gains a password too; compose refuses to start Redis without one. Same logic
+# as ops/ensure-redis-password.sh (inline because this script runs standalone).
+_set_env() {
+  if grep -q "^$1=" .env; then sed -i.bak "s|^$1=.*|$1=$2|" .env && rm -f .env.bak
+  else printf '%s=%s\n' "$1" "$2" >> .env; fi
+}
+if ! grep -qE '^REDIS_PASSWORD=.+' .env; then
+  _set_env REDIS_PASSWORD "$(openssl rand -hex 32)"
+  ok "generated REDIS_PASSWORD"
+fi
+REDIS_PW="$(grep -E '^REDIS_PASSWORD=' .env | tail -1 | cut -d= -f2-)"
+CUR_REDIS_URL="$(grep -E '^REDIS_URL=' .env | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*$//; s/[[:space:]]*$//')"
+case "$CUR_REDIS_URL" in
+  ""|"redis://redis:6379/0"|"redis://:"*"@redis:6379/0")
+    [[ "$CUR_REDIS_URL" == "redis://:${REDIS_PW}@redis:6379/0" ]] || _set_env REDIS_URL "redis://:${REDIS_PW}@redis:6379/0" ;;
+  *) warn "REDIS_URL is custom — left unchanged; make sure it carries that Redis's password" ;;
+esac
+
 # ── Step 4: TLS certificate ───────────────────────────────────────────────────
 info "[4/8] Setting up TLS certificate..."
 SEYALRUN_HOST="${SEYALRUN_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
