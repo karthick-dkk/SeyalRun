@@ -56,6 +56,16 @@ def accountable_ids(*user_ids: str | None) -> list[str]:
     return out
 
 
+def with_editor(editor_ids: list | None, user_id: str) -> list[str]:
+    """editor_ids with user_id appended once — never removes anyone. A single
+    last-editor field would let a later, unrelated edit free the person who made
+    the risky change to approve it."""
+    ids = list(editor_ids or [])
+    if user_id and user_id not in ids:
+        ids.append(user_id)
+    return ids
+
+
 def is_requester(triggered_by: str | None, user_id: str | None,
                  accountable: list[str] | None = None) -> bool:
     """Is ``user_id`` responsible for the run, and so barred from approving it (F-2)?

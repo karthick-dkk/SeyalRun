@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app._attribution import with_editor
 from app.deps import require_service_token, get_user_id, get_user_role
 from app.models import ZASchedule
 
@@ -54,7 +55,7 @@ async def create_schedule(
     now = datetime.now(timezone.utc)
     ci = croniter(payload.cron_expression, now)
     sched = ZASchedule(**payload.model_dump(), next_run_at=ci.get_next(datetime),
-                       created_by=user_id, updated_by=user_id)
+                       created_by=user_id, editor_ids=[user_id])
     session.add(sched)
     await session.commit()
     await session.refresh(sched)
@@ -86,7 +87,7 @@ async def update_schedule(
         raise HTTPException(status_code=400, detail="invalid cron_expression")
     for k, v in payload.model_dump(exclude_none=True).items():
         setattr(s, k, v)
-    s.updated_by = user_id
+    s.editor_ids = with_editor(s.editor_ids, user_id)
     if payload.cron_expression:
         ci = croniter(payload.cron_expression, datetime.now(timezone.utc))
         s.next_run_at = ci.get_next(datetime)
@@ -118,5 +119,5 @@ def _out(s: ZASchedule) -> dict:
         "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
         "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
         "created_at": s.created_at.isoformat() if s.created_at else None,
-        "created_by": s.created_by, "updated_by": s.updated_by,
+        "created_by": s.created_by, "editor_ids": list(s.editor_ids or []),
     }

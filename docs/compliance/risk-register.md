@@ -160,14 +160,20 @@ A requester may still withdraw (reject) their own run.
 Machine-triggered runs are covered too: a schedule or Zabbix trigger binding
 targeting a production-tagged host holds its run for approval, and its
 `triggered_by` names the schedule/event rather than a person. Schedules and
-bindings now record `created_by`/`updated_by` (automation migration `auto_012`,
-zabbix-integration `003`); the scheduler and the internal dispatch endpoint copy
-them onto the run as `_accountable_user_ids` after caller params are merged
-(callers cannot set `_` keys), and `approve_run` refuses them.
+bindings now record `created_by` and an append-only `editor_ids` list (automation
+migration `auto_012`, zabbix-integration `003`) — append-only because a single
+last-editor field let a later, unrelated edit free the person who made the risky
+change. The scheduler and the internal dispatch endpoint copy them onto the run
+as `_accountable_user_ids` after caller params are merged (callers cannot set `_`
+keys), and `approve_run` refuses them.
 
 **Accepted residual:** schedules and bindings saved before 2.0.2 have no recorded
 author, so any approver may approve their runs; re-saving one records the editor.
-Single-admin deployments need a second admin/superadmin for gated runs.
+The author of the **job template** itself is not barred from approving runs of
+it: templates do not track their editors yet, so an admin who changes a
+template's script could approve a run someone else then triggers (that run still
+has two people on it, but only one saw the change). Single-admin deployments need
+a second admin/superadmin for gated runs.
 `core/tests/test_job_attribution.py`.
 
 ## R-15 — Redis has no authentication — CLOSED

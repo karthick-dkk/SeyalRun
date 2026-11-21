@@ -146,7 +146,7 @@ async def _tick(executors: dict, settings) -> None:
             params = {**tmpl.default_params, **sched.params_override, **template_code_params(tmpl)}
             # Who set this schedule up / last changed it may not approve the run it
             # produces (F-2). Written last so params_override cannot clear it.
-            params[ACCOUNTABLE_PARAM] = accountable_ids(sched.created_by, sched.updated_by)
+            params[ACCOUNTABLE_PARAM] = accountable_ids(sched.created_by, *(sched.editor_ids or []))
             target_host_ids = list(tmpl.target_host_ids or [])
             # PCI DSS Phase D — production is gated regardless of trigger mechanism;
             # a cron schedule targeting a production host is not exempt just because

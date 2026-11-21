@@ -95,7 +95,9 @@ class ZASchedule(Base):
     # Who set the schedule up / last changed it — copied onto each run so neither
     # can approve a run their own schedule produced (F-2). Null for older rows.
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Append-only: every user who has ever changed it. Never shrunk, so a later
+    # edit by someone else cannot free an earlier editor to approve.
+    editor_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

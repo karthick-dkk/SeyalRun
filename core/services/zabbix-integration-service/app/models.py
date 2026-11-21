@@ -38,14 +38,24 @@ class ZAZabbixTriggerBinding(Base):
     # Author / last editor — sent with each dispatch so neither can approve a
     # production run their own binding produced (F-2). Null for older rows.
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Append-only: every user who has ever changed it. Never shrunk, so a later
+    # edit by someone else cannot free an earlier editor to approve.
+    editor_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+def with_editor(editor_ids: list | None, user_id: str) -> list[str]:
+    """editor_ids with user_id appended once — never removes anyone."""
+    ids = list(editor_ids or [])
+    if user_id and user_id not in ids:
+        ids.append(user_id)
+    return ids
 
 
 def binding_accountable_ids(binding: "ZAZabbixTriggerBinding") -> list[str]:
     """Who configured this binding — barred from approving the runs it produces."""
     out: list[str] = []
-    for u in (getattr(binding, "created_by", None), getattr(binding, "updated_by", None)):
+    for u in [getattr(binding, "created_by", None), *(getattr(binding, "editor_ids", None) or [])]:
         if u and u not in out:
             out.append(u)
     return out

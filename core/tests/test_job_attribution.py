@@ -120,7 +120,7 @@ def test_reject_is_audited():
 # binding's author and last editor travel with the run as ACCOUNTABLE_PARAM.
 
 def test_schedule_author_and_editor_cannot_approve_its_run():
-    acct = attr.accountable_ids("author-1", "editor-2")
+    acct = attr.accountable_ids("author-1", *attr.with_editor(["author-1"], "editor-2"))
     assert attr.is_requester("schedule:7", "author-1", acct)
     assert attr.is_requester("schedule:7", "editor-2", acct)
     assert not attr.is_requester("schedule:7", "third-party", acct)
@@ -138,7 +138,7 @@ def test_legacy_trigger_with_no_recorded_author_stays_approvable():
 
 def test_every_machine_dispatch_path_attaches_accountability():
     sched = (AUTO / "scheduler.py").read_text()
-    assert "params[ACCOUNTABLE_PARAM] = accountable_ids(sched.created_by, sched.updated_by)" in sched
+    assert "params[ACCOUNTABLE_PARAM] = accountable_ids(sched.created_by, *(sched.editor_ids or []))" in sched
     # written AFTER params_override is merged, so the override cannot clear it
     i_merge = sched.index("**sched.params_override")
     assert sched.index("params[ACCOUNTABLE_PARAM]") > i_merge
@@ -162,9 +162,23 @@ def test_callers_cannot_forge_or_clear_the_accountability_param():
 
 def test_schedule_and_binding_writes_record_the_editor():
     sch = (AUTO / "api/schedules.py").read_text()
-    assert "created_by=user_id, updated_by=user_id" in sch and "s.updated_by = user_id" in sch
+    assert "created_by=user_id, editor_ids=[user_id]" in sch
+    assert "s.editor_ids = with_editor(s.editor_ids, user_id)" in sch
     tb = (ROOT / "services/zabbix-integration-service/app/api/trigger_bindings.py").read_text()
-    assert "created_by=user_id, updated_by=user_id" in tb and "b.updated_by = user_id" in tb
+    assert "created_by=user_id, editor_ids=[user_id]" in tb
+    assert "b.editor_ids = with_editor(b.editor_ids, user_id)" in tb
+
+
+def test_a_later_edit_never_frees_an_earlier_editor():
+    """The overwrite bypass: C creates, A makes the risky edit, B touches it later.
+    A must still be barred from approving."""
+    editors = attr.with_editor(None, "creator-C")
+    editors = attr.with_editor(editors, "risky-A")
+    editors = attr.with_editor(editors, "later-B")
+    editors = attr.with_editor(editors, "risky-A")  # re-edit does not duplicate
+    assert editors == ["creator-C", "risky-A", "later-B"]
+    acct = attr.accountable_ids("creator-C", *editors)
+    assert attr.is_requester("schedule:7", "risky-A", acct)
 
 
 def test_approve_passes_accountable_ids():

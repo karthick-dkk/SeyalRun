@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.deps import require_service_token, get_user_id, get_user_role
-from app.models import ZAZabbixTriggerBinding, binding_accountable_ids
+from app.models import ZAZabbixTriggerBinding, binding_accountable_ids, with_editor
 
 router = APIRouter(dependencies=[Depends(require_service_token)])
 
@@ -59,7 +59,7 @@ async def create_binding(
 ):
     if role != "superadmin":
         raise HTTPException(status_code=403, detail="admin only")
-    b = ZAZabbixTriggerBinding(**payload.model_dump(), created_by=user_id, updated_by=user_id)
+    b = ZAZabbixTriggerBinding(**payload.model_dump(), created_by=user_id, editor_ids=[user_id])
     session.add(b)
     await session.commit()
     await session.refresh(b)
@@ -89,7 +89,7 @@ async def update_binding(
         raise HTTPException(status_code=404)
     for k, v in payload.model_dump(exclude_none=True).items():
         setattr(b, k, v)
-    b.updated_by = user_id
+    b.editor_ids = with_editor(b.editor_ids, user_id)
     await session.commit()
     await session.refresh(b)
     return _out(b)
