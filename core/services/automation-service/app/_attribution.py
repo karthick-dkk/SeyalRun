@@ -41,11 +41,34 @@ def actor_user_id(triggered_by: str | None) -> str | None:
     return None
 
 
-def is_requester(triggered_by: str | None, user_id: str | None) -> bool:
-    """Did ``user_id`` request the run? Used to block self-approval (F-2).
+# Run param carrying the people who configured a machine trigger (a schedule's
+# or Zabbix binding's author and last editor). Set by the scheduler / internal
+# endpoint AFTER caller params are merged, so a caller cannot clear it.
+ACCOUNTABLE_PARAM = "_accountable_user_ids"
+
+
+def accountable_ids(*user_ids: str | None) -> list[str]:
+    """De-duplicated, non-empty ids, in order."""
+    out: list[str] = []
+    for u in user_ids:
+        if u and u not in out:
+            out.append(u)
+    return out
+
+
+def is_requester(triggered_by: str | None, user_id: str | None,
+                 accountable: list[str] | None = None) -> bool:
+    """Is ``user_id`` responsible for the run, and so barred from approving it (F-2)?
+
+    True for the person who triggered it, and for anyone accountable for the
+    machine trigger that produced it — a scheduled run's ``triggered_by`` names
+    the schedule, not the admin who set the schedule up, so without
+    ``accountable`` that admin could approve their own change.
 
     Fails closed: with no caller identity we cannot prove the approver is a
     different person, so the caller is treated as the requester."""
     if not user_id:
+        return True
+    if user_id in (accountable or []):
         return True
     return actor_user_id(triggered_by) == user_id

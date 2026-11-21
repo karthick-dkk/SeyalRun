@@ -100,7 +100,7 @@ def _func(src: str, name: str) -> str:
 def test_approve_blocks_self_approval_and_audits_fail_closed_before_dispatch():
     src = (AUTO / "api/job_runs.py").read_text()
     fn = _func(src, "approve_run")
-    i_block = fn.index("is_requester(run.triggered_by, user_id)")
+    i_block = fn.index("is_requester(run.triggered_by, user_id")
     i_audit = fn.index('action="job.approve"')
     i_status = fn.index('run.status = "pending"')
     i_dispatch = fn.index("_runner.execute(")
@@ -112,3 +112,61 @@ def test_approve_blocks_self_approval_and_audits_fail_closed_before_dispatch():
 def test_reject_is_audited():
     fn = _func((AUTO / "api/job_runs.py").read_text(), "reject_run")
     assert 'action="job.reject"' in fn
+
+
+# ── machine triggers: whoever configured them may not approve their runs ─────
+# A scheduled or Zabbix-triggered run on a production host is held for approval,
+# and its triggered_by names the schedule/event, not a person. The schedule's or
+# binding's author and last editor travel with the run as ACCOUNTABLE_PARAM.
+
+def test_schedule_author_and_editor_cannot_approve_its_run():
+    acct = attr.accountable_ids("author-1", "editor-2")
+    assert attr.is_requester("schedule:7", "author-1", acct)
+    assert attr.is_requester("schedule:7", "editor-2", acct)
+    assert not attr.is_requester("schedule:7", "third-party", acct)
+
+
+def test_accountable_ids_drops_blanks_and_duplicates():
+    assert attr.accountable_ids("a", None, "", "a", "b") == ["a", "b"]
+
+
+def test_legacy_trigger_with_no_recorded_author_stays_approvable():
+    """Documented residual (R-14): a schedule/binding saved before 2.0.2 has no
+    author, so any approver may approve — refusing everyone would strand the run."""
+    assert not attr.is_requester("schedule:7", "anyone", [])
+
+
+def test_every_machine_dispatch_path_attaches_accountability():
+    sched = (AUTO / "scheduler.py").read_text()
+    assert "params[ACCOUNTABLE_PARAM] = accountable_ids(sched.created_by, sched.updated_by)" in sched
+    # written AFTER params_override is merged, so the override cannot clear it
+    i_merge = sched.index("**sched.params_override")
+    assert sched.index("params[ACCOUNTABLE_PARAM]") > i_merge
+
+    internal = (AUTO / "api/internal.py").read_text()
+    assert "accountable_user_ids: list[str] = []" in internal
+    assert internal.index("params[ACCOUNTABLE_PARAM]") > internal.index("filter_caller_params(tmpl, payload.params)")
+
+    zbx = ROOT / "services/zabbix-integration-service/app/api"
+    for f in ("webhook.py", "trigger_bindings.py"):
+        assert '"accountable_user_ids": binding_accountable_ids(binding)' in (zbx / f).read_text(), f
+
+
+def test_callers_cannot_forge_or_clear_the_accountability_param():
+    """Caller params may not set any _-prefixed control key, which is what keeps
+    ACCOUNTABLE_PARAM service-asserted."""
+    assert attr.ACCOUNTABLE_PARAM.startswith("_")
+    src = (AUTO / "_params.py").read_text()
+    assert 'control = sorted(k for k in supplied if k.startswith("_"))' in src
+
+
+def test_schedule_and_binding_writes_record_the_editor():
+    sch = (AUTO / "api/schedules.py").read_text()
+    assert "created_by=user_id, updated_by=user_id" in sch and "s.updated_by = user_id" in sch
+    tb = (ROOT / "services/zabbix-integration-service/app/api/trigger_bindings.py").read_text()
+    assert "created_by=user_id, updated_by=user_id" in tb and "b.updated_by = user_id" in tb
+
+
+def test_approve_passes_accountable_ids():
+    fn = _func((AUTO / "api/job_runs.py").read_text(), "approve_run")
+    assert "is_requester(run.triggered_by, user_id, accountable)" in fn

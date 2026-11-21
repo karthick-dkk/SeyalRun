@@ -28,7 +28,7 @@ Status: **Implemented** / **Partial** / **Gap**.
 | Command restriction in sessions | Implemented | `za_command_filters`; `CommandFilterMatcher` plugin axis |
 | Periodic access review | Implemented | `identity-service/app/api/access_review.py` (3 audited actions) |
 | API token (PAT) least privilege | Implemented | Fine-grained per-domain scopes, `credentials:*`/`admin:*` never grantable — `core/libs/apiscopes`. New tokens need an explicit scope; the legacy coarse `read`/`write` scopes are refused at issuance and existing ones are flagged "legacy — reissue" in the UI (R-13) — `core/tests/test_api_scopes.py` |
-| Separation of duties on gated automation | Implemented | The requester cannot approve their own job run; `job.approve` is audited fail-closed before dispatch, `job.reject` is audited (R-14) — `automation-service/app/api/job_runs.py`, `core/tests/test_job_attribution.py` |
+| Separation of duties on gated automation | Implemented | The requester — or the author/last editor of the schedule or Zabbix binding that produced the run — cannot approve it; `job.approve` is audited fail-closed before dispatch, `job.reject` is audited (R-14) — `automation-service/app/api/job_runs.py`, `core/tests/test_job_attribution.py` |
 | SFTP / upload / download grants enforced | Implemented | Each SFTP operation resolves the same `za_authorization` as SSH and checks the specific action — `terminal-service/app/api/sftp.py` (R-11 closed) |
 
 ## Cryptography

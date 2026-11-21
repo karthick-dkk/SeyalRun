@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit
-from app._attribution import actor_user_id, is_requester
+from app._attribution import ACCOUNTABLE_PARAM, actor_user_id, is_requester
 from app._params import template_code_params
 from app.database import get_session, SessionLocal
 from app.deps import require_service_token, get_user_id, get_user_name, get_user_role, get_user_real_role
@@ -171,8 +171,10 @@ async def approve_run(
     # Separation of duties (F-2): the approval gate exists so a second person signs
     # off on a change, so the requester approving their own run defeats it. Mirrors
     # the grant-approval block in identity-service/app/api/authorizations.py.
-    if is_requester(run.triggered_by, user_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="the requester cannot approve their own run")
+    accountable = list((run.params or {}).get(ACCOUNTABLE_PARAM) or [])
+    if is_requester(run.triggered_by, user_id, accountable):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="the requester, or whoever configured the schedule/trigger that started it, cannot approve this run")
 
     # Recorded before anything is dispatched, and fail-closed: an approval that
     # cannot be attributed is exactly the untraced change this gate prevents.
@@ -181,7 +183,7 @@ async def approve_run(
             user_id=user_id, username=username, action="job.approve",
             resource_type="job_run", resource_id=run_id,
             details={"template": tmpl.name, "template_id": tmpl.id,
-                     "requested_by": actor_user_id(run.triggered_by),
+                     "requested_by": actor_user_id(run.triggered_by), "accountable_user_ids": accountable,
                      "triggered_by": run.triggered_by, "approver_role": tmpl.approver_role or "admin"},
             result="success", critical=True,
         )

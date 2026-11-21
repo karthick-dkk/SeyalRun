@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app._attribution import ACCOUNTABLE_PARAM, accountable_ids
 from app._params import ParamNotAllowedError, filter_caller_params, template_code_params
 from app._production_gate import any_production_hosts
 from app.database import get_session
@@ -24,6 +25,9 @@ class InternalRunCreate(BaseModel):
     triggered_by: str
     params: dict = {}
     target_host_ids: list[str] = []
+    # People who configured the trigger (e.g. a Zabbix binding's author/editor):
+    # they may not approve the run it produces (F-2). Service-asserted only.
+    accountable_user_ids: list[str] = []
 
 
 @router.post("/internal/job-runs", status_code=status.HTTP_202_ACCEPTED)
@@ -45,6 +49,7 @@ async def create_run_internal(
     except ParamNotAllowedError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     params = {**tmpl.default_params, **caller_params, **template_code_params(tmpl)}
+    params[ACCOUNTABLE_PARAM] = accountable_ids(*payload.accountable_user_ids)
 
     # PCI DSS Phase D — production is gated regardless of trigger mechanism; a
     # Zabbix-triggered run targeting a production host is not exempt just

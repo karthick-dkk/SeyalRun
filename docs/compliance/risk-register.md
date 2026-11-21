@@ -155,9 +155,20 @@ honouring them.
 **Closed in 2.0.2**: `approve_run` refuses the requester (403), matching the
 grant-approval block; `job.approve` is written fail-closed before anything is
 dispatched (503 and no run if the audit write fails) and `job.reject` is audited.
-A requester may still withdraw (reject) their own run. Single-admin deployments
-need a second admin/superadmin for templates that require approval or target
-production-tagged hosts. `core/tests/test_job_attribution.py`.
+A requester may still withdraw (reject) their own run.
+
+Machine-triggered runs are covered too: a schedule or Zabbix trigger binding
+targeting a production-tagged host holds its run for approval, and its
+`triggered_by` names the schedule/event rather than a person. Schedules and
+bindings now record `created_by`/`updated_by` (automation migration `auto_012`,
+zabbix-integration `003`); the scheduler and the internal dispatch endpoint copy
+them onto the run as `_accountable_user_ids` after caller params are merged
+(callers cannot set `_` keys), and `approve_run` refuses them.
+
+**Accepted residual:** schedules and bindings saved before 2.0.2 have no recorded
+author, so any approver may approve their runs; re-saving one records the editor.
+Single-admin deployments need a second admin/superadmin for gated runs.
+`core/tests/test_job_attribution.py`.
 
 ## R-15 — Redis has no authentication — CLOSED
 

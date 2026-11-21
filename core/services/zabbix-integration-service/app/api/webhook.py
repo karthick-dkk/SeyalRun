@@ -32,7 +32,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.database import SessionLocal
-from app.models import ZAZabbixTriggerBinding
+from app.models import ZAZabbixTriggerBinding, binding_accountable_ids
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -176,6 +176,8 @@ async def _dispatch_run(binding, target_host_ids: list[str], triggered_by: str,
                     "triggered_by": triggered_by,
                     "params": run_params,
                     "target_host_ids": target_host_ids,
+                    # The binding's author/editor may not approve the run it starts (F-2).
+                    "accountable_user_ids": binding_accountable_ids(binding),
                 },
                 headers={"X-Service-Token": tok},
             )

@@ -35,4 +35,17 @@ class ZAZabbixTriggerBinding(Base):
     post_result_to_zabbix: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     extra_vars: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Author / last editor — sent with each dispatch so neither can approve a
+    # production run their own binding produced (F-2). Null for older rows.
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+def binding_accountable_ids(binding: "ZAZabbixTriggerBinding") -> list[str]:
+    """Who configured this binding — barred from approving the runs it produces."""
+    out: list[str] = []
+    for u in (getattr(binding, "created_by", None), getattr(binding, "updated_by", None)):
+        if u and u not in out:
+            out.append(u)
+    return out
