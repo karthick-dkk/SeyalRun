@@ -138,7 +138,10 @@
           <tr v-for="t in apiTokens" :key="t.id">
             <td class="fw-600">{{ t.name }}</td>
             <td><span class="ip-mono">{{ t.token_prefix }}…</span></td>
-            <td class="text-sm">{{ (t.scopes || []).join(', ') }}</td>
+            <td class="text-sm">
+              {{ (t.scopes || []).join(', ') }}
+              <span v-if="(t.scopes || []).some((s: string) => s === 'read' || s === 'write')" class="badge" style="margin-left:6px;color:var(--warn);border-color:rgba(210,153,34,0.4)" title="Issued before per-domain scopes: 'read' reaches every readable area your role allows, including users and audit. Revoke it and issue a scoped token.">legacy — reissue</span>
+            </td>
             <td class="text-muted-sm">{{ t.expires_at ? formatDate(t.expires_at) : 'Never' }}</td>
             <td class="text-muted-sm">{{ t.last_used_at ? formatDate(t.last_used_at) : 'Never' }}</td>
             <td class="text-muted-sm">{{ formatDate(t.created_at) }}</td>
@@ -721,7 +724,7 @@ async function removeAcl(a: any) {
 
 // ── Personal Access Tokens ───────────────────────────────────────────────
 const showTokenModal = ref(false)
-const tokenForm = reactive({ name: '', scopes: ['read'] as string[], expires_at: '' })
+const tokenForm = reactive({ name: '', scopes: [] as string[], expires_at: '' })
 const tokenError = ref('')
 const savingToken = ref(false)
 const createdToken = ref<any>(null)

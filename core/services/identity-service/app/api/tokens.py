@@ -43,16 +43,20 @@ async def create_token(
     user_id: str = Depends(current_user_id),
     actor_name: str | None = Header(default=None, alias="X-User-Name"),
 ):
-    # Refuse a token nobody could use safely: only the fine-grained agent scopes
-    # (or the legacy coarse read/write) may be granted. credentials:* / admin:* are
+    # Only the fine-grained agent scopes may be granted. credentials:* / admin:* are
     # rejected here — even though the gateway would also deny them, failing at
     # issuance is clearer than minting a token that silently can't do what its
-    # scopes claim.
+    # scopes claim. The legacy coarse read/write are refused as well (F-1).
+    if not payload.scopes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="a token needs at least one scope — pick from the agent scope catalog (GET /api-tokens/scopes)",
+        )
     bad = validate_agent_scopes(payload.scopes)
     if bad:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"scopes not grantable to a token: {sorted(bad)} — pick from the agent scope catalog or use read/write",
+            detail=f"scopes not grantable to a token: {sorted(bad)} — pick from the agent scope catalog (GET /api-tokens/scopes)",
         )
     raw_token = generate_pat()
     token = ZAApiToken(

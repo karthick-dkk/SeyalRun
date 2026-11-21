@@ -137,9 +137,15 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
   if [[ -n "$TOKEN" ]]; then
     AUTH=(-H "Authorization: Bearer ${TOKEN}")
 
-    # Personal Access Token create / use / revoke
+    # Legacy coarse scopes are no longer issued (F-1): "read" reached users/audit.
+    legacy_code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 -X POST "${EDGE_HTTPS}/api/v1/api-tokens" "${AUTH[@]}" \
+      -H 'Content-Type: application/json' -d '{"name":"verify-staging-legacy","scopes":["read"]}')
+    [[ "$legacy_code" == "400" ]] && ok "legacy 'read' PAT scope refused at issuance (400)" \
+      || bad "legacy 'read' PAT issuance returned ${legacy_code} (want 400)"
+
+    # Personal Access Token create / use / revoke — and that its scope actually narrows it
     pat_resp=$(curl -sk --max-time 10 -X POST "${EDGE_HTTPS}/api/v1/api-tokens" "${AUTH[@]}" \
-      -H 'Content-Type: application/json' -d '{"name":"verify-staging","scopes":["read"]}')
+      -H 'Content-Type: application/json' -d '{"name":"verify-staging","scopes":["inventory:read"]}')
     PAT_ID=$(echo "$pat_resp" | json_get id)
     PAT_TOKEN=$(echo "$pat_resp" | json_get token)
     [[ -n "$PAT_ID" && -n "$PAT_TOKEN" ]] \
@@ -147,15 +153,17 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
       || bad "PAT creation failed: ${pat_resp}"
 
     if [[ -n "$PAT_TOKEN" ]]; then
-      pat_code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/api/v1/users" -H "Authorization: Bearer ${PAT_TOKEN}")
-      [[ "$pat_code" == "200" ]] && ok "PAT authenticates GET /users (200)" || bad "PAT auth check returned ${pat_code} (want 200)"
+      pat_code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/api/v1/hosts" -H "Authorization: Bearer ${PAT_TOKEN}")
+      [[ "$pat_code" == "200" ]] && ok "inventory:read PAT reads GET /hosts (200)" || bad "PAT GET /hosts returned ${pat_code} (want 200)"
+      pat_admin=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/api/v1/users" -H "Authorization: Bearer ${PAT_TOKEN}")
+      [[ "$pat_admin" == "403" ]] && ok "inventory:read PAT denied GET /users (403)" || bad "PAT GET /users returned ${pat_admin} (want 403 — scope must narrow an admin's token)"
     fi
 
     if [[ -n "$PAT_ID" ]]; then
       revoke_code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 -X DELETE "${EDGE_HTTPS}/api/v1/api-tokens/${PAT_ID}" "${AUTH[@]}")
       [[ "$revoke_code" == "204" ]] && ok "PAT revoked (204)" || bad "PAT revoke returned ${revoke_code} (want 204)"
 
-      pat_code2=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/api/v1/users" -H "Authorization: Bearer ${PAT_TOKEN}")
+      pat_code2=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/api/v1/hosts" -H "Authorization: Bearer ${PAT_TOKEN}")
       [[ "$pat_code2" == "401" ]] && ok "revoked PAT rejected (401)" || bad "revoked PAT returned ${pat_code2} (want 401)"
     fi
 

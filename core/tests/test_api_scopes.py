@@ -8,8 +8,11 @@ for a PAM: a token can never read a credential secret, and never touch admin.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from libs.apiscopes import (
     AGENT_GRANTABLE,
+    has_legacy_scopes,
     required_scope,
     scope_allows,
     validate_agent_scopes,
@@ -70,12 +73,31 @@ def test_agent_grantable_is_exactly_the_agreed_catalog():
 
 def test_issuance_rejects_non_agent_scopes():
     assert validate_agent_scopes(["inventory:read", "automation:run"]) == []
-    assert validate_agent_scopes(["read", "write"]) == []          # legacy still allowed
+    assert set(validate_agent_scopes(["read", "write"])) == {"read", "write"}  # F-1: no longer issued
     bad = validate_agent_scopes(["inventory:read", "credentials:read", "admin:write"])
     assert set(bad) == {"credentials:read", "admin:write"}
 
 
-# ── backward compatibility: legacy coarse tokens are untouched ───────────────
+def test_legacy_tokens_are_flagged_for_reissue():
+    assert has_legacy_scopes(["read"])
+    assert has_legacy_scopes(["inventory:read", "write"])
+    assert not has_legacy_scopes(["inventory:read"])
+    assert not has_legacy_scopes(None)
+
+
+def test_new_tokens_have_no_default_scope():
+    """F-1: the issuance schema and the ORM must not hand a token a scope it was
+    not explicitly given — the old default was the coarse "read"."""
+    root = Path(__file__).resolve().parent.parent / "services/identity-service/app"
+    schemas = (root / "schemas.py").read_text()
+    block = schemas.split("class ApiTokenCreate", 1)[1].split("class ", 1)[0]
+    assert '["read"]' not in block and "default_factory=list" in block
+    assert 'default=lambda: ["read"]' not in (root / "models.py").read_text()
+    tokens = (root / "api/tokens.py").read_text()
+    assert "if not payload.scopes" in tokens, "empty scope list must be refused at issuance"
+
+
+# ── backward compatibility: existing legacy coarse tokens keep working ───────
 
 def test_legacy_coarse_read_write_still_work():
     assert scope_allows(["read"], "hosts", "GET", "hosts")

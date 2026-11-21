@@ -280,7 +280,7 @@ class ZAApiToken(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     token_prefix: Mapped[str] = mapped_column(String(12), nullable=False)
-    scopes: Mapped[list] = mapped_column(JSON, default=lambda: ["read"])
+    scopes: Mapped[list] = mapped_column(JSON, default=list)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

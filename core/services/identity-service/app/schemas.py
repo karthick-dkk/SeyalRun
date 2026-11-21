@@ -268,7 +268,9 @@ class LoginAclOut(LoginAclCreate):
 
 class ApiTokenCreate(BaseModel):
     name: str
-    scopes: list[str] = Field(default_factory=lambda: ["read"])
+    # No default scope (F-1): the old default, the coarse "read", reached every
+    # readable segment the owner's role allowed. A token must name what it is for.
+    scopes: list[str] = Field(default_factory=list)
     expires_at: datetime | None = None
 
 

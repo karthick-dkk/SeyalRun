@@ -17,15 +17,20 @@ Two hard lines for a PAM:
   * ``admin:*`` (users, roles, authorizations, token issuance, settings) is never
     agent-grantable either — no agent administers identity or access.
 
-Backward compatibility: tokens issued before fine-grained scopes carry the coarse
-``read`` / ``write`` scopes. Those keep working (``read`` satisfies any read,
-``write`` any write) so this change breaks no existing token; only the new
-per-domain scopes are precise.
+Legacy coarse scopes: tokens issued before fine-grained scopes carry ``read`` /
+``write``, where ``read`` satisfies any read and ``write`` any write — including
+admin and credential-metadata segments the agent catalog deliberately excludes
+(architecture review F-1). They are no longer issued (:func:`validate_agent_scopes`
+refuses them) but existing tokens keep working so no integration breaks on
+upgrade; the token list flags them (:func:`has_legacy_scopes`) for reissue.
 """
 
 from __future__ import annotations
 
 READ_METHODS = frozenset({"GET", "HEAD"})
+
+# Honoured on existing tokens, never issued on new ones (F-1).
+LEGACY_SCOPES = frozenset({"read", "write"})
 
 # segment -> (read_scope, write_scope). The write_scope of a segment an agent must
 # never mutate is an ``admin:write`` sentinel: real, but not agent-grantable.
@@ -132,6 +137,15 @@ def scope_allows(scopes: list[str], segment: str, method: str, path: str) -> boo
 
 
 def validate_agent_scopes(scopes: list[str]) -> list[str]:
-    """Reject anything an agent token may not hold. Returns the offending scopes
-    (empty list => all fine). Callers refuse issuance when this is non-empty."""
-    return [s for s in scopes if s not in AGENT_GRANTABLE and s not in ("read", "write")]
+    """Reject anything a new token may not hold. Returns the offending scopes
+    (empty list => all fine). Callers refuse issuance when this is non-empty.
+
+    The legacy ``read``/``write`` scopes are refused too: ``read`` alone reaches
+    users, audit and credential metadata, which is exactly what per-domain scoping
+    exists to keep out of a token (F-1)."""
+    return [s for s in scopes if s not in AGENT_GRANTABLE]
+
+
+def has_legacy_scopes(scopes: list[str] | None) -> bool:
+    """True for a token minted before fine-grained scopes — shown for reissue."""
+    return any(s in LEGACY_SCOPES for s in (scopes or []))
