@@ -502,6 +502,10 @@ async def admin_health(request: Request):
 
 @app.api_route("/api/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def gateway(path: str, request: Request):
+    # Dot segments would let the RBAC/scope check see one path while the
+    # upstream (after URL normalisation) serves another. Refuse them outright.
+    if any(seg in (".", "..") for seg in path.split("/")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid path")
     if path == "internal" or path.startswith("internal/"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
 

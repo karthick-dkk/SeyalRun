@@ -27,6 +27,8 @@ upgrade; the token list flags them (:func:`has_legacy_scopes`) for reissue.
 
 from __future__ import annotations
 
+import re
+
 READ_METHODS = frozenset({"GET", "HEAD"})
 
 # Honoured on existing tokens, never issued on new ones (F-1).
@@ -120,9 +122,12 @@ def _is_run_pseudo_segment(segment: str, method: str, path: str) -> bool:
 # else written under posture/ stays on the admin:write sentinel. These routes
 # arrive with M2 (patch approval) and M3 (policies); the scopes exist now so the
 # token model is settled before the endpoints are.
+# Exact route patterns (fullmatch), ids limited to [A-Za-z0-9_-] so a dot
+# segment ("posture/policies/../feeds/import") can never match a delegable
+# scope; anything unmatched falls back to the admin:write sentinel.
 _POSTURE_WRITE_SCOPES = (
-    ("posture/patches/", "/approve", "patch:approve"),
-    ("posture/policies", "", "policy:write"),
+    (re.compile(r"posture/patches/[A-Za-z0-9_-]+/approve"), "patch:approve"),
+    (re.compile(r"posture/policies(?:/[A-Za-z0-9_-]+)*"), "policy:write"),
 )
 
 
@@ -130,8 +135,8 @@ def _posture_scope(method: str, path: str) -> str | None:
     if method.upper() in READ_METHODS:
         return None
     p = path.strip("/")
-    for prefix, suffix, scope in _POSTURE_WRITE_SCOPES:
-        if (p + "/").startswith(prefix if prefix.endswith("/") else prefix + "/") and p.endswith(suffix):
+    for pattern, scope in _POSTURE_WRITE_SCOPES:
+        if pattern.fullmatch(p):
             return scope
     return None
 

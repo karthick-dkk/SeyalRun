@@ -143,3 +143,11 @@ def test_patch_approve_and_policy_write_are_narrow():
     assert not scope_allows(["policy:write"], "posture", "POST", "posture/patches/p1/approve")
     assert not scope_allows(["patch:approve", "policy:write"], "posture", "POST", "posture/feeds/import")
     assert not scope_allows(["patch:approve"], "posture", "GET", "posture/hosts")
+
+
+def test_posture_scope_ignores_dot_segments():
+    from libs.apiscopes import required_scope, scope_allows
+    assert required_scope("posture", "POST", "posture/policies/abc") == "policy:write"
+    assert required_scope("posture", "POST", "posture/patches/p1/approve") == "patch:approve"
+    for p in ("posture/policies/../feeds/import", "posture/patches/x/../../feeds/import/approve"):
+        assert not scope_allows(["policy:write", "patch:approve"], "posture", "POST", p)
