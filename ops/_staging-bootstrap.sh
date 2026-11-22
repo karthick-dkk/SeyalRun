@@ -219,7 +219,7 @@ if [[ "$USE_DB_OVERLAY" == "1" ]]; then
       "CREATE DATABASE \"${AUTOMATION_DB_NAME}\""
   fi
 
-  POSTURE_DB_NAME="$(grep '^POSTURE_DB_NAME=' .env | cut -d= -f2)"
+  POSTURE_DB_NAME="$(grep '^POSTURE_DB_NAME=' .env | cut -d= -f2 || true)"
   POSTURE_DB_NAME="${POSTURE_DB_NAME:-seyalrun_posture}"
   echo "[*] Ensuring ${POSTURE_DB_NAME} database exists..."
   DB_EXISTS=$(docker compose "${COMPOSE_FILES[@]}" "${COMPOSE_PROFILE[@]}" exec -T postgres \
