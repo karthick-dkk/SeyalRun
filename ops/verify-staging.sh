@@ -79,7 +79,7 @@ code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/" 2>
   || bad "/ returned ${code} (want 200)"
 
 # ── Internal services not host-reachable ─────────────────────────────────────
-for port in 8101 8102 8103 8104 8105 8106 8107 8000 6379; do
+for port in 8101 8102 8103 8104 8105 8106 8107 8108 8000 6379; do
   if curl -s --max-time 2 "http://${HOST}:${port}/health" >/dev/null 2>&1; then
     bad "port ${port} is reachable from outside (should be internal-only)"
   else
@@ -101,7 +101,7 @@ if [[ -n "$COMPOSE_FLAGS" ]]; then
       fi
     done <<< "$ps_out"
 
-    for service in identity-service inventory-service terminal-service recording-service automation-service zabbix-integration-service metrics-service; do
+    for service in identity-service inventory-service terminal-service recording-service automation-service zabbix-integration-service metrics-service posture-service; do
       alembic_out=$(remote_sudo_out "cd ${REMOTE_DIR} && docker compose ${COMPOSE_FLAGS} run --rm --no-deps ${service} python -m alembic current 2>&1")
       if echo "$alembic_out" | grep -q '(head)'; then
         ok "${service}: alembic current == head"
@@ -332,7 +332,8 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
       || bad "Phase 3 metrics dashboard failed: ${metrics_resp}"
 
     # Read endpoints across the remaining services (absorbed from the retired validate-api.sh).
-    for ep in zones authorizations "audit/logs?limit=1" ssh/sessions recordings; do
+    for ep in zones authorizations "audit/logs?limit=1" ssh/sessions recordings \
+              posture/summary posture/hosts posture/feeds; do
       code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/api/v1/${ep}" "${AUTH[@]}")
       [[ "$code" == 200 ]] && ok "GET /api/v1/${ep} -> 200" || bad "GET /api/v1/${ep} -> ${code} (want 200)"
     done
@@ -343,7 +344,10 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
     if [[ "${VERIFY_E2E:-1}" == 1 ]]; then
       # Pin the edge's own self-signed cert rather than switching TLS checks off.
       edge_cert=$(mktemp); rssh "cat ${REMOTE_DIR}/tls/cert.pem" > "$edge_cert" 2>/dev/null
+      # POSTURE_E2E_BUNDLE / POSTURE_E2E_HOST_IDS (see e2e-staging.py) pass through
+      # from the caller's environment to enable the feed-import and live-facts checks.
       e2e_out=$(SEYALRUN_ADMIN_PASSWORD="$SEYALRUN_ADMIN_PASSWORD" SEYALRUN_CA_FILE="$(test -s "$edge_cert" && echo "$edge_cert")" \
+                POSTURE_E2E_BUNDLE="${POSTURE_E2E_BUNDLE:-}" POSTURE_E2E_HOST_IDS="${POSTURE_E2E_HOST_IDS:-}" \
                 python3 "$(dirname "${BASH_SOURCE[0]}")/e2e-staging.py" "${EDGE_HTTPS}" 2>&1)
       rm -f "$edge_cert"
       while IFS= read -r line; do

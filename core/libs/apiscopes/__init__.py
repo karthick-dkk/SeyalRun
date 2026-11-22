@@ -27,6 +27,8 @@ upgrade; the token list flags them (:func:`has_legacy_scopes`) for reissue.
 
 from __future__ import annotations
 
+import re
+
 READ_METHODS = frozenset({"GET", "HEAD"})
 
 # Honoured on existing tokens, never issued on new ones (F-1).
@@ -72,6 +74,11 @@ _SEGMENT_SCOPES: dict[str, tuple[str, str]] = {
     "settings": ("admin:read", "admin:write"),
     "integrations": ("admin:read", "admin:write"),
     "log-backend": ("admin:read", "admin:write"),
+    # posture (3.0). Reads are posture:read. Writes default to the admin:write
+    # sentinel — collect, feed import and activation are admin-only and no token
+    # may perform them; the two delegable write capabilities are carved out by
+    # sub-path in _posture_scope(), not by the segment.
+    "posture": ("posture:read", "admin:write"),
 }
 
 # The ONLY scopes an admin may put on an agent/PAT. Everything else
@@ -82,6 +89,8 @@ AGENT_GRANTABLE: frozenset[str] = frozenset({
     "audit:read", "metrics:read", "notifications:read",
     # actions
     "automation:run", "inventory:write", "sessions:open", "notifications:ack",
+    # posture (3.0)
+    "posture:read", "patch:approve", "policy:write",
 })
 
 # Human-facing catalog (label + risk) for the issuance UI. Order is display order.
@@ -96,6 +105,9 @@ SCOPE_CATALOG: list[dict] = [
     {"scope": "inventory:write", "label": "Manage inventory (hosts/zones/groups)", "kind": "action"},
     {"scope": "sessions:open", "label": "Open SSH/SFTP sessions", "kind": "action"},
     {"scope": "notifications:ack", "label": "Acknowledge notifications", "kind": "action"},
+    {"scope": "posture:read", "label": "Read posture (host facts, feeds, findings)", "kind": "read"},
+    {"scope": "patch:approve", "label": "Approve patch deployments", "kind": "action"},
+    {"scope": "policy:write", "label": "Manage posture policies", "kind": "action"},
 ]
 
 
@@ -106,6 +118,29 @@ def _is_run_pseudo_segment(segment: str, method: str, path: str) -> bool:
     return segment == "job-templates" and method == "POST" and path.rstrip("/").endswith("/run")
 
 
+# posture sub-paths whose WRITES are their own delegable capability. Everything
+# else written under posture/ stays on the admin:write sentinel. These routes
+# arrive with M2 (patch approval) and M3 (policies); the scopes exist now so the
+# token model is settled before the endpoints are.
+# Exact route patterns (fullmatch), ids limited to [A-Za-z0-9_-] so a dot
+# segment ("posture/policies/../feeds/import") can never match a delegable
+# scope; anything unmatched falls back to the admin:write sentinel.
+_POSTURE_WRITE_SCOPES = (
+    (re.compile(r"posture/patches/[A-Za-z0-9_-]+/approve"), "patch:approve"),
+    (re.compile(r"posture/policies(?:/[A-Za-z0-9_-]+)*"), "policy:write"),
+)
+
+
+def _posture_scope(method: str, path: str) -> str | None:
+    if method.upper() in READ_METHODS:
+        return None
+    p = path.strip("/")
+    for pattern, scope in _POSTURE_WRITE_SCOPES:
+        if pattern.fullmatch(p):
+            return scope
+    return None
+
+
 def required_scope(segment: str, method: str, path: str) -> str | None:
     """The single scope a PAT must hold to call ``(segment, method)``.
 
@@ -113,6 +148,10 @@ def required_scope(segment: str, method: str, path: str) -> str | None:
     deny by default, so a new route is closed to PATs until it is classified)."""
     if _is_run_pseudo_segment(segment, method, path):
         return "automation:run"
+    if segment == "posture":
+        sub_scope = _posture_scope(method, path)
+        if sub_scope:
+            return sub_scope
     pair = _SEGMENT_SCOPES.get(segment)
     if pair is None:
         return None

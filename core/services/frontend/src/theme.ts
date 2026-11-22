@@ -10,7 +10,8 @@ const STORAGE_KEY = 'seyalrun-theme'
 type Theme = 'dark' | 'light'
 
 function storedTheme(): Theme {
-  return localStorage.getItem(STORAGE_KEY) === 'light' ? 'light' : 'dark'
+  // Light is the default; only an explicit earlier choice of dark overrides it.
+  try { return localStorage.getItem(STORAGE_KEY) === 'dark' ? 'dark' : 'light' } catch { return 'light' }
 }
 
 export const theme = ref<Theme>(storedTheme())
@@ -21,7 +22,7 @@ function applyTheme(t: Theme) {
 
 export function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  localStorage.setItem(STORAGE_KEY, theme.value)
+  try { localStorage.setItem(STORAGE_KEY, theme.value) } catch { /* storage blocked */ }
   applyTheme(theme.value)
 }
 

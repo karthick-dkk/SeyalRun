@@ -1,4 +1,5 @@
-"""Internal endpoints — called by zabbix-integration-service via service token."""
+"""Internal endpoints — called by zabbix-integration-service, inventory-service and
+posture-service via service token."""
 
 from __future__ import annotations
 
@@ -8,10 +9,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app._attribution import ACCOUNTABLE_PARAM, accountable_ids
+from app._concurrency import LIVE_STATUSES
 from app._params import ParamNotAllowedError, filter_caller_params, template_code_params
+from app._posture import POSTURE_ACTION, ensure_posture_template, tunable_params
 from app._production_gate import any_production_hosts
 from app.database import get_session
 from app.deps import require_service_token
@@ -115,6 +119,82 @@ async def create_notification_internal(payload: InternalNotificationCreate):
         message=payload.message, source_type=payload.source_type, source_id=payload.source_id,
     )
     return {"id": notif.id}
+
+
+class PostureFactsRunCreate(BaseModel):
+    host_ids: list[str] = Field(min_length=1, max_length=1000)
+    # The person who asked posture-service for the collection — the run is
+    # attributed to them (job.start/job.finish audit rows) and, on a production
+    # host, they may not approve it themselves (F-2).
+    requested_by: str = Field(min_length=1, max_length=36)
+
+
+@router.post("/internal/posture/facts-runs", status_code=status.HTTP_202_ACCEPTED)
+async def create_posture_facts_runs(
+    payload: PostureFactsRunCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """One read-only facts run per host for posture-service.
+
+    The caller names hosts, never a script: the posture_facts executor runs a
+    file fixed in this image. A host that already has a live facts run gets that
+    run back instead of a second one (a double-clicked "collect all" must not
+    queue duplicate SSH sessions). Production hosts go through the approval gate
+    exactly like any other job — read-only is not an exemption from PCI change
+    control, and widening it here would be a silent one."""
+    executor = getattr(request.app.state, "executors", {}).get(POSTURE_ACTION)
+    if executor is None:
+        raise HTTPException(status_code=503, detail="posture_facts executor is not loaded")
+    tmpl = await ensure_posture_template(session)
+
+    live: dict[str, ZAJobRun] = {}
+    res = await session.execute(
+        select(ZAJobRun).where(ZAJobRun.job_template_id == tmpl.id, ZAJobRun.status.in_(LIVE_STATUSES))
+    )
+    for run in res.scalars().all():
+        for hid in (run.params or {}).get("_target_host_ids") or []:
+            live[hid] = run
+
+    from libs.pluginbase import RunRequest
+    from app import runner as _runner
+
+    triggered_by = f"user:{payload.requested_by}"
+    out, dispatch = [], []
+    for host_id in dict.fromkeys(payload.host_ids):  # de-dupe, keep order
+        if host_id in live:
+            out.append({"host_id": host_id, "run_id": live[host_id].id, "status": live[host_id].status,
+                        "reused": True})
+            continue
+        run_id = str(uuid.uuid4())
+        params = {
+            **tunable_params(tmpl),
+            "_target_host_ids": [host_id],
+            "_credential_id": None,
+            "_host_credentials": {},
+            "_max_parallel": 1,
+            "_run_id": run_id,
+            ACCOUNTABLE_PARAM: accountable_ids(payload.requested_by),
+        }
+        gated = await any_production_hosts([host_id])
+        session.add(ZAJobRun(
+            id=run_id, job_template_id=tmpl.id, triggered_by=triggered_by,
+            status="pending_approval" if gated else "pending", params=params, output_lines=[],
+        ))
+        out.append({"host_id": host_id, "run_id": run_id,
+                    "status": "pending_approval" if gated else "pending", "reused": False})
+        if not gated:
+            dispatch.append((run_id, RunRequest(
+                action_type=POSTURE_ACTION, target_host_ids=[host_id], credential_id=None,
+                params=params, triggered_by=triggered_by,
+            )))
+    await session.commit()
+
+    for run_id, req in dispatch:
+        asyncio.create_task(_runner.execute(
+            run_id, executor, req, timeout_seconds=tmpl.timeout_seconds, template_name=tmpl.name,
+        ))
+    return {"runs": out}
 
 
 @router.get("/internal/job-runs/{run_id}")

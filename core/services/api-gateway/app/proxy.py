@@ -73,6 +73,7 @@ SERVICE_ROUTES: dict[str, tuple[str, str]] = {
     "trigger-bindings": ("zabbix_integration_service_url", "zabbix-integration-service"),
     "triggers": ("zabbix_integration_service_url", "zabbix-integration-service"),
     "metrics": ("metrics_service_url", "metrics-service"),
+    "posture": ("posture_service_url", "posture-service"),
 }
 
 from .http import client as _client  # shared pooled client (closed by app lifespan)

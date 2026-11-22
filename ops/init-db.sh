@@ -1,6 +1,6 @@
 #!/bin/bash
-# Creates all four SeyalRun databases (identity, inventory, terminal,
-# automation) on a bare-metal Postgres or MySQL instance configured in .env.
+# Creates the SeyalRun databases (identity, inventory, terminal, automation,
+# posture) on a bare-metal Postgres or MySQL instance configured in .env.
 # identity/inventory additionally get schema/<engine>/schema.sql imported
 # (idempotent — CREATE TABLE IF NOT EXISTS, safe to re-run); terminal/
 # automation have no static schema — their tables are created entirely by
@@ -34,11 +34,12 @@ fi
 : "${INVENTORY_DB_NAME:?INVENTORY_DB_NAME must be set in .env}"
 TERMINAL_DB_NAME="${TERMINAL_DB_NAME:-seyalrun_terminal}"
 AUTOMATION_DB_NAME="${AUTOMATION_DB_NAME:-seyalrun_automation}"
+POSTURE_DB_NAME="${POSTURE_DB_NAME:-seyalrun_posture}"
 
 case "$DB_ENGINE" in
   postgres)
     export PGPASSWORD="$DB_PASSWORD"
-    for db in "$IDENTITY_DB_NAME" "$INVENTORY_DB_NAME" "$TERMINAL_DB_NAME" "$AUTOMATION_DB_NAME"; do
+    for db in "$IDENTITY_DB_NAME" "$INVENTORY_DB_NAME" "$TERMINAL_DB_NAME" "$AUTOMATION_DB_NAME" "$POSTURE_DB_NAME"; do
       echo "[*] Ensuring database '$db' exists on ${DB_HOST}:${DB_PORT}..."
       exists=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -tAc \
         "SELECT 1 FROM pg_database WHERE datname = '$db'")
@@ -52,7 +53,7 @@ case "$DB_ENGINE" in
     done
     ;;
   mysql)
-    for db in "$IDENTITY_DB_NAME" "$INVENTORY_DB_NAME" "$TERMINAL_DB_NAME" "$AUTOMATION_DB_NAME"; do
+    for db in "$IDENTITY_DB_NAME" "$INVENTORY_DB_NAME" "$TERMINAL_DB_NAME" "$AUTOMATION_DB_NAME" "$POSTURE_DB_NAME"; do
       echo "[*] Ensuring database '$db' exists on ${DB_HOST}:${DB_PORT}..."
       mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" \
         -e "CREATE DATABASE IF NOT EXISTS \`$db\`"
@@ -68,9 +69,9 @@ case "$DB_ENGINE" in
     ;;
 esac
 
-echo "[✓] Databases ready: ${IDENTITY_DB_NAME}, ${INVENTORY_DB_NAME}, ${TERMINAL_DB_NAME}, ${AUTOMATION_DB_NAME} (${DB_ENGINE})."
+echo "[✓] Databases ready: ${IDENTITY_DB_NAME}, ${INVENTORY_DB_NAME}, ${TERMINAL_DB_NAME}, ${AUTOMATION_DB_NAME}, ${POSTURE_DB_NAME} (${DB_ENGINE})."
 echo "[i] Now run Alembic migrations for every service to create/update tables:"
 echo "    for svc in identity-service inventory-service terminal-service automation-service \\"
-echo "               recording-service zabbix-integration-service metrics-service; do"
+echo "               recording-service zabbix-integration-service metrics-service posture-service; do"
 echo "      docker compose run --rm --no-deps \"\$svc\" python -m alembic upgrade head"
 echo "    done"

@@ -1,42 +1,37 @@
+/* SeyalRun console design system.
+   One primary hue (blue) for action and focus; green, amber, red, violet are reserved for
+   status. Light is the default theme; data-theme="dark" on <html> switches (see theme.ts).
+   The legacy variable names (--bg2, --bg3, --text2, --accent, --accent2, --danger) are kept
+   and re-pointed at the new tokens, so every existing component picks the new look up.
+   Fonts: Inter / JetBrains Mono when installed, otherwise the system stack (nothing is
+   fetched from a CDN, so air-gapped installs render identically). */
 :root {
-  --bg: #0a0e1a;
-  --bg2: #0e1422;
-  --bg3: #161d30;
-  --border: #232c42;
-  --text: #e7ecf6;
-  --text2: #6b7690;
-  --accent: #22c55e;
-  --accent2: #3b82f6;
-  --danger: #ef4444;
-  --warn: #d29922;
-  --radius: 6px;
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --bg: #F3F5F8; --surface: #FFFFFF; --surface2: #F6F8FB; --hover: #EAEFF6;
+  --border: #DDE3EB; --border2: #C5CFDC;
+  --text: #111827; --muted: #536074; --faint: #667185;
+  --primary: #2459C9; --primary-h: #1E4DB0; --link: #2459C9;
+  --ok: #1C7A4C; --warn: #8F5D00; --bad: #C0353A; --info: #2459C9; --pend: #6B4FC8;
+  --shadow: 0 12px 32px rgba(17,24,39,.12);
+  /* legacy aliases */
+  --bg2: var(--surface); --bg3: var(--surface2); --text2: var(--muted);
+  --accent: var(--ok); --accent2: var(--primary); --danger: var(--bad);
+  --radius: 7px;
+  --font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
 }
-
-/* Light theme — every component already reads colors through these variables (never
-   hardcoded backgrounds/text), so overriding them here is enough to re-theme the whole
-   app. Accent/danger/warn are darkened a step from their dark-theme values for AA
-   contrast on a white background; a few intentionally-always-dark surfaces (the
-   terminal-style Job Run output log, the code editor gutter) are left as-is on
-   purpose, the same way most editors keep a dark console regardless of app theme.
-   The toggle in AppShell.vue sets data-theme on <html>; applied before Vue mounts
-   (see main.ts) so there's no flash of the wrong theme on load. */
-:root[data-theme="light"] {
-  --bg: #ffffff;
-  --bg2: #f5f6f8;
-  --bg3: #eceef2;
-  --border: #dde1e8;
-  --text: #14171f;
-  --text2: #667085;
-  --accent: #16a34a;
-  --accent2: #2563eb;
-  --danger: #dc2626;
-  --warn: #b45309;
+:root[data-theme="dark"] {
+  --bg: #0B1018; --surface: #111824; --surface2: #162030; --hover: #1C2738;
+  --border: #243045; --border2: #33425A;
+  --text: #E6EBF2; --muted: #9AA7BA; --faint: #8592A7;
+  --primary: #3A78EA; --primary-h: #4C86F0; --link: #82B1FF;
+  --ok: #44B883; --warn: #E3A844; --bad: #F06B6E; --info: #6FA8FF; --pend: #B79CFF;
+  --shadow: 0 12px 32px rgba(0,0,0,.45);
+  color-scheme: dark;
 }
 
 html, body { margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; transition: background-color 0.15s ease, color 0.15s ease; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; transition: background-color 0.15s ease, color 0.15s ease; }
 
 .app-shell { display: flex; height: 100vh; overflow: hidden; }
 .sidebar { width: 232px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.18s ease; }
@@ -345,3 +340,144 @@ select.input { cursor: pointer; }
 .admin-content { flex: 1; min-width: 0; padding: 24px 32px; }
 .content-title { font-size: 20px; font-weight: 700; margin-bottom: 16px; }
 .reach-unknown { background: var(--border); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SeyalRun console components (design canvas sr.css). Everything below overrides
+   the legacy rules above where names collide, so existing views pick up the new
+   look without being rewritten; new views use the short class names directly.
+   ══════════════════════════════════════════════════════════════════════════ */
+body { font-family: var(--font); }
+a { color: var(--link); }
+.mono { font-family: var(--font-mono); font-size: 12.5px; }
+.h1 { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin: 0; line-height: 1.25; }
+.h2 { font-size: 16px; font-weight: 600; margin: 0; }
+.sub { color: var(--muted); margin: 3px 0 0; font-size: 13.5px; }
+.muted { color: var(--muted); }
+.page-title { font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.page-subtitle { color: var(--muted); font-size: 13.5px; }
+
+/* card / sections */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
+.card-header { padding: 13px 16px; font-size: 14px; }
+.ch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.ct { font-size: 14px; font-weight: 600; margin: 0; }
+.cb { padding: 16px; }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--border2);
+  background: var(--surface); color: var(--text); font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; text-decoration: none; box-sizing: border-box; }
+.btn:hover { background: var(--hover); border-color: var(--border2); }
+a.btn { color: var(--text); }
+.btn.p, a.btn.p, .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn.p:hover, .btn-primary:hover { background: var(--primary-h); filter: none; }
+.btn.d { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: transparent; }
+.btn.ok2 { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: transparent; }
+.btn.g { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.g:hover { background: var(--hover); color: var(--text); }
+.btn.sm, .btn-sm { min-height: 28px; padding: 0 9px; font-size: 12.5px; }
+.btn.ib { width: 34px; padding: 0; justify-content: center; }
+.btn.sm.ib { width: 28px; }
+.btn[disabled], .btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn-danger-outline { border-color: var(--bad); color: var(--bad); }
+.btn-icon { border-color: var(--border2); color: var(--primary); }
+
+/* form controls */
+.input, .in { box-sizing: border-box; min-height: 34px; border: 1px solid var(--border2); background: var(--surface); color: var(--text); border-radius: 7px; padding: 7px 10px; font-family: inherit; font-size: 13.5px; width: 100%; min-width: 0; }
+.in { height: 34px; padding: 0 10px; }
+textarea.in, textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
+.input:focus, .in:focus { outline: none; border-color: var(--primary); }
+.in:focus-visible, .input:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; box-shadow: none; }
+.srch { position: relative; display: flex; align-items: center; }
+.srch svg { position: absolute; left: 10px; color: var(--faint); pointer-events: none; }
+.srch .in { padding-left: 32px; }
+.lbl, .form-label { display: block; font-size: 12.5px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+.hint { font-size: 12px; color: var(--faint); margin-top: 5px; }
+
+/* badges */
+.b { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap;
+  background: color-mix(in srgb, var(--c, var(--muted)) 15%, transparent); color: var(--c, var(--muted)); }
+.b::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.b.nd::before { display: none; }
+.ok { --c: var(--ok); } .warn { --c: var(--warn); } .bad { --c: var(--bad); } .info { --c: var(--info); } .pend { --c: var(--pend); } .off { --c: var(--faint); }
+.badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+.badge-green  { background: color-mix(in srgb, var(--ok) 15%, transparent);   color: var(--ok); }
+.badge-red    { background: color-mix(in srgb, var(--bad) 15%, transparent);  color: var(--bad); }
+.badge-yellow { background: color-mix(in srgb, var(--warn) 17%, transparent); color: var(--warn); }
+.badge-blue   { background: color-mix(in srgb, var(--info) 15%, transparent); color: var(--info); }
+.badge-gray   { background: color-mix(in srgb, var(--faint) 18%, transparent); color: var(--muted); }
+.tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border-radius: 5px; font-size: 12px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+
+/* tables */
+.tw { overflow-x: auto; }
+table.t, .table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.t th, .table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 9px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; background: var(--surface2); text-transform: none; letter-spacing: 0; }
+.t td, .table td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.t td { white-space: nowrap; }
+.t tr:last-child td, .table tr:last-child td { border-bottom: 0; }
+.table tr:hover td { background: var(--hover); }
+.t tr.sel td { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.t td.r, .t th.r { text-align: right; }
+.t .nm { font-weight: 500; color: var(--text); text-decoration: none; }
+.t .s2 { display: block; color: var(--muted); font-size: 12.5px; }
+.lk { color: var(--link); text-decoration: none; font-weight: 500; }
+.num { font-variant-numeric: tabular-nums; }
+.ip-mono { color: var(--link); }
+
+/* tabs + segmented control */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tab { padding: 9px 12px; color: var(--muted); font-weight: 500; font-size: 13.5px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; display: inline-flex; gap: 7px; align-items: center; cursor: pointer; background: none; font-family: inherit; }
+a.tab { color: var(--muted); }
+.tab.on, .tab.active, a.tab.on { color: var(--text); border-bottom: 2px solid var(--primary); }
+.tab:hover:not(.active):not(.on) { color: var(--text); }
+.cnt { font-size: 11.5px; line-height: 18px; padding: 0 6px; border-radius: 999px; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+.cnt.hot { background: var(--pend); color: #140b2b; border-color: transparent; font-weight: 600; }
+.seg { display: inline-flex; border: 1px solid var(--border2); border-radius: 7px; overflow: hidden; }
+.seg > span, .seg > button { padding: 0 11px; height: 32px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: var(--muted); border: 0; border-right: 1px solid var(--border2); background: transparent; font-family: inherit; cursor: pointer; }
+.seg > :last-child { border-right: 0; }
+.seg > .on { background: var(--hover); color: var(--text); }
+
+/* layout helpers */
+.ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.kv { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 9px 16px; font-size: 13.5px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; min-width: 0; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 16px; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.console { background: #0A0E14; color: #D6DEEB; border-radius: 8px; padding: 14px 16px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; overflow-x: auto; white-space: pre; margin: 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--faint)); display: inline-block; flex: none; }
+.av { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 600; background: var(--hover); color: var(--text); flex: none; }
+.callout { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--c, var(--info)) 40%, transparent); background: color-mix(in srgb, var(--c, var(--info)) 9%, transparent); font-size: 13.5px; }
+.callout svg { color: var(--c, var(--info)); flex: none; margin-top: 2px; }
+.row { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px; }
+.stat { padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.stat .v { font-size: 28px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.chk { width: 16px; height: 16px; accent-color: var(--primary); margin: 0; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tip { position: relative; display: inline-flex; outline: none; cursor: help; }
+.tip .tipbox { display: none; position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 6; width: max-content; max-width: 280px; white-space: normal;
+  padding: 8px 10px; border-radius: 7px; background: var(--text); color: var(--bg); font-size: 12.5px; line-height: 1.4; box-shadow: var(--shadow); }
+.tip:hover .tipbox, .tip:focus .tipbox, .tip:focus-within .tipbox { display: block; }
+.empty-state { padding: 40px 20px; text-align: center; color: var(--muted); }
+.empty-state b { display: block; color: var(--text); margin-bottom: 4px; font-size: 14px; }
+
+/* keyboard focus: one visible ring, both themes */
+.btn:focus-visible, .btn-icon:focus-visible, .btn-pill:focus-visible, .nav-item:focus-visible, .admin-nav-item:focus-visible, a:focus-visible, [tabindex]:focus-visible, [role="button"]:focus-visible, .tab:focus-visible, .seg > :focus-visible {
+  outline: 2px solid var(--link); outline-offset: 2px; box-shadow: none;
+}
+:root { --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--link); }
+
+/* surfaces that used hard-coded dark values */
+.modal { box-shadow: var(--shadow); border-radius: 12px; }
+.modal-overlay { background: rgba(10, 16, 24, .55); }
+.admin-nav { background: var(--surface); }
+.admin-nav-item.active { background: var(--hover); }
+.admin-nav-item.active::before { background: var(--primary); }
+.stat-card { border-radius: 10px; }
+.jobs-summary { gap: 14px; }
+
+@media (max-width: 720px) { .kv { grid-template-columns: minmax(0, 1fr); } .grid2 { grid-template-columns: minmax(0, 1fr); } .page { padding: 16px; } }

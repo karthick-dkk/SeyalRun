@@ -81,6 +81,60 @@ async def distinct_username_failures(session: AsyncSession, ip: str, window_seco
     return result.scalar_one()
 
 
+def aggregate_lockouts(rows, now) -> list[dict]:
+    """Collapse per-"username|ip" rows into one entry per username that is CURRENTLY locked.
+
+    ``rows`` is an iterable of (key, fail_count, locked_until). Rows whose lock has
+    expired (or never engaged) are ignored. The remaining time reported is the longest
+    across that username's IP rows. Pure — unit-testable.
+    """
+    out: dict[str, dict] = {}
+    for key, fail_count, locked_until in rows:
+        if locked_until is None or locked_until <= now:
+            continue
+        username, _, ip = (key or "").rpartition("|")
+        entry = out.setdefault(username, {"username": username, "locked_until": locked_until,
+                                          "remaining_seconds": 0, "ips": [], "fail_count": 0})
+        entry["remaining_seconds"] = max(entry["remaining_seconds"], int((locked_until - now).total_seconds()))
+        entry["locked_until"] = max(entry["locked_until"], locked_until)
+        entry["fail_count"] = max(entry["fail_count"], fail_count or 0)
+        if ip and ip not in entry["ips"]:
+            entry["ips"].append(ip)
+    return sorted(out.values(), key=lambda e: e["username"])
+
+
+def username_prefix(username: str) -> str:
+    """Key prefix shared by every IP row of one username (see attempt_key)."""
+    return f"{(username or '').lower()}|"
+
+
+async def list_locked(session: AsyncSession) -> list[dict]:
+    """Usernames with at least one active lockout row."""
+    from sqlalchemy import select
+
+    from .models import ZALoginAttempt
+
+    now = datetime.now(timezone.utc)
+    result = await session.execute(
+        select(ZALoginAttempt.key, ZALoginAttempt.fail_count, ZALoginAttempt.locked_until)
+        .where(ZALoginAttempt.locked_until.isnot(None), ZALoginAttempt.locked_until > now)
+    )
+    return aggregate_lockouts(result.all(), now)
+
+
+async def clear_username(session: AsyncSession, username: str) -> int:
+    """Delete every IP row for ``username`` (lockout + failure counters). Returns rows removed."""
+    from sqlalchemy import delete
+
+    from .models import ZALoginAttempt
+
+    res = await session.execute(
+        delete(ZALoginAttempt).where(ZALoginAttempt.key.startswith(username_prefix(username), autoescape=True))
+    )
+    await session.commit()
+    return res.rowcount or 0
+
+
 async def clear(session: AsyncSession, key: str) -> None:
     """Clear lockout state after a successful login."""
     from .models import ZALoginAttempt

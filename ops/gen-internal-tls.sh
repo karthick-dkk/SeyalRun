@@ -31,6 +31,7 @@ SERVICES=(
   automation-service
   zabbix-integration-service
   metrics-service
+  posture-service
   mcp-server
 )
 

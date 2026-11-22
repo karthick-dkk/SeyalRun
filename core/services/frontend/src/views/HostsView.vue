@@ -113,14 +113,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppShell from '@/components/layout/AppShell.vue'
 import api, { terminalUrl, markInternalConnect } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const isAdmin = computed(() => auth.isAdmin)
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -135,7 +136,7 @@ const userMap = reactive<Record<string, string>>({})
 
 const loading = ref(false)
 const error = ref('')
-const filter = ref('')
+const filter = ref(typeof route.query.q === 'string' ? route.query.q : '')  // set by the topbar search
 
 const pingResults = reactive<Record<string, boolean>>({})
 const pingPending = reactive(new Set<string>())
@@ -413,6 +414,7 @@ async function saveHost() {
   }
 }
 
+watch(() => route.query.q, (q) => { filter.value = typeof q === 'string' ? q : '' })
 onMounted(() => { loadAll() })
 </script>
 

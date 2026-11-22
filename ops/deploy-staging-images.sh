@@ -67,6 +67,28 @@ for _ in $(seq 1 45); do
 done
 [[ -z "${unhealthy:-}" ]] || { echo "[X] still unhealthy: $unhealthy"; docker compose "${FLAGS[@]}" logs --tail=40 $unhealthy; exit 1; }
 
+# Persist the tag only once the stack is healthy on it: every later compose
+# call (migrations below, verify-staging.sh, a manual `up`) reads .env, and a
+# stale pin there makes them run the previous release's images.
+if [[ -n "${VERSION_OVERRIDE:-}" ]]; then
+  if grep -q '^SEYALRUN_VERSION=' .env; then
+    sed -i "s/^SEYALRUN_VERSION=.*/SEYALRUN_VERSION=${VERSION_OVERRIDE}/" .env
+  else
+    printf 'SEYALRUN_VERSION=%s\n' "$VERSION_OVERRIDE" >> .env
+  fi
+  echo "[*] .env pinned to SEYALRUN_VERSION=${VERSION_OVERRIDE}"
+fi
+
+# A release can add a service (posture-service in 3.0) or a migration; the
+# images carry them but nothing applied them on this path. alembic upgrade head
+# is idempotent, and /health only checks DB reachability, so running it after
+# the stack is up is safe. </dev/null: `compose run` must not eat this heredoc.
+echo "[*] applying database migrations from the images..."
+for svc in identity-service inventory-service terminal-service recording-service \
+           automation-service zabbix-integration-service metrics-service posture-service; do
+  docker compose "${FLAGS[@]}" run --rm --no-deps -T "$svc" python -m alembic upgrade head </dev/null 2>&1 | tail -1
+done
+
 echo "[*] image provenance actually running:"
 docker compose "${FLAGS[@]}" ps --format "{{.Service}}\t{{.Image}}" | sort
 REMOTE

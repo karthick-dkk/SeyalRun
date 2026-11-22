@@ -44,7 +44,8 @@ def test_only_redis_adds_capabilities_back_and_only_what_it_needs(compose):
 
 @pytest.mark.parametrize("service", ["api-gateway", "identity-service", "inventory-service", "terminal-service",
                                      "recording-service", "automation-service", "zabbix-integration-service",
-                                     "metrics-service", "mcp-server", "edge-proxy", "frontend"])
+                                     "metrics-service", "posture-service", "mcp-server", "edge-proxy",
+                                     "frontend"])
 def test_service_images_run_as_non_root(service):
     """The premise of dropping every capability: the process is not root."""
     dockerfile = (REPO / "core/services" / service / "Dockerfile").read_text()

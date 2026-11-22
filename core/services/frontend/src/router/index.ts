@@ -63,6 +63,8 @@ const router = createRouter({
         // These moved to Settings. Redirect rather than 404 so existing
         // bookmarks, docs and deep links from Zabbix keep working — same
         // pattern as /recordings -> /sessions.
+        // Trigger bindings are the Remediation tab of Playbooks now.
+        if (section === 'trigger-bindings') return { path: '/automation', query: { tab: 'remediation' } }
         if (MOVED_TO_SETTINGS.includes(section)) {
           return { path: `/settings/${section}` }
         }
@@ -148,6 +150,27 @@ const router = createRouter({
       name: 'automation',
       component: () => import('@/views/AutomationView.vue'),
     },
+    // Old top-level entries for what are now tabs of Playbooks.
+    { path: '/runs', redirect: '/automation?tab=runs' },
+    { path: '/schedules', redirect: '/automation?tab=schedules' },
+    { path: '/trigger-bindings', redirect: '/automation?tab=remediation' },
+    { path: '/remediation', redirect: '/automation?tab=remediation' },
+    {
+      path: '/approvals',
+      name: 'approvals',
+      component: () => import('@/views/ApprovalsView.vue'),
+    },
+    {
+      path: '/mcp',
+      name: 'mcp',
+      component: () => import('@/views/McpView.vue'),
+      meta: { requiresAdmin: true },
+    },
+    {
+      path: '/posture',
+      name: 'posture',
+      component: () => import('@/views/PostureView.vue'),
+    },
     {
       path: '/zbx/run',
       name: 'zbx-run',
@@ -167,6 +190,9 @@ function areaFor(to: any): string | null {
   if (p.startsWith('/recordings')) return 'recordings'
   if (p.startsWith('/jobs')) return 'jobs'
   if (p.startsWith('/automation')) return 'automation'
+  if (p.startsWith('/approvals')) return 'jobs'
+  if (p.startsWith('/mcp')) return 'mcp'
+  if (p.startsWith('/posture')) return 'posture'
   if (p.startsWith('/zbx')) return 'jobs'   // 'Run from Zabbix' console page is gated with jobs
   if (p.startsWith('/admin/')) {
     const section = (to.params?.section as string) || p.split('/')[2] || ''

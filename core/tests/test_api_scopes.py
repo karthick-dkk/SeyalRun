@@ -66,6 +66,7 @@ def test_agent_grantable_is_exactly_the_agreed_catalog():
         "inventory:read", "automation:read", "sessions:read",
         "audit:read", "metrics:read", "notifications:read",
         "automation:run", "inventory:write", "sessions:open", "notifications:ack",
+        "posture:read", "patch:approve", "policy:write",
     }
     assert not any(s.startswith("credentials:") for s in AGENT_GRANTABLE)
     assert not any(s.startswith("admin:") for s in AGENT_GRANTABLE)
@@ -112,3 +113,41 @@ def test_legacy_coarse_read_write_still_work():
 def test_unknown_segment_denies_by_default():
     assert required_scope("brand-new-segment", "GET", "brand-new-segment") is None
     assert not scope_allows(list(AGENT_GRANTABLE), "brand-new-segment", "GET", "brand-new-segment")
+
+
+# ── posture (3.0): read is delegable; collect/import/activate are not ─────────
+
+def test_posture_read_scope_reads_posture_only():
+    s = ["posture:read"]
+    for path in ("posture/hosts", "posture/hosts/abc", "posture/feeds", "posture/summary"):
+        assert scope_allows(s, "posture", "GET", path), path
+    assert not scope_allows(s, "hosts", "GET", "hosts")        # not inventory
+    assert not scope_allows(s, "posture", "POST", "posture/collect")
+
+
+def test_no_agent_scope_can_collect_import_or_activate():
+    """Admin-only actions sit on the admin:write sentinel, which no token holds."""
+    everything = list(AGENT_GRANTABLE)
+    for path in ("posture/collect", "posture/hosts/abc/collect", "posture/feeds/import",
+                 "posture/feeds/abc/activate"):
+        assert required_scope("posture", "POST", path) == "admin:write", path
+        assert not scope_allows(everything, "posture", "POST", path), path
+
+
+def test_patch_approve_and_policy_write_are_narrow():
+    assert required_scope("posture", "POST", "posture/patches/p1/approve") == "patch:approve"
+    assert required_scope("posture", "PUT", "posture/policies/x") == "policy:write"
+    assert required_scope("posture", "POST", "posture/policies") == "policy:write"
+    # neither leaks into the other, nor into other posture writes
+    assert not scope_allows(["patch:approve"], "posture", "PUT", "posture/policies/x")
+    assert not scope_allows(["policy:write"], "posture", "POST", "posture/patches/p1/approve")
+    assert not scope_allows(["patch:approve", "policy:write"], "posture", "POST", "posture/feeds/import")
+    assert not scope_allows(["patch:approve"], "posture", "GET", "posture/hosts")
+
+
+def test_posture_scope_ignores_dot_segments():
+    from libs.apiscopes import required_scope, scope_allows
+    assert required_scope("posture", "POST", "posture/policies/abc") == "policy:write"
+    assert required_scope("posture", "POST", "posture/patches/p1/approve") == "patch:approve"
+    for p in ("posture/policies/../feeds/import", "posture/patches/x/../../feeds/import/approve"):
+        assert not scope_allows(["policy:write", "patch:approve"], "posture", "POST", p)

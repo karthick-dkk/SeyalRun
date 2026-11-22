@@ -48,10 +48,18 @@
             <td>
               <span v-if="u.is_active" class="badge badge-green">Active</span>
               <span v-else class="badge badge-gray">Disabled</span>
+              <span v-if="lockFor(u)" class="b warn" style="margin-left:6px" title="Too many failed sign-ins; the lock clears by itself">Locked · {{ lockMinutes(u) }} min left</span>
             </td>
             <td>
               <div class="form-actions">
                 <button class="btn-pill btn-pill-outline" @click="openEditUser(u)">✎ Edit</button>
+                <button
+                  v-if="auth.isAdmin && lockFor(u)"
+                  class="btn-pill btn-pill-outline"
+                  :disabled="unlocking === u.username"
+                  title="Clear the sign-in lockout for this username (all source IPs)"
+                  @click="unlockUser(u)"
+                >Unlock</button>
                 <button
                   v-if="auth.isSuperAdmin && u.mfa_method"
                   class="btn-pill btn-pill-outline"
@@ -496,7 +504,7 @@ function formatDate(d: string) { return new Date(d).toLocaleDateString() }
 
 async function loadUsers() {
   loadingUsers.value = true
-  try { const { data } = await api.get('/users'); users.value = data }
+  try { const { data } = await api.get('/users'); users.value = data; loadLockouts() }
   finally { loadingUsers.value = false }
 }
 async function loadGroups() {
@@ -504,6 +512,22 @@ async function loadGroups() {
   try { const { data } = await api.get('/users/groups'); groups.value = data }
   finally { loadingGroups.value = false }
 }
+// Login lockout (5 failures -> 15 min, per username+IP). Admin-only endpoint; a caller
+// who cannot read it simply sees no lock badges.
+const lockouts = ref<{ username: string; remaining_seconds: number }[]>([])
+const unlocking = ref('')
+const lockFor = (u: any) => lockouts.value.find((l) => l.username === (u.username || '').toLowerCase())
+const lockMinutes = (u: any) => Math.max(1, Math.ceil((lockFor(u)?.remaining_seconds || 0) / 60))
+async function loadLockouts() {
+  try { lockouts.value = (await api.get('/users/lockouts')).data || [] } catch { lockouts.value = [] }
+}
+async function unlockUser(u: any) {
+  unlocking.value = u.username
+  try { await api.post(`/users/lockouts/${encodeURIComponent(u.username)}/unlock`); await loadLockouts() }
+  catch (e: any) { alert(e?.response?.data?.detail || 'Failed to unlock user') }
+  finally { unlocking.value = '' }
+}
+
 async function loadRoles() {
   try { const { data } = await api.get('/roles'); roles.value = data } catch {}
 }
@@ -831,7 +855,7 @@ async function saveMembers() {
   }
 }
 
-onMounted(() => { loadUsers(); loadGroups(); loadRoles() })
+onMounted(() => { loadUsers(); loadGroups(); loadRoles(); loadLockouts() })
 </script>
 
 <style scoped>

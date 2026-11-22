@@ -55,6 +55,12 @@
       "log_path": "/var/log/seyalrun/metrics-service.jsonl"
     },
     {
+      "name": "posture-service",
+      "health_url": "http://posture-service:8108/health",
+      "metrics_url": "http://posture-service:8108/metrics",
+      "log_path": "/var/log/seyalrun/posture-service.jsonl"
+    },
+    {
       "name": "frontend",
       "health_url": "http://frontend:8080/health",
       "metrics_url": null,

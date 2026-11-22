@@ -310,6 +310,38 @@ services:
       timeout: 5s
       retries: 5
 
+  # SeyalRun 3.0 posture: host facts (via automation-service's fixed facts job)
+  # and signed offline vulnerability-feed snapshots. Own DB: POSTURE_DB_NAME.
+  posture-service:
+    image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-posture-service:${SEYALRUN_VERSION:-latest}
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    env_file: .env
+    environment:
+      # Upload spool on the data volume: the root fs is read-only and /tmp is RAM.
+      TMPDIR: /var/lib/seyalrun/posture/uploads
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [seyalrun_net]
+    volumes:
+      - seyalrun_logs:/var/log/seyalrun
+      - seyalrun_posture_data:/var/lib/seyalrun/posture
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      automation-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8108/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
   mcp-server:
     image: ${DOCKERHUB_NAMESPACE:-karthickdk02}/seyalrun-mcp-server:${SEYALRUN_VERSION:-latest}
     restart: unless-stopped
@@ -337,3 +369,4 @@ networks:
 volumes:
   seyalrun_logs:
   seyalrun_redis_data:
+  seyalrun_posture_data:

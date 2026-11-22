@@ -21,6 +21,7 @@ services:
       INVENTORY_DB_NAME: ${INVENTORY_DB_NAME}
       TERMINAL_DB_NAME: ${TERMINAL_DB_NAME:-seyalrun_terminal}
       AUTOMATION_DB_NAME: ${AUTOMATION_DB_NAME:-seyalrun_automation}
+      POSTURE_DB_NAME: ${POSTURE_DB_NAME:-seyalrun_posture}
     volumes:
       - seyalrun_pgdata:/var/lib/postgresql/data
       - ./core/docker-init/postgres:/docker-entrypoint-initdb.d:ro
@@ -43,6 +44,7 @@ services:
       INVENTORY_DB_NAME: ${INVENTORY_DB_NAME}
       TERMINAL_DB_NAME: ${TERMINAL_DB_NAME:-seyalrun_terminal}
       AUTOMATION_DB_NAME: ${AUTOMATION_DB_NAME:-seyalrun_automation}
+      POSTURE_DB_NAME: ${POSTURE_DB_NAME:-seyalrun_posture}
     volumes:
       - seyalrun_mysqldata:/var/lib/mysql
       - ./core/docker-init/mysql:/docker-entrypoint-initdb.d:ro
