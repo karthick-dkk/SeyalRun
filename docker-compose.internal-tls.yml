@@ -96,6 +96,7 @@ services:
       AUTOMATION_SERVICE_URL: https://automation-service:8105
       ZABBIX_INTEGRATION_SERVICE_URL: https://zabbix-integration-service:8106
       METRICS_SERVICE_URL: https://metrics-service:8107
+      POSTURE_SERVICE_URL: https://posture-service:8108
     volumes:
       - ${INTERNAL_TLS_DIR}/api-gateway.pem:/etc/seyalrun/tls/server.pem:ro
       - ${INTERNAL_TLS_DIR}/api-gateway-key.pem:/etc/seyalrun/tls/server-key.pem:ro
@@ -145,6 +146,21 @@ services:
       - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8107/health')"]
+
+  posture-service:
+    environment:
+      UVICORN_SSL_CERTFILE: /etc/seyalrun/tls/server.pem
+      UVICORN_SSL_KEYFILE: /etc/seyalrun/tls/server-key.pem
+      SSL_CERT_FILE: /etc/seyalrun/tls/ca-bundle.pem
+      IDENTITY_SERVICE_URL: https://identity-service:8101
+      INVENTORY_SERVICE_URL: https://inventory-service:8102
+      AUTOMATION_SERVICE_URL: https://automation-service:8105
+    volumes:
+      - ${INTERNAL_TLS_DIR}/posture-service.pem:/etc/seyalrun/tls/server.pem:ro
+      - ${INTERNAL_TLS_DIR}/posture-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
+      - ${INTERNAL_TLS_DIR}/ca-bundle.pem:/etc/seyalrun/tls/ca-bundle.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8108/health')"]
 
   mcp-server:
     environment:

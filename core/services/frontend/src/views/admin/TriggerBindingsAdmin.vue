@@ -5,7 +5,7 @@
         Zabbix Trigger Bindings
         <div class="u-d-flex_gap-8">
           <button class="btn btn-sm" @click="openFromProblem">⚡ From Live Problem</button>
-          <button class="btn btn-primary btn-sm" @click="openCreate">+ Trigger Binding</button>
+          <button v-if="!hideNew" class="btn btn-primary btn-sm" @click="openCreate">+ Trigger Binding</button>
         </div>
       </div>
       <div class="u-borderbottom-1solidborder_c-text2_fs-12_p-1016">
@@ -13,7 +13,7 @@
         matching event via the webhook, a job run is automatically dispatched. Use the
         <strong>Manual Trigger</strong> button to also run it on-demand. Global-script wiring
         snippets (SSH link, webhook, dropdown picker) are on the
-        <router-link to="/admin/integration" style="color:var(--accent2)">Integration</router-link> page.
+        <router-link to="/settings/integration" style="color:var(--accent2)">Integration</router-link> page.
       </div>
       <table class="table">
         <thead>
@@ -178,6 +178,8 @@ import api from '@/api/client'
 import AsyncPicker, { type PickerItem } from '@/components/common/AsyncPicker.vue'
 
 const router = useRouter()
+// Playbooks > Remediation hosts this view and renders its own "New binding" button.
+defineProps<{ hideNew?: boolean }>()
 
 const SEVERITY_LABELS: Record<number, string> = {
   0: 'Not classified', 1: 'Information', 2: 'Warning', 3: 'Average', 4: 'High', 5: 'Disaster',
@@ -232,6 +234,8 @@ async function loadBindings() {
 }
 
 const templateName = (id: string) => templates.value.find(t => t.id === id)?.name || id
+
+defineExpose({ openCreate: () => openCreate() })
 
 function openCreate() {
   Object.assign(modal, {

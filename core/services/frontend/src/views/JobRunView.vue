@@ -72,7 +72,7 @@
           <span v-if="!lines.length && !run" style="color:#8b949e">Loading…</span>
           <span v-else-if="!lines.length" style="color:#8b949e">(no output yet)</span>
           <span v-for="(line, i) in lines" :key="i">{{ line }}<br /></span>
-          <span v-if="['pending','running'].includes(run?.status ?? '')" style="color:#58a6ff">● live…</span>
+          <span v-if="['pending','running'].includes(run?.status ?? '')" style="color:var(--link)">● live…</span>
         </div>
       </div>
     </div>

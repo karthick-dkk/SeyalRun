@@ -68,6 +68,13 @@ async def lifespan(app: FastAPI):
         await _seed_default_templates()
     except Exception:
         logger.exception("default template seed failed")
+    try:
+        from .database import SessionLocal
+        from ._posture import ensure_posture_template
+        async with SessionLocal() as s:
+            await ensure_posture_template(s)
+    except Exception:
+        logger.exception("posture template seed failed")
 
     from .scheduler import scheduler_loop
     sched_task = asyncio.create_task(scheduler_loop(app.state.executors))

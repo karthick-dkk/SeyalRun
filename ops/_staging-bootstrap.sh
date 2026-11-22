@@ -218,6 +218,18 @@ if [[ "$USE_DB_OVERLAY" == "1" ]]; then
       psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres -c \
       "CREATE DATABASE \"${AUTOMATION_DB_NAME}\""
   fi
+
+  POSTURE_DB_NAME="$(grep '^POSTURE_DB_NAME=' .env | cut -d= -f2)"
+  POSTURE_DB_NAME="${POSTURE_DB_NAME:-seyalrun_posture}"
+  echo "[*] Ensuring ${POSTURE_DB_NAME} database exists..."
+  DB_EXISTS=$(docker compose "${COMPOSE_FILES[@]}" "${COMPOSE_PROFILE[@]}" exec -T postgres \
+    psql -tA -U "$DB_USER" -d postgres -c \
+    "SELECT 1 FROM pg_database WHERE datname = '${POSTURE_DB_NAME}'")
+  if [[ "$(echo "$DB_EXISTS" | tr -d '[:space:]')" != "1" ]]; then
+    docker compose "${COMPOSE_FILES[@]}" "${COMPOSE_PROFILE[@]}" exec -T postgres \
+      psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres -c \
+      "CREATE DATABASE \"${POSTURE_DB_NAME}\""
+  fi
 fi
 
 # ── Alembic migrations (retry — Postgres may still be starting) ─────────────
@@ -253,6 +265,9 @@ run_migrations zabbix-integration-service
 
 echo "[*] Running metrics-service migrations..."
 run_migrations metrics-service
+
+echo "[*] Running posture-service migrations..."
+run_migrations posture-service
 
 # ── Seed superadmin (idempotent) ─────────────────────────────────────────────
 echo "[*] Seeding superadmin user (if not present)..."

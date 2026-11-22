@@ -46,6 +46,10 @@ const AREA_ROLES: Record<string, string[]> = {
   recordings:               ['superadmin', 'admin', 'support', 'user'],
   jobs:                     ['superadmin', 'admin', 'support', 'user'],
   automation:               ['superadmin', 'admin', 'support', 'user'],
+  // New console pages. No gateway nav key exists for these, so this static rule is the
+  // gate (the services behind them enforce RBAC regardless).
+  mcp:                      ['superadmin', 'admin'],
+  posture:                  ['superadmin', 'admin', 'support'],
   'admin.users':            ['superadmin', 'admin', 'support'],
   'admin.roles':            ['superadmin', 'admin', 'support'],
   'admin.authorizations':   ['superadmin', 'admin', 'support'],

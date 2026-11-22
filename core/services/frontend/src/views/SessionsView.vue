@@ -454,7 +454,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0; font-family: monospace; font-size: 10px; color: var(--text2);
 }
 .sv-btn-watch {
-  border-color: #1f6feb; color: #58a6ff; text-decoration: none;
+  border-color: #1f6feb; color: var(--link); text-decoration: none;
 }
 .sv-btn-watch:hover { background: rgba(31, 111, 235, .12); }
 </style>

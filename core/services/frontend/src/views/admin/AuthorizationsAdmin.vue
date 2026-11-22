@@ -17,7 +17,7 @@
         <thead>
           <tr>
             <th style="width:36px">
-              <input type="checkbox" :checked="allSelected" :indeterminate.prop="someSelected && !allSelected" @change="toggleAll" style="accent-color:#58a6ff;cursor:pointer" />
+              <input type="checkbox" :checked="allSelected" :indeterminate.prop="someSelected && !allSelected" @change="toggleAll" style="accent-color:var(--link);cursor:pointer" />
             </th>
             <th>Name</th>
             <th>Principal</th>
@@ -141,7 +141,7 @@
             <!-- Normal row -->
             <tr v-if="expandedId !== a.id" :class="{ 'row-active': expandedId === a.id, 'row-selected': selectedIds.has(a.id) }">
               <td>
-                <input type="checkbox" :checked="selectedIds.has(a.id)" @change="toggleRow(a.id)" style="accent-color:#58a6ff;cursor:pointer" />
+                <input type="checkbox" :checked="selectedIds.has(a.id)" @change="toggleRow(a.id)" style="accent-color:var(--link);cursor:pointer" />
               </td>
               <td class="fw-600">{{ a.name }}</td>
               <td>
@@ -574,7 +574,7 @@ onMounted(load)
 .bulk-sel-badge {
   padding: 2px 10px; border-radius: 99px;
   background: rgba(88,166,255,0.15); border: 1px solid rgba(88,166,255,0.35);
-  font-size: 12px; color: #58a6ff; font-weight: 600;
+  font-size: 12px; color: var(--link); font-weight: 600;
 }
 
 /* ── Expand row ─────────────────────────────────────────────────────────────── */
@@ -648,12 +648,12 @@ onMounted(load)
 }
 .check-item:hover       { background: rgba(88,166,255,0.07); border-color: rgba(88,166,255,0.2); }
 .check-item--sel        { background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.35) !important; }
-.check-item input[type="checkbox"] { accent-color: #58a6ff; width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; cursor: pointer; }
+.check-item input[type="checkbox"] { accent-color: var(--link); width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; cursor: pointer; }
 .check-item-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .check-item-name { font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check-item-sub  { font-size: 10px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check-sel-hint  { padding: 4px 10px 8px; font-size: 11px; color: var(--text2); border-top: 1px solid var(--border); flex-shrink: 0; }
-.check-all-link  { color: #58a6ff; cursor: pointer; font-weight: 600; }
+.check-all-link  { color: var(--link); cursor: pointer; font-weight: 600; }
 .check-all-link:hover { text-decoration: underline; }
 .check-empty     { font-size: 12px; color: var(--text2); padding: 8px; text-align: center; }
 
@@ -662,7 +662,7 @@ onMounted(load)
 .cred-pick { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px; cursor: pointer; border: 1px solid transparent; font-size: 12px; color: var(--text); }
 .cred-pick:hover { background: rgba(88,166,255,0.07); border-color: rgba(88,166,255,0.2); }
 .cred-pick--sel { background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.35) !important; }
-.cred-pick input[type="checkbox"] { accent-color: #58a6ff; width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
+.cred-pick input[type="checkbox"] { accent-color: var(--link); width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
 .cred-pick-meta { color: var(--text2); font-size: 11px; }
 
 /* ── Actions checkboxes ─────────────────────────────────────────────────────── */

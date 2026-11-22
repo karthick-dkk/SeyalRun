@@ -267,7 +267,7 @@
                     <div class="op-row">
                       <button class="btn btn-sm" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('account_push','Create / push')">＋ Create</button>
                       <button class="btn btn-sm" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('rotate_secret','Rotate secret for')">↻ Rotate</button>
-                      <button class="btn btn-sm" style="color:#e3b341" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('disable_account','Disable', true)">⏸ Disable</button>
+                      <button class="btn btn-sm" style="color:var(--warn)" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('disable_account','Disable', true)">⏸ Disable</button>
                       <button class="btn btn-sm text-danger" :disabled="pushing || !pushForm.subjectCredId" @click="runOp('remove_account','Remove', true)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4A1.3 1.3 0 0 1 14.5 4.8V7"/></svg> Remove</button>
                     </div>
                     <div class="hint-line">Runs against <b>{{ editingAsset.name }}</b>, connecting with a credential linked to this host as the privileged login.</div>
@@ -1210,7 +1210,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEsc))
 .ssh-icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ── Status ─────────────────────────────────────────────────────────────── */
-.status-ok { color: #3fb950; font-size: 12.5px; }
+.status-ok { color: var(--ok); font-size: 12.5px; }
 .status-off { color: var(--text2); font-size: 12.5px; }
 
 /* ── Source badges ──────────────────────────────────────────────────────── */
@@ -1220,36 +1220,36 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEsc))
   font-size: 9px; font-weight: 800; line-height: 1; flex-shrink: 0;
 }
 .src-badge--zbx { background: rgba(240,136,62,0.15); border: 1px solid rgba(240,136,62,0.5); color: #f0883e; }
-.src-badge--sr  { background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.35); color: #58a6ff; }
+.src-badge--sr  { background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.35); color: var(--link); }
 
 /* ── Sortable column headers ────────────────────────────────────────────── */
 .th-sort { cursor: pointer; user-select: none; }
 .th-sort:hover { color: var(--text); }
-.sort-arrow { font-size: 9px; margin-left: 3px; color: var(--accent, #58a6ff); }
+.sort-arrow { font-size: 9px; margin-left: 3px; color: var(--accent, var(--link)); }
 
 /* ── Count links ────────────────────────────────────────────────────────── */
-.count-link { display: inline-flex; align-items: center; gap: 3px; background: none; border: none; cursor: pointer; padding: 3px 8px; border-radius: 20px; font-size: 12px; color: #58a6ff; transition: background 0.15s; }
+.count-link { display: inline-flex; align-items: center; gap: 3px; background: none; border: none; cursor: pointer; padding: 3px 8px; border-radius: 20px; font-size: 12px; color: var(--link); transition: background 0.15s; }
 .count-link:hover { background: rgba(88,166,255,0.12); }
 .count-link--zero { color: var(--text2); }
-.count-link--zero:hover { color: #58a6ff; }
+.count-link--zero:hover { color: var(--link); }
 .count-link-num { font-weight: 700; font-size: 13px; }
 .count-link-label { font-size: 11px; opacity: 0.85; }
 
 /* ── Host name link + detail panel (Overview · Sessions · Activity) ─────── */
 .host-name-link { color: var(--text); cursor: pointer; border-bottom: 1px dashed transparent; }
-.host-name-link:hover { color: #58a6ff; border-bottom-color: rgba(88,166,255,0.5); }
+.host-name-link:hover { color: var(--link); border-bottom-color: rgba(88,166,255,0.5); }
 .hd-tabs { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
 .hd-tab { padding: 10px 14px; font-size: 13px; font-weight: 600; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); cursor: pointer; }
 .hd-tab:hover { color: var(--text); }
-.hd-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+.hd-tab.active { color: var(--link); border-bottom-color: var(--link); }
 .hd-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; margin-bottom: 16px; }
 .hd-meta-row { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .hd-k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); }
 .hd-counts { display: flex; gap: 12px; margin-bottom: 16px; }
 .hd-count { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: border-color 0.15s; }
-.hd-count:hover { border-color: #58a6ff; }
+.hd-count:hover { border-color: var(--link); }
 .hd-count-num { font-size: 22px; font-weight: 700; color: var(--text); }
-.hd-count-label { font-size: 12px; color: #58a6ff; }
+.hd-count-label { font-size: 12px; color: var(--link); }
 .hd-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); margin: 4px 0 8px; }
 .hd-activity { display: flex; flex-direction: column; }
 .hd-act-row { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-bottom: 1px solid var(--border); }
@@ -1301,9 +1301,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEsc))
 @media (max-width: 480px) { .form-grid-2 { grid-template-columns: 1fr; } }
 
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; margin-bottom: 8px; }
-.btn-pill-active { background: rgba(88,166,255,0.16); border-color: rgba(88,166,255,0.45); color: #58a6ff; }
+.btn-pill-active { background: rgba(88,166,255,0.16); border-color: rgba(88,166,255,0.45); color: var(--link); }
 .btn-pill-active:hover { background: rgba(88,166,255,0.26); }
-.pill-count { font-size: 11px; color: #58a6ff; background: rgba(88,166,255,0.12); border-radius: 20px; padding: 2px 8px; }
+.pill-count { font-size: 11px; color: var(--link); background: rgba(88,166,255,0.12); border-radius: 20px; padding: 2px 8px; }
 .hint-line { font-size: 11px; color: var(--text2); margin-top: 5px; }
 .err { color: var(--danger); font-size: 12px; margin-top: 4px; }
 .muted-note { font-size: 12px; color: var(--text2); background: var(--bg3); border: 1px dashed var(--border); border-radius: 6px; padding: 9px 11px; }

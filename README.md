@@ -158,7 +158,7 @@ by both paths.
 
    ```sh
    for svc in identity-service inventory-service terminal-service automation-service \
-              recording-service zabbix-integration-service metrics-service; do
+              recording-service zabbix-integration-service metrics-service posture-service; do
      docker compose run --rm --no-deps "$svc" python -m alembic upgrade head
    done
    ```

@@ -465,6 +465,7 @@ async def admin_health(request: Request):
         "automation-service": f"{settings.automation_service_url}/health",
         "zabbix-integration-service": f"{settings.zabbix_integration_service_url}/health",
         "metrics-service": f"{settings.metrics_service_url}/health",
+        "posture-service": f"{settings.posture_service_url}/health",
     }
 
     async def probe(name: str, url: str | None) -> dict:

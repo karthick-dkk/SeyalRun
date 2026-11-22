@@ -270,4 +270,9 @@ async def execute(
     done_msg = json.dumps({"type": "done", "status": final_status, "exit_code": exit_code})
     await redis.publish(channel, done_msg)
 
+    # An executor may opt out of success notifications (posture_facts runs one job
+    # per host, so a fleet collection would otherwise post one per host). Failures
+    # always notify.
+    if final_status == "success" and getattr(executor, "notify_on_success", True) is False:
+        return
     await _notify_completion(run_id, template_name, request.triggered_by, final_status)

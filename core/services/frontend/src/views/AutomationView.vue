@@ -3,17 +3,19 @@
     <div class="page">
 
       <!-- ── Page header ──────────────────────────────────────────────────── -->
-      <div class="page-header">
+      <div class="ph">
         <div>
-          <div class="page-title">Automation</div>
-          <div class="page-subtitle">Run Ansible playbooks and scripts against your hosts</div>
+          <h1 class="h1">Playbooks</h1>
+          <p class="sub">Run Ansible playbooks and scripts against your hosts, on demand, on a schedule or from a Zabbix problem.</p>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button v-if="auth.isAdminOrSupport && autoTab === 'playbooks'" class="btn btn-primary" @click="openCreate">+ New Playbook</button>
-          <button v-if="auth.isAdminOrSupport && autoTab === 'playbooks'" class="btn" @click="openCreateChain">+ New Chain</button>
-          <button v-if="auth.isAdminOrSupport && autoTab === 'templates'" class="btn btn-primary" @click="openCreateTemplate">+ New Template</button>
-          <button v-if="auth.isAdminOrSupport && autoTab === 'schedules'" class="btn btn-primary" @click="openCreateSchedule">+ New Schedule</button>
-          <button class="btn btn-icon" @click="loadAll" title="Refresh">↺</button>
+        <div class="acts">
+          <button class="btn ib" @click="reloadTab" title="Refresh" aria-label="Refresh">↺</button>
+          <button v-if="auth.isAdminOrSupport && autoTab === 'playbooks'" class="btn" @click="openCreateChain">New chain</button>
+          <button v-if="auth.isAdminOrSupport && autoTab === 'templates'" class="btn p" @click="openCreateTemplate">New template</button>
+          <button v-if="autoTab === 'playbooks' && auth.isAdminOrSupport" class="btn p" @click="openCreate">New playbook</button>
+          <button v-else-if="autoTab === 'runs'" class="btn p" @click="runPicker.open = true">Run a playbook</button>
+          <button v-else-if="autoTab === 'schedules' && auth.isAdminOrSupport" class="btn p" @click="openCreateSchedule">New schedule</button>
+          <button v-else-if="autoTab === 'remediation' && auth.isAdminOrSupport" class="btn p" @click="bindingsEl?.openCreate()">New binding</button>
         </div>
       </div>
 
@@ -28,22 +30,21 @@
       </div>
 
       <!-- ── Tabs ──────────────────────────────────────────────────────────── -->
-      <div v-if="serviceAvailable" class="auto-tabs">
-        <button :class="['auto-tab', { active: autoTab === 'playbooks' }]" @click="autoTab = 'playbooks'">
-          <span class="auto-tab-icon" v-html="TAB_ICONS.playbooks"></span> Playbooks &amp; Scripts
-          <span v-if="playbookTemplates.length" class="tab-badge">{{ playbookTemplates.length }}</span>
+      <div v-if="serviceAvailable" class="tabs" role="tablist" aria-label="Playbooks" style="margin-bottom:20px">
+        <button role="tab" :aria-selected="isPlaybooksTab" :class="['tab', { on: isPlaybooksTab }]" @click="setTab('playbooks')">
+          Playbooks <span v-if="playbookTemplates.length" class="cnt">{{ playbookTemplates.length }}</span>
         </button>
-        <button v-if="auth.isAdminOrSupport" :class="['auto-tab', { active: autoTab === 'templates' }]" @click="autoTab = 'templates'">
-          <span class="auto-tab-icon" v-html="TAB_ICONS.templates"></span> All Templates
-          <span v-if="allTemplates.length" class="tab-badge">{{ allTemplates.length }}</span>
+        <button role="tab" :aria-selected="autoTab === 'runs'" :class="['tab', { on: autoTab === 'runs' }]" @click="setTab('runs')">Runs</button>
+        <button v-if="auth.isAdminOrSupport" role="tab" :aria-selected="autoTab === 'schedules'" :class="['tab', { on: autoTab === 'schedules' }]" @click="setTab('schedules')">
+          Schedules <span v-if="schedules.length" class="cnt">{{ schedules.length }}</span>
         </button>
-        <button v-if="auth.isAdminOrSupport" :class="['auto-tab', { active: autoTab === 'schedules' }]" @click="autoTab = 'schedules'">
-          <span class="auto-tab-icon" v-html="TAB_ICONS.schedules"></span> Schedules
-          <span v-if="schedules.length" class="tab-badge">{{ schedules.length }}</span>
-        </button>
-        <button :class="['auto-tab', { active: autoTab === 'runs' }]" @click="autoTab = 'runs'; loadRuns()">
-          <span class="auto-tab-icon" v-html="TAB_ICONS.runs"></span> Recent Runs
-        </button>
+        <button v-if="auth.can('admin.zabbix-integration')" role="tab" :aria-selected="autoTab === 'remediation'" :class="['tab', { on: autoTab === 'remediation' }]" @click="setTab('remediation')">Remediation</button>
+      </div>
+      <div v-if="serviceAvailable && isPlaybooksTab && auth.isAdminOrSupport" class="acts" style="margin-bottom:14px">
+        <span class="seg" role="group" aria-label="Playbook list">
+          <button type="button" :class="{ on: autoTab === 'playbooks' }" @click="setTab('playbooks')">Playbooks &amp; scripts</button>
+          <button type="button" :class="{ on: autoTab === 'templates' }" @click="setTab('templates')">All templates <span class="cnt" style="margin-left:6px">{{ allTemplates.length }}</span></button>
+        </span>
       </div>
 
       <!-- ── Loading state ─────────────────────────────────────────────────── -->
@@ -199,7 +200,7 @@
             <tr v-for="s in schedules" :key="s.id">
               <td class="fw-600">{{ s.name }}</td>
               <td class="u-fs-13">{{ templateName(s.job_template_id) || '—' }}</td>
-              <td><code style="font-size:12px;color:#58a6ff">{{ s.cron_expression }}</code></td>
+              <td><code style="font-size:12px;color:var(--link)">{{ s.cron_expression }}</code></td>
               <td class="text-muted-sm">{{ s.next_run_at ? new Date(s.next_run_at).toLocaleString() : '—' }}</td>
               <td><span class="u-c-3fb950_fs-12" v-if="s.enabled">✓ Active</span><span class="text-muted-sm" v-else>Disabled</span></td>
               <td>
@@ -252,7 +253,29 @@
         <div class="empty-cell" v-if="!runs.length">No recent runs.</div>
       </div>
 
+      <!-- ══ REMEDIATION tab: Zabbix trigger bindings ═══════════════════════ -->
+      <div v-if="serviceAvailable && autoTab === 'remediation' && auth.can('admin.zabbix-integration')">
+        <TriggerBindingsAdmin ref="bindingsEl" hide-new />
+      </div>
+
     </div><!-- /page -->
+
+    <!-- ── "Run a playbook" picker (Runs tab) ──────────────────────────── -->
+    <div v-if="runPicker.open" class="modal-overlay" @click.self="runPicker.open = false">
+      <div class="modal" role="dialog" aria-label="Run a playbook">
+        <div class="modal-header">Run a playbook<button class="btn sm ib g" aria-label="Close" @click="runPicker.open = false">×</button></div>
+        <div class="modal-body">
+          <input v-model="runPicker.q" class="in" placeholder="Search playbooks…" aria-label="Search playbooks" style="margin-bottom:12px" />
+          <div v-if="!pickerList.length" class="empty-state">No runnable playbooks match.</div>
+          <ul style="list-style:none;margin:0;padding:0">
+            <li v-for="t in pickerList" :key="t.id" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)">
+              <span><b>{{ t.name }}</b><span class="muted" style="display:block;font-size:12.5px">{{ actionTypeLabel(t.action_type) }}</span></span>
+              <button class="btn sm p" @click="runPicker.open = false; openRunModal(t)">Run</button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
 
     <!-- ── Run Modal ─────────────────────────────────────────────────────── -->
     <div v-if="runDlg.visible" class="modal-overlay" @click.self="runDlg.visible = false">
@@ -396,14 +419,14 @@
           </div>
           <div v-if="runDlg.template?.action_type === 'ansible_playbook'" class="form-group u-mt-8">
             <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" v-model="runDlg.dryRun" style="accent-color:#58a6ff" />
+              <input type="checkbox" v-model="runDlg.dryRun" style="accent-color:var(--link)" />
               Dry run <span class="text-muted-normal">(--check --diff — simulates without applying changes)</span>
             </label>
           </div>
           <div v-if="runDlg.template?.survey_schema?.confirmation_enabled" class="confirm-gate">
             <div class="confirm-gate-text">{{ runDlg.template.survey_schema.confirmation_text }}</div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:8px;cursor:pointer">
-              <input type="checkbox" v-model="runDlg.confirmed" style="accent-color:#58a6ff" /> I understand, run this job
+              <input type="checkbox" v-model="runDlg.confirmed" style="accent-color:var(--link)" /> I understand, run this job
             </label>
           </div>
           <div v-if="runDlg.error" style="color:var(--danger);font-size:13px;margin-top:4px;padding:10px;background:rgba(248,81,73,0.08);border-radius:6px;border:1px solid rgba(248,81,73,0.3)">{{ runDlg.error }}</div>
@@ -736,6 +759,7 @@ import GithubImportModal from '@/components/automation/GithubImportModal.vue'
 import ScheduleModal from '@/components/automation/ScheduleModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useConfirm } from '@/composables/useConfirm'
+import TriggerBindingsAdmin from '@/views/admin/TriggerBindingsAdmin.vue'
 
 const route   = useRoute()
 const router  = useRouter()
@@ -769,7 +793,28 @@ const serviceAvailable = ref(false)
 const serviceLoading   = ref(false)
 
 // ── Data ───────────────────────────────────────────────────────────────────
-const autoTab      = ref<'playbooks' | 'templates' | 'schedules' | 'runs'>('playbooks')
+const autoTab      = ref<'playbooks' | 'templates' | 'schedules' | 'runs' | 'remediation'>('playbooks')
+const isPlaybooksTab = computed(() => autoTab.value === 'playbooks' || autoTab.value === 'templates')
+const bindingsEl = ref<InstanceType<typeof TriggerBindingsAdmin> | null>(null)
+const runPicker = reactive({ open: false, q: '' })
+const pickerList = computed(() => {
+  const q = runPicker.q.trim().toLowerCase()
+  return allTemplates.value.filter((t: any) => t.enabled && (!q || (t.name || '').toLowerCase().includes(q)))
+})
+// Tab lives in the URL (?tab=runs) so it survives reloads and old links keep working.
+const TAB_VALUES = ['playbooks', 'templates', 'schedules', 'runs', 'remediation']
+function setTab(t: typeof autoTab.value) {
+  autoTab.value = t
+  if (t === 'runs') loadRuns()
+  const q = { ...route.query }
+  if (t === 'playbooks') delete q.tab; else q.tab = t
+  router.replace({ query: q })
+}
+function reloadTab() { loadAll(); if (autoTab.value === 'runs') loadRuns() }
+watch(() => route.query.tab, (t) => {
+  const v = String(t || 'playbooks')
+  if (TAB_VALUES.includes(v) && v !== autoTab.value) { autoTab.value = v as typeof autoTab.value; if (v === 'runs') loadRuns() }
+})
 const projects     = ref<any[]>([])
 const newProjectName = ref('')
 const creatingProject = ref(false)
@@ -1508,7 +1553,8 @@ onMounted(async () => {
   await loadAll()
   // The old standalone /jobs page now redirects here with ?tab=runs so existing
   // bookmarks/links still land on the right tab instead of just the default.
-  if (route.query.tab === 'runs') { autoTab.value = 'runs'; loadRuns() }
+  const t0 = String(route.query.tab || '')
+  if (TAB_VALUES.includes(t0)) { autoTab.value = t0 as typeof autoTab.value; if (t0 === 'runs') loadRuns() }
 })
 </script>
 
@@ -1528,9 +1574,9 @@ onMounted(async () => {
   transition: color 0.15s, border-color 0.15s;
 }
 .auto-tab:hover { color: var(--text1); }
-.auto-tab.active { color: var(--accent, #58a6ff); border-bottom-color: var(--accent, #58a6ff); }
+.auto-tab.active { color: var(--accent, var(--link)); border-bottom-color: var(--accent, var(--link)); }
 .tab-badge { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 0 6px; font-size: 11px; font-weight: 700; min-width: 18px; text-align: center; color: var(--text2); }
-.auto-tab.active .tab-badge { background: rgba(88,166,255,0.12); border-color: rgba(88,166,255,0.3); color: #58a6ff; }
+.auto-tab.active .tab-badge { background: rgba(88,166,255,0.12); border-color: rgba(88,166,255,0.3); color: var(--link); }
 
 /* ── Run modal: two-column targets / credentials with checkbox lists ───────── */
 .subject-box { background: rgba(88,166,255,0.06); border: 1px solid rgba(88,166,255,0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
@@ -1542,7 +1588,7 @@ onMounted(async () => {
 .chk-list--tall { max-height: 280px; }
 .chk-row { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
 .chk-row:hover { background: var(--surface2); }
-.chk-row input { accent-color: #58a6ff; width: 16px; height: 16px; flex-shrink: 0; }
+.chk-row input { accent-color: var(--link); width: 16px; height: 16px; flex-shrink: 0; }
 .chk-row--head { position: sticky; top: -4px; background: var(--bg2); border-bottom: 1px solid var(--border); border-radius: 0; z-index: 1; }
 .ph-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; }
 .ph-host { flex: 0 0 42%; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1578,7 +1624,7 @@ onMounted(async () => {
   background: var(--surface1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
 }
-.playbook-card:hover { border-color: var(--accent, #58a6ff); box-shadow: 0 4px 20px rgba(0,0,0,0.12); transform: translateY(-1px); }
+.playbook-card:hover { border-color: var(--accent, var(--link)); box-shadow: 0 4px 20px rgba(0,0,0,0.12); transform: translateY(-1px); }
 .pb-header { display: flex; align-items: flex-start; gap: 12px; padding: 16px 16px 10px; }
 .pb-icon { width: 22px; height: 22px; flex-shrink: 0; margin-top: 2px; color: var(--text2); }
 .pb-icon :deep(svg) { width: 22px; height: 22px; display: block; }
@@ -1604,10 +1650,10 @@ onMounted(async () => {
 /* ── Run status badges ────────────────────────────────────────────────────── */
 .run-status-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
 .run-status--pending  { background: rgba(139,148,158,0.15); color: #8b949e; }
-.run-status--running  { background: rgba(88,166,255,0.15); color: #58a6ff; }
-.run-status--success  { background: rgba(63,185,80,0.15); color: #3fb950; }
-.run-status--failed   { background: rgba(248,81,73,0.15); color: #f85149; }
-.run-status--error    { background: rgba(248,81,73,0.15); color: #f85149; }
+.run-status--running  { background: rgba(88,166,255,0.15); color: var(--link); }
+.run-status--success  { background: rgba(63,185,80,0.15); color: var(--ok); }
+.run-status--failed   { background: rgba(248,81,73,0.15); color: var(--bad); }
+.run-status--error    { background: rgba(248,81,73,0.15); color: var(--bad); }
 .run-status--cancelled{ background: rgba(139,148,158,0.15); color: #8b949e; }
 
 /* ── Code input ───────────────────────────────────────────────────────────── */
@@ -1640,8 +1686,8 @@ onMounted(async () => {
    footer Save/Cancel stay visible and usable while the fields sidebar is hidden. */
 .code-block-fullscreen { position: absolute; inset: 0; z-index: 50; background: var(--bg2); }
 .lint-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-.lint-error { font-size: 12px; color: #e3b341; background: rgba(227,179,65,0.08); border: 1px solid rgba(227,179,65,0.25); border-radius: 5px; padding: 6px 10px; font-family: var(--font-mono, monospace); }
-.lint-ok { margin-top: 8px; font-size: 12px; color: #3fb950; }
+.lint-error { font-size: 12px; color: var(--warn); background: rgba(227,179,65,0.08); border: 1px solid rgba(227,179,65,0.25); border-radius: 5px; padding: 6px 10px; font-family: var(--font-mono, monospace); }
+.lint-ok { margin-top: 8px; font-size: 12px; color: var(--ok); }
 
 /* ── Inline form row ──────────────────────────────────────────────────────── */
 .inline-form-row { display: flex; gap: 14px; flex-wrap: wrap; }
@@ -1650,8 +1696,8 @@ onMounted(async () => {
 /* ── Radio options ────────────────────────────────────────────────────────── */
 .radio-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .radio-opt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface1); user-select: none; }
-.radio-opt.active { border-color: #58a6ff; background: rgba(88,166,255,0.08); color: #58a6ff; }
-.radio-opt input { accent-color: #58a6ff; }
+.radio-opt.active { border-color: var(--link); background: rgba(88,166,255,0.08); color: var(--link); }
+.radio-opt input { accent-color: var(--link); }
 
 /* ── Wide modal ───────────────────────────────────────────────────────────── */
 .modal--lg { width: min(860px, 94vw); }
@@ -1661,7 +1707,7 @@ onMounted(async () => {
 .survey-field-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; background: var(--surface1); display: flex; flex-direction: column; gap: 10px; }
 .survey-field-tester { display: flex; align-items: center; gap: 10px; }
 .survey-field-tester .input { max-width: 260px; }
-.test-pass { color: #3fb950; font-size: 12px; font-weight: 600; }
+.test-pass { color: var(--ok); font-size: 12px; font-weight: 600; }
 .test-fail { color: var(--danger); font-size: 12px; font-weight: 600; }
 .confirm-preview { margin-top: 10px; padding: 12px; border-radius: 8px; border: 1px solid rgba(210,153,34,0.35); background: rgba(210,153,34,0.08); }
 .confirm-preview-text { font-size: 13px; color: var(--text); white-space: pre-wrap; }
@@ -1671,9 +1717,9 @@ onMounted(async () => {
 .confirm-gate-text { font-size: 13px; color: var(--text); white-space: pre-wrap; }
 
 /* ── Extra badges ─────────────────────────────────────────────────────────── */
-.badge-green  { background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.35); color: #3fb950; }
+.badge-green  { background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.35); color: var(--ok); }
 .badge-orange { background: rgba(240,136,62,0.12); border: 1px solid rgba(240,136,62,0.35); color: #f0883e; }
-.badge-red    { background: rgba(248,81,73,0.12); border: 1px solid rgba(248,81,73,0.35); color: #f85149; }
+.badge-red    { background: rgba(248,81,73,0.12); border: 1px solid rgba(248,81,73,0.35); color: var(--bad); }
 
 .cards-empty { padding: 48px; text-align: center; color: var(--text2); font-size: 14px; }
 </style>

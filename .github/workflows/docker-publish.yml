@@ -65,6 +65,7 @@ jobs:
           - inventory-service
           - mcp-server
           - metrics-service
+          - posture-service
           - recording-service
           - terminal-service
           - zabbix-integration-service

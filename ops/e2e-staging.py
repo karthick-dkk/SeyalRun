@@ -11,6 +11,16 @@ see, not on a proxy for it:
          and the approved run actually executes; the requester can withdraw.
   * R-18 job.start / job.finish audit rows exist and carry the bare user id.
   * F-12 the MCP ack_notification tool marks the notification read.
+  * 3.0 M1 posture: reads answer, every call lands in the audit chain, an
+         unsigned/garbage feed bundle is refused (400) AND audited, a
+         posture:read PAT reads but cannot collect. Optional, when the staging
+         box is set up for it:
+           POSTURE_E2E_BUNDLE=/path/bundle.tar.gz  a bundle signed by a key in
+             the box's POSTURE_FEED_TRUSTED_KEYS: imports, becomes ready,
+             activates, and the summary reports its version;
+           POSTURE_E2E_HOST_IDS=<id>,<id>  e.g. one Debian- and one RHEL-family
+             inventory host with a working credential: facts are collected and
+             show a distro family + package count for each.
 
 Everything it creates (second admin, project, template, PAT) is removed at the
 end, so repeated runs do not pile up on staging. Standard library only.
@@ -170,6 +180,103 @@ def main(A):
     check("F-12 notification is now marked read", row.get("read") is True, row)
 
 
+def call_multipart(path, token, filename, data: bytes):
+    boundary = "----e2e" + secrets.token_hex(8)
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(BASE + path, method="POST", data=body)
+    req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+    req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, context=CTX, timeout=60) as r:
+            return r.status, json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        try:
+            return e.code, json.loads(raw)
+        except Exception:
+            return e.code, raw.decode(errors="replace")
+
+
+def audit_any(token, action, since_ids=()):
+    _, logs = call("GET", "/api/v1/audit/logs?limit=200", token)
+    items = logs if isinstance(logs, list) else (logs or {}).get("items") or (logs or {}).get("logs") or []
+    return [e for e in items if e.get("action") == action and e.get("id") not in since_ids]
+
+
+def posture_checks(A):
+    """SeyalRun 3.0 M1 — posture-service through the real gateway."""
+    for path in ("/api/v1/posture/summary", "/api/v1/posture/hosts", "/api/v1/posture/feeds"):
+        s, d = call("GET", path, A)
+        if not check(f"posture GET {path} (200)", s == 200, f"{s} {d}"):
+            return
+    _, summary = call("GET", "/api/v1/posture/summary", A)
+    check("posture summary has the contract fields",
+          {"hosts_total", "hosts_reporting", "reboot_required", "security_updates",
+           "active_feed_version", "feed_age_days"} <= set(summary or {}), summary)
+    time.sleep(2)  # audit forwarding is asynchronous
+    check("posture reads are audited (posture.summary.view)", bool(audit_any(A, "posture.summary.view")))
+    check("posture reads are audited (posture.hosts.list)", bool(audit_any(A, "posture.hosts.list")))
+
+    before = {e.get("id") for e in audit_any(A, "posture.feed.import")}
+    s, d = call_multipart("/api/v1/posture/feeds/import", A, "garbage.tar.gz", secrets.token_bytes(4096))
+    check("unsigned/garbage feed bundle refused (400)", s == 400 and isinstance(d, dict) and d.get("detail"), f"{s} {d}")
+    time.sleep(2)
+    rows = audit_any(A, "posture.feed.import", before)
+    check("refused feed import is audited as a failure", any(r.get("result") == "failure" for r in rows), rows[:2])
+
+    s, pat = call("POST", "/api/v1/api-tokens", A, {"name": "e2e-posture", "scopes": ["posture:read"]})
+    if check("issue posture:read PAT", s == 201, f"{s} {pat}"):
+        cleanup.append((f"/api/v1/api-tokens/{pat['id']}", "A"))
+        s, _ = call("GET", "/api/v1/posture/hosts", pat["token"])
+        check("posture:read PAT reads hosts (200)", s == 200, s)
+        s, _ = call("POST", "/api/v1/posture/collect", pat["token"])
+        check("posture:read PAT cannot collect (403)", s == 403, s)
+
+    bundle = os.environ.get("POSTURE_E2E_BUNDLE")
+    if bundle:
+        data = open(bundle, "rb").read()
+        s, snap = call_multipart("/api/v1/posture/feeds/import", A, os.path.basename(bundle), data)
+        if s == 409:  # already imported on an earlier run — find it
+            _, all_feeds = call("GET", "/api/v1/posture/feeds", A)
+            snap = next((f for f in all_feeds if f.get("status") == "ready"), None)
+            s = 201 if snap else s
+        if check("signed feed bundle imports offline (201)", s == 201, f"{s} {snap}"):
+            for _ in range(120):
+                _, all_feeds = call("GET", "/api/v1/posture/feeds", A)
+                snap = next(f for f in all_feeds if f["id"] == snap["id"])
+                if snap.get("status") != "importing":
+                    break
+                time.sleep(1)
+            check("feed snapshot parsed to ready", snap.get("status") == "ready", snap)
+            check("feed snapshot carries per-source entry counts",
+                  all(src["entries"] > 0 for src in snap.get("sources") or [{"entries": 0}]), snap.get("sources"))
+            s, act = call("POST", f"/api/v1/posture/feeds/{snap['id']}/activate", A)
+            check("feed snapshot activates (200)", s == 200 and (act or {}).get("active") is True, f"{s} {act}")
+            _, summary = call("GET", "/api/v1/posture/summary", A)
+            check("summary reports the active feed version", summary.get("active_feed_version") == snap["version"], summary)
+    else:
+        print("NOTE POSTURE_E2E_BUNDLE not set — skipping signed-bundle import/activate")
+
+    host_ids = [h for h in os.environ.get("POSTURE_E2E_HOST_IDS", "").split(",") if h]
+    for hid in host_ids:
+        s, d = call("POST", f"/api/v1/posture/hosts/{hid}/collect", A)
+        check(f"posture collect {hid[:8]} accepted (202)", s == 202 and (d or {}).get("job_run_id"), f"{s} {d}")
+    for hid in host_ids:
+        h = {}
+        for _ in range(60):
+            _, h = call("GET", f"/api/v1/posture/hosts/{hid}", A)
+            if (h or {}).get("collect_state") == "idle" and h.get("status") in ("ok", "failed"):
+                break
+            time.sleep(3)
+        check(f"facts for {hid[:8]}: {h.get('distro')} {h.get('distro_version')} ({h.get('distro_family')})",
+              h.get("status") == "ok" and h.get("distro_family") in ("debian", "rhel")
+              and h.get("packages_installed", 0) > 0 and h.get("packages_installed_list"),
+              {k: h.get(k) for k in ("status", "last_error", "collect_state", "distro_family", "packages_installed")})
+    if not host_ids:
+        print("NOTE POSTURE_E2E_HOST_IDS not set — skipping live facts collection")
+
+
 if __name__ == "__main__":
     try:
         A = login("Admin", ADMIN_PW)
@@ -180,6 +287,10 @@ if __name__ == "__main__":
         main(A)
     except Exception as exc:  # a crash is a failure, never a silent pass
         check("e2e completed without an exception", False, repr(exc))
+    try:
+        posture_checks(A)
+    except Exception as exc:
+        check("posture e2e completed without an exception", False, repr(exc))
     finally:
         for path, _ in reversed(cleanup):
             call("DELETE", path, A)

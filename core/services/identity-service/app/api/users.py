@@ -628,6 +628,35 @@ async def reset_user_mfa(
     return {"mfa_method": None}
 
 
+@router.get("/users/lockouts", dependencies=[Depends(require_admin)])
+async def list_login_lockouts(session: AsyncSession = Depends(get_session)):
+    """Usernames currently locked out by the login brute-force lockout (5 failures ->
+    15 min, per username+IP). Collapsed to one entry per username."""
+    from .._lockout import list_locked
+
+    return await list_locked(session)
+
+
+@router.post("/users/lockouts/{username}/unlock", dependencies=[Depends(require_admin)])
+async def unlock_login_lockout(
+    username: str,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+):
+    """Admin unlock: clears every IP row of the username's lockout state. This is not an
+    account-wide lock/unlock - it only removes the throttle."""
+    from .._lockout import clear_username
+
+    removed = await clear_username(session, username)
+    await log_action(
+        session, user_id=actor_id, username=actor_name or "", action="user.login_unlock",
+        resource_type="user", resource_id=username, details={"username": username, "rows_cleared": removed},
+        result="success",
+    )
+    return {"username": username, "cleared": removed}
+
+
 @router.get("/users/groups", response_model=list[UserGroupOut])
 async def list_groups(session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(ZAUserGroup))

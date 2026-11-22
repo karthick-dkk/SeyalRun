@@ -122,6 +122,10 @@ _NAV_SEGMENTS: dict[str, tuple[str, str]] = {
     "security.mfa": ("POST", "auth/mfa/setup"),
     "admin.audit": ("GET", "audit"),
     "automation": ("GET", "job-templates"),
+    # SeyalRun 3.0 posture (host facts, feed snapshots). Admin-only actions on the
+    # page (collect, import, activate) are gated by admin.posture below.
+    "posture": ("GET", "posture"),
+    "admin.posture": ("POST", "posture"),
 }
 
 

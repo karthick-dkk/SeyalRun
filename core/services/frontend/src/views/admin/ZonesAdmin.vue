@@ -389,7 +389,7 @@ onMounted(() => {
 @media (max-width: 480px) { .form-grid-2 { grid-template-columns: 1fr; } }
 
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 8px; }
-.btn-pill-active { background: rgba(88,166,255,0.16); border-color: rgba(88,166,255,0.45); color: #58a6ff; }
+.btn-pill-active { background: rgba(88,166,255,0.16); border-color: rgba(88,166,255,0.45); color: var(--link); }
 .btn-pill-active:hover { background: rgba(88,166,255,0.26); }
 
 .inline-cred-form {

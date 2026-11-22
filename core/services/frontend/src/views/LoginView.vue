@@ -1,15 +1,28 @@
 <template>
-  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">
+  <div class="lg">
     <!-- Zabbix SSO exchange is a single fast round trip (~100ms) — the ENTIRE
          branding block + card is gated off during it, not just the card body,
          so nothing (not even the logo) flashes on a normal embedded page
          transition. Only the plain background shows for that brief window. -->
-    <div v-if="!ssoLoading" style="width:360px">
-      <div style="text-align:center;margin-bottom:32px">
-        <div style="font-size:48px;margin-bottom:8px">⚡</div>
-        <h1 style="font-size:24px;font-weight:700;color:var(--text)">SeyalRun</h1>
-        <div style="color:var(--text2);font-size:13px;margin-top:4px">DevOps Console</div>
+    <aside v-if="!ssoLoading" class="lg-side">
+      <div class="row" style="gap:10px">
+        <span class="lg-logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8l4 4-4 4M13 16h5" /></svg></span>
+        <b style="font-size:18px;letter-spacing:-.01em">SeyalRun</b>
       </div>
+      <div class="lg-head">
+        <h1>AI-Powered Automation &amp; Privileged Access</h1>
+        <p class="muted">Connect through one audited gateway, run approved playbooks, and answer Zabbix problems from the same console.</p>
+      </div>
+      <ul class="lg-feat">
+        <li v-for="f in FEATURES" :key="f.t" class="row">
+          <span class="b nd" :class="f.c" style="height:28px;width:28px;justify-content:center;padding:0"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-for="(d, i) in f.d" :key="i" :d="d" /></svg></span>
+          <b>{{ f.t }}</b>
+        </li>
+      </ul>
+      <div style="margin-top:auto;font-size:12.5px;color:var(--faint)">{{ appVersion ? 'v' + appVersion + ' · ' : '' }}<a href="https://seyalrun.com/guide/introduction" target="_blank" rel="noopener" style="color:var(--faint)">Documentation</a></div>
+    </aside>
+    <main v-if="!ssoLoading" class="lg-main">
+      <div class="lg-box">
       <div class="card">
         <div class="card-body">
           <template v-if="mfaPending">
@@ -102,22 +115,25 @@
             </button>
           </template>
           <template v-else>
+            <div style="margin-bottom:16px"><h2 class="h2" style="font-size:22px">Sign in</h2><p class="sub">Use your SeyalRun account.</p></div>
             <div class="form-group">
-              <label class="form-label">Username</label>
-              <input v-model="username" type="text" name="username" autocomplete="username" class="input" placeholder="Username" @keydown.enter="doLogin" autofocus />
+              <label class="form-label" for="l-user">Username</label>
+              <input id="l-user" v-model="username" type="text" name="username" autocomplete="username" class="input" placeholder="Username" @keydown.enter="doLogin" autofocus />
             </div>
             <div class="form-group">
-              <label class="form-label">Password</label>
-              <input v-model="password" type="password" name="password" autocomplete="current-password" class="input" placeholder="Password" @keydown.enter="doLogin" />
+              <div style="display:flex;justify-content:space-between"><label class="form-label" for="l-pass">Password</label><span class="hint lk" style="margin:0;cursor:help" tabindex="0" title="Ask an administrator to reset your password">Forgot?</span></div>
+              <input id="l-pass" v-model="password" type="password" name="password" autocomplete="current-password" class="input" placeholder="Password" @keydown.enter="doLogin" />
             </div>
-            <div class="u-c-danger_fs-12_mb-12" v-if="error">{{ error }}</div>
-            <button class="btn btn-primary u-jc-center_w-100pc" @click="doLogin" :disabled="loading">
+            <div class="callout" style="--c:var(--bad);font-size:13px;margin-bottom:12px" v-if="error" role="alert">{{ error }}</div>
+            <button class="btn btn-primary u-jc-center_w-100pc" style="min-height:40px;font-size:14px" @click="doLogin" :disabled="loading">
               {{ loading ? 'Signing in…' : 'Sign In' }}
             </button>
           </template>
         </div>
       </div>
-    </div>
+      <p class="hint" style="text-align:center;margin:14px 0 0">Opened from Zabbix? You are signed in automatically.</p>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -128,6 +144,14 @@ import QRCode from 'qrcode'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
+const appVersion = import.meta.env.VITE_APP_VERSION as string | undefined
+const FEATURES = [
+  { t: 'Integrations', c: 'info', d: ['M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4'] },
+  { t: 'MCP', c: 'info', d: ['M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z'] },
+  { t: 'Playbooks', c: 'ok', d: ['M13 3L4 14h7l-1 7 9-11h-7z'] },
+  { t: 'Approvals', c: 'pend', d: ['M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z', 'M8.5 12l2.5 2.5 4.5-5'] },
+  { t: 'Audit Controls', c: 'info', d: ['M6 3h9l4 4v14H6z', 'M9 12h7M9 16h7'] },
+]
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()

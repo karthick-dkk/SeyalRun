@@ -62,6 +62,11 @@ _SYSTEM = ["log-backend", "settings", "integrations", "command-filters",
 # every role except superadmin (which passes on all=True) and the socket was
 # closed with 4403 on connect. Self-scoped like the rest of _SELF.
 _SELF = ["ssh", "sftp", "recordings", "metrics", "api-tokens", "notifications"]  # "auth" is always-allowed, not listed here
+# SeyalRun 3.0 posture-service: host facts + vulnerability-feed snapshots. Admin
+# gets every method (collect, feed import/activate — posture-service re-checks the
+# REAL role for those, so a vouched custom-role write is still refused); support
+# reads, host-scoped downstream exactly like the host list. "user" has no access.
+_POSTURE = ["posture"]
 
 
 def _grant(segments, methods=ALL_METHODS):
@@ -75,7 +80,7 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
     "admin": {
         "flags": ["reveal", "mfa"],
         "perms": {
-            **_grant(_INVENTORY + _ZONES + _AUTOMATION + _SELF),
+            **_grant(_INVENTORY + _ZONES + _AUTOMATION + _SELF + _POSTURE),
             "authorizations": list(ALL_METHODS),
             "access-reviews": list(ALL_METHODS),  # PCI DSS Phase C — can revoke access, admin-only (not support)
             "audit": ["GET"],
@@ -96,6 +101,7 @@ BUILTIN_ROLE_PERMS: dict[str, dict] = {
             "sftp": list(ALL_METHODS),
             "recordings": ["GET"],
             "metrics": ["GET"],
+            "posture": ["GET"],                # read-only posture; host-scoped downstream
             "api-tokens": list(ALL_METHODS),   # own tokens only — see _SYSTEM note
             "notifications": ["GET"],          # own notification feed (WS upgrade)
             "users": ["GET", "PUT"],   # same restricted scope as admin

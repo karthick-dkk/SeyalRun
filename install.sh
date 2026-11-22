@@ -382,7 +382,7 @@ run_migration() {
   fail "${svc} migration failed after 10 attempts"
 }
 for svc in identity-service inventory-service terminal-service recording-service \
-           automation-service zabbix-integration-service metrics-service; do
+           automation-service zabbix-integration-service metrics-service posture-service; do
   echo "    migrating ${svc}..."
   run_migration "$svc"
 done

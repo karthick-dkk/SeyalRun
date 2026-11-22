@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     automation_service_ws_url: str = ""  # derived — see _derive_ws_urls
     zabbix_integration_service_url: str = "http://zabbix-integration-service:8106"
     metrics_service_url: str = "http://metrics-service:8107"
+    posture_service_url: str = "http://posture-service:8108"
 
     # Zabbix integration (read from the same .env) — surfaced to the UI for the header
     # "Zabbix" link and the Integration admin page. Token is never exposed to the browser.

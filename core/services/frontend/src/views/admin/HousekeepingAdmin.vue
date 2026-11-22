@@ -99,5 +99,5 @@ onMounted(load)
 .hk-slider { position: absolute; cursor: pointer; inset: 0; background: var(--border); border-radius: 20px; transition: 0.2s; }
 .hk-slider::before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: var(--text2); border-radius: 50%; transition: 0.2s; }
 .hk-switch input:checked + .hk-slider { background: rgba(34,197,94,0.4); }
-.hk-switch input:checked + .hk-slider::before { transform: translateX(16px); background: #4ade80; }
+.hk-switch input:checked + .hk-slider::before { transform: translateX(16px); background: var(--ok); }
 </style>
