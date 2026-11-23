@@ -408,3 +408,35 @@ def test_run_automation_body_keys_are_runpayload_fields():
     tool = mcp._TOOLS_BY_NAME["run_automation"]
     _, _, _, body = mcp._build_request(tool, {"template_id": "T", "host_ids": ["h"], "extra_vars": {"a": 1}})
     assert body and set(body) <= fields, (body, fields)
+
+
+# ── security review fixes: fail closed + every run-starting route ──────────────
+_PAT = {"is_pat": True, "token_id": "t1", "user_id": "u1"}
+
+
+def test_unloaded_settings_fail_closed():
+    async def _ok(*_a):
+        return True
+    assert _run(gate.check_mcp_call(_PAT, "GET", None, _ok))[0] == 503
+    assert gate.check_run_allowlist(_PAT, "POST", "job-templates/abc/run", None)[0] == 503
+    # A session caller and a non-run request are unaffected.
+    assert gate.check_run_allowlist({"is_pat": False}, "POST", "job-templates/abc/run", None) is None
+    assert gate.check_run_allowlist(_PAT, "GET", "job-templates", None) is None
+
+
+@pytest.mark.parametrize("method,path", [
+    ("POST", "job-runs/r1/rerun"), ("POST", "schedules"), ("PUT", "schedules/s1"),
+])
+def test_rerun_and_schedules_held_to_the_list(method, path):
+    listed = mcpsettings.normalize({"agent_template_ids": ["abc"]})
+    unlisted = mcpsettings.normalize({"agent_template_ids": None})
+    assert gate.starts_run(method, path)
+    assert gate.check_run_allowlist(_PAT, method, path, listed)[0] == 403
+    assert gate.check_run_allowlist(_PAT, method, path, unlisted) is None
+    assert gate.check_run_allowlist({"is_pat": False}, method, path, listed) is None
+
+
+def test_listed_template_still_runs():
+    listed = mcpsettings.normalize({"agent_template_ids": ["abc"]})
+    assert gate.check_run_allowlist(_PAT, "POST", "job-templates/abc/run", listed) is None
+    assert gate.check_run_allowlist(_PAT, "POST", "job-templates/xyz/run", listed)[0] == 403

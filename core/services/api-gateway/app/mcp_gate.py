@@ -59,8 +59,19 @@ def rate_key(identity: dict) -> str:
     return f"mcp:{identity.get('token_id') or identity.get('user_id') or 'anon'}"
 
 
-async def check_mcp_call(identity: dict, method: str, settings: dict, limiter: Limiter) -> Decision:
-    """MCP-tagged PAT request -> None (allowed) or (status, reason)."""
+UNAVAILABLE: Decision = (503, "MCP settings are temporarily unavailable; try again shortly")
+
+# Other ways a token could get a playbook run started: re-running a past run
+# (any template) and creating/editing a schedule (runs later as the owner).
+_RERUN_RE = re.compile(r"job-runs/[^/]+/rerun/?")
+_SCHEDULE_RE = re.compile(r"schedules(?:/[^/]+)?/?")
+
+
+async def check_mcp_call(identity: dict, method: str, settings: dict | None, limiter: Limiter) -> Decision:
+    """MCP-tagged PAT request -> None (allowed) or (status, reason).
+    settings None = never loaded: refuse (fail closed)."""
+    if settings is None:
+        return UNAVAILABLE
     s = normalize(settings)
     if not s["enabled"]:
         return 403, "MCP connections are turned off by an administrator"
@@ -71,15 +82,33 @@ async def check_mcp_call(identity: dict, method: str, settings: dict, limiter: L
     return None
 
 
-def check_run_allowlist(identity: dict, method: str, path: str, settings: dict) -> Decision:
+def starts_run(method: str, path: str) -> bool:
+    """Could (method, path) start a playbook run, now or later?"""
+    m, p = method.upper(), path.strip("/")
+    if run_template_id(m, p) is not None:
+        return True
+    if m == "POST" and _RERUN_RE.fullmatch(p):
+        return True
+    return m in ("POST", "PUT", "PATCH") and bool(_SCHEDULE_RE.fullmatch(p))
+
+
+def check_run_allowlist(identity: dict, method: str, path: str, settings: dict | None) -> Decision:
     """Any PAT starting a playbook run -> refused unless the template is on the
-    agent list (no list configured = every enabled template, today's behaviour)."""
-    if not identity.get("is_pat"):
+    agent list (no list configured = every enabled template, today's behaviour).
+    Re-runs and schedule writes can't be tied to one listed template here, so
+    while a list is set they are refused for tokens. settings None = fail closed."""
+    if not identity.get("is_pat") or not starts_run(method, path):
         return None
+    if settings is None:
+        return UNAVAILABLE
     tid = run_template_id(method, path)
-    if tid is None or template_allowed(settings, tid):
+    if tid is not None:
+        if template_allowed(settings, tid):
+            return None
+        return 403, "this playbook is not on the list agents may run (MCP settings)"
+    if normalize(settings)["agent_template_ids"] is None:
         return None
-    return 403, "this playbook is not on the list agents may run (MCP settings)"
+    return 403, "agent tokens cannot re-run or schedule playbooks while a playbook list is set (MCP settings)"
 
 
 def audit_entry(identity: dict, tool: str, method: str, path: str, status: int,

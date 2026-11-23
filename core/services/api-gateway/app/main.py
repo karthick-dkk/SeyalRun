@@ -217,7 +217,11 @@ async def mcp_policy(request: Request):
         await resolve_identity(request.headers.get("authorization"))
     except AuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-    return public_policy(await platform_settings.mcp_settings())
+    current = await platform_settings.mcp_settings()
+    if current is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="MCP settings are temporarily unavailable")
+    return public_policy(current)
 
 
 @app.get("/api/v1/auth/nav")
@@ -656,7 +660,7 @@ async def _gateway(path: str, request: Request, ctx: dict, mcp_tool: str | None)
             )
         # "Playbooks agents may run" (MCP settings) binds EVERY PAT, not only MCP
         # traffic — otherwise a token could skip the list by calling REST directly.
-        if identity.get("is_pat") and request.method == "POST" and path.startswith("job-templates/"):
+        if identity.get("is_pat") and mcp_gate.starts_run(request.method, path):
             denial = mcp_gate.check_run_allowlist(identity, request.method, path,
                                                   await platform_settings.mcp_settings())
             if denial:

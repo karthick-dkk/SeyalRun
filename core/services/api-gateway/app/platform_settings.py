@@ -11,6 +11,7 @@ identity-service is unreachable, so a cold cache never breaks the gateway.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 
@@ -91,19 +92,19 @@ def zabbix_module_elevated_rate_limit() -> int:
 # from save to effect is about twice this. A PUT through the gateway also
 # invalidates it at once (main.py).
 #
-# On a read failure keep the LAST KNOWN value; with none yet, the defaults —
-# which equal the behaviour before these settings existed (libs/mcpsettings).
+# On a read failure keep the LAST KNOWN value. If nothing has ever loaded
+# (gateway just started and identity-service is unreachable) return None: the
+# callers then FAIL CLOSED for MCP calls and agent-started runs, because an
+# admin's restrictions must not silently revert to the permissive defaults.
+# Concurrent callers wait on one fetch instead of seeing a half-loaded state.
 MCP_CACHE_SECONDS = 5.0
 _mcp: dict | None = None
 _mcp_at: float = 0.0
+_mcp_lock = asyncio.Lock()
 
 
-async def mcp_settings() -> dict:
-    global _mcp, _mcp_at
-    now = time.monotonic()
-    if _mcp_at and now - _mcp_at < MCP_CACHE_SECONDS:
-        return dict(_mcp) if _mcp is not None else mcpsettings.defaults()
-    _mcp_at = now  # set before the await so concurrent callers don't stampede
+async def _fetch_mcp() -> None:
+    global _mcp
     try:
         token = mint("api-gateway", "identity-service", _settings.service_jwt_secret)
         r = await _http.client.get(
@@ -116,7 +117,19 @@ async def mcp_settings() -> dict:
             logger.warning("mcp settings refresh: identity-service returned %s", r.status_code)
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("mcp settings refresh failed, keeping last known: %s", exc)
-    return dict(_mcp) if _mcp is not None else mcpsettings.defaults()
+
+
+async def mcp_settings() -> dict | None:
+    """Current MCP settings, or None when they have never been loaded (fail closed)."""
+    global _mcp_at
+    if _mcp_at and time.monotonic() - _mcp_at < MCP_CACHE_SECONDS and _mcp is not None:
+        return dict(_mcp)
+    async with _mcp_lock:
+        # Another caller may have refreshed while we waited.
+        if not (_mcp_at and time.monotonic() - _mcp_at < MCP_CACHE_SECONDS and _mcp is not None):
+            await _fetch_mcp()
+            _mcp_at = time.monotonic()
+    return dict(_mcp) if _mcp is not None else None
 
 
 def invalidate_mcp_settings() -> None:
