@@ -31,6 +31,8 @@
 }
 
 html, body { margin: 0; padding: 0; }
+/* html too: index.html paints a first-frame colour on html, which must follow the theme. */
+html { background: var(--bg); }
 body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; transition: background-color 0.15s ease, color 0.15s ease; }
 
 .app-shell { display: flex; height: 100vh; overflow: hidden; }

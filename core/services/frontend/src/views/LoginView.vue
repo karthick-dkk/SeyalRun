@@ -412,6 +412,24 @@ async function doFinishWizard() {
 </script>
 
 <style scoped>
+/* Two-panel sign-in (design: Login.dc.html). Stacks to one column on phones. */
+.lg { min-height: 100vh; display: flex; flex-wrap: wrap; background: var(--bg); }
+.lg-side { flex: 1 1 480px; min-width: 0; background: var(--surface); border-right: 1px solid var(--border);
+  padding: 56px max(24px, 5vw); display: flex; flex-direction: column; gap: 36px; }
+.lg-logo { width: 36px; height: 36px; border-radius: 9px; background: var(--primary); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.lg-head { display: flex; flex-direction: column; gap: 14px; max-width: 460px; }
+.lg-head h1 { font-size: 32px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; margin: 0; }
+.lg-head p { margin: 0; font-size: 15px; }
+.lg-feat { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; max-width: 460px; }
+.lg-feat li { align-items: center; gap: 12px; }
+.lg-main { flex: 1 1 480px; min-width: 0; padding: 56px max(24px, 5vw); display: flex; flex-direction: column; justify-content: center; }
+.lg-box { width: 100%; max-width: 380px; margin: 0 auto; }
+@media (max-width: 960px) {
+  .lg-side { border-right: 0; border-bottom: 1px solid var(--border); padding: 28px 20px; gap: 22px; }
+  .lg-head h1 { font-size: 26px; }
+  .lg-main { padding: 28px 20px 40px; justify-content: flex-start; }
+}
 .fp-toggle-group { display: flex; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .fp-toggle { flex: 1; padding: 7px 0; font-size: 12px; font-weight: 500; background: transparent; border: none; color: var(--text2); cursor: pointer; }
 .fp-toggle.active { background: var(--bg2); color: var(--text); }
