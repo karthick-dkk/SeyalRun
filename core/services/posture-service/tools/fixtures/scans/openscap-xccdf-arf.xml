@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<arf:asset-report-collection xmlns:arf="http://scap.nist.gov/schema/asset-reporting-format/1.1" xmlns:core="http://scap.nist.gov/schema/reporting-core/1.1" xmlns:ai="http://scap.nist.gov/schema/asset-identification/1.1">
+  <arf:assets>
+    <arf:asset id="asset0">
+      <ai:computing-device>
+        <ai:connections><ai:connection><ai:ip-address><ai:ip-v4>10.0.0.5</ai:ip-v4></ai:ip-address></ai:connection></ai:connections>
+        <ai:fqdn>web01.example.com</ai:fqdn>
+        <ai:hostname>web01</ai:hostname>
+      </ai:computing-device>
+    </arf:asset>
+  </arf:assets>
+  <arf:reports>
+    <arf:report id="xccdf1">
+      <arf:content>
+        <TestResult xmlns="http://checklists.nist.gov/xccdf/1.2" id="xccdf_org.open-scap_testresult_default">
+          <target>web01</target>
+          <target-address>127.0.0.1</target-address>
+          <target-address>10.0.0.5</target-address>
+          <rule-result idref="xccdf_rule_cve_2023_5678" severity="medium" result="fail">
+            <ident system="http://cve.mitre.org">CVE-2023-5678</ident>
+            <check system="http://oval.mitre.org/XMLSchema/oval-definitions-5"><check-content-ref name="oval:missing:def:1" href="#oval0"/></check>
+            <result>fail</result>
+          </rule-result>
+          <rule-result idref="xccdf_rule_cve_2024_0001" severity="high">
+            <ident system="http://cve.mitre.org">CVE-2024-0001</ident>
+            <result>pass</result>
+          </rule-result>
+        </TestResult>
+      </arf:content>
+    </arf:report>
+  </arf:reports>
+</arf:asset-report-collection>

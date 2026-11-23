@@ -11,12 +11,14 @@ from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from libs.apiscopes import scope_allows
+from libs.mcpsettings import public_policy
 from libs.obsmetrics import ServiceMetrics
 from libs.securelog import configure_logging
 from libs.pluginbase import AXES
 from libs.servicetoken import mint
 
 from . import http as _http
+from . import mcp_gate
 from . import platform_settings
 from . import rbac
 from .collectors import background_metric_refresh
@@ -162,6 +164,62 @@ async def metrics():
     return _metrics.snapshot(upstreams=obs.snapshot())
 
 
+# ── MCP tool calls (see mcp_gate.py) ─────────────────────────────────────────
+_mcp_audit_tasks: set[asyncio.Task] = set()
+
+
+async def _forward_mcp_audit(entry: dict) -> None:
+    try:
+        tok = mint("api-gateway", "identity-service", settings.service_jwt_secret)
+        r = await _http.client.post(
+            f"{settings.identity_service_url}/api/v1/internal/audit",
+            json=entry, headers={"X-Service-Token": tok}, timeout=5.0,
+        )
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        _log.error("MCP tool-call audit forward failed: %s", exc,
+                   extra={"action": entry.get("action"), "tool": entry.get("resource_id")})
+
+
+def _audit_mcp_call(identity: dict | None, tool: str | None, request: Request, path: str,
+                    status_code: int, reason: str | None) -> None:
+    """One audit row per MCP tool call (PAT callers only). Written off the request
+    path so a slow chain write never delays the agent; failures log at error."""
+    if not tool or not identity or not identity.get("is_pat"):
+        return
+    ip = request.client.host if request.client else ""
+    entry = mcp_gate.audit_entry(identity, tool, request.method, path, status_code, reason, ip)
+    task = asyncio.create_task(_forward_mcp_audit(entry))
+    _mcp_audit_tasks.add(task)
+    task.add_done_callback(_mcp_audit_tasks.discard)
+
+
+async def _mcp_limiter(key: str, limit: int, window: int) -> bool:
+    return await check_rate_limit(redis_client, key, limit, window)
+
+
+async def _enforce_mcp_call(identity: dict, tool: str | None, method: str) -> None:
+    """MCP-tagged PAT request: MCP switches + per-token rate limit (raises)."""
+    if not tool or not identity.get("is_pat"):
+        return
+    denial = await mcp_gate.check_mcp_call(identity, method, await platform_settings.mcp_settings(), _mcp_limiter)
+    if denial:
+        raise HTTPException(status_code=denial[0], detail=denial[1])
+
+
+@app.get("/api/v1/mcp/policy")
+async def mcp_policy(request: Request):
+    """The MCP switches mcp-server enforces (enabled, write tools, calls per minute),
+    read by mcp-server with the calling agent's own PAT and cached a few seconds.
+    Any authenticated caller may read it; the playbook allowlist is enforced here
+    in the gateway and deliberately not disclosed."""
+    try:
+        await resolve_identity(request.headers.get("authorization"))
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    return public_policy(await platform_settings.mcp_settings())
+
+
 @app.get("/api/v1/auth/nav")
 async def auth_nav(request: Request):
     """The caller's accessible nav areas, so the frontend hides pages they can't open.
@@ -190,6 +248,15 @@ async def auth_session(request: Request):
         identity = await resolve_identity_from_bearer_or_cookie(authorization, cookie_token)
     except AuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    # The MCP `whoami` tool lands here, not on the catch-all proxy — same MCP
+    # switches, per-token limit and audit row as every other tool call.
+    mcp_tool = mcp_gate.tool_from_headers(request.headers)
+    try:
+        await _enforce_mcp_call(identity, mcp_tool, request.method)
+    except HTTPException as exc:
+        _audit_mcp_call(identity, mcp_tool, request, "auth/session", exc.status_code, str(exc.detail))
+        raise
+    _audit_mcp_call(identity, mcp_tool, request, "auth/session", 200, None)
     out = {
         "id": identity["user_id"],
         "username": identity.get("username", ""),
@@ -339,6 +406,7 @@ _PLUGIN_SERVICES: tuple[tuple[str, str], ...] = (
     ("terminal_service_url", "terminal-service"),
     ("automation_service_url", "automation-service"),
     ("zabbix_integration_service_url", "zabbix-integration-service"),
+    ("posture_service_url", "posture-service"),
 )
 
 
@@ -502,6 +570,23 @@ async def admin_health(request: Request):
 
 @app.api_route("/api/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def gateway(path: str, request: Request):
+    """Catch-all. MCP-tagged PAT calls get exactly one audit row whatever the
+    outcome — allowed, refused by scope/role/MCP policy/rate limit, or upstream
+    error — so the agent's activity log has no silent gaps."""
+    mcp_tool = mcp_gate.tool_from_headers(request.headers)
+    ctx: dict = {}
+    try:
+        response = await _gateway(path, request, ctx, mcp_tool)
+    except HTTPException as exc:
+        _audit_mcp_call(ctx.get("identity"), mcp_tool, request, path, exc.status_code, str(exc.detail))
+        raise
+    _audit_mcp_call(ctx.get("identity"), mcp_tool, request, path, response.status_code, None)
+    if (path == "settings/mcp" and request.method == "PUT" and 200 <= response.status_code < 300):
+        platform_settings.invalidate_mcp_settings()   # take effect now, not in ≤5 s
+    return response
+
+
+async def _gateway(path: str, request: Request, ctx: dict, mcp_tool: str | None):
     # Dot segments would let the RBAC/scope check see one path while the
     # upstream (after URL normalisation) serves another. Refuse them outright.
     if any(seg in (".", "..") for seg in path.split("/")):
@@ -515,6 +600,7 @@ async def gateway(path: str, request: Request):
             identity = await resolve_identity(request.headers.get("authorization"))
         except AuthError as exc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        ctx["identity"] = identity
 
         # Forced password rotation: a session minted from default seed credentials
         # may ONLY change its password (plus the nav probe the login flow calls).
@@ -568,6 +654,15 @@ async def gateway(path: str, request: Request):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="forbidden: token scope does not permit this action",
             )
+        # "Playbooks agents may run" (MCP settings) binds EVERY PAT, not only MCP
+        # traffic — otherwise a token could skip the list by calling REST directly.
+        if identity.get("is_pat") and request.method == "POST" and path.startswith("job-templates/"):
+            denial = mcp_gate.check_run_allowlist(identity, request.method, path,
+                                                  await platform_settings.mcp_settings())
+            if denial:
+                raise HTTPException(status_code=denial[0], detail=denial[1])
+        # MCP switches + per-token MCP rate limit, for MCP-tagged PAT calls.
+        await _enforce_mcp_call(identity, mcp_tool, request.method)
         # Preserve the caller's true (pre-elevation) primary role — downstream_role()
         # below can "vouch" a support/custom write up to X-User-Role: admin (see its
         # own docstring), which is right for simple admin-gated CRUD guards but means

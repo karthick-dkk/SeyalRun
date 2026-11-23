@@ -1,23 +1,25 @@
 <template>
   <div>
     <div class="int-tabs">
-      <button
-        v-for="t in TABS"
-        :key="t.id"
-        class="int-tab"
-        :class="{ active: tab === t.id }"
-        @click="tab = t.id"
-      >
-        {{ t.label }}
-        <span v-if="countFor(t)" class="int-tab-count">{{ countFor(t) }}</span>
-      </button>
-      <div class="int-tabs-spacer" />
-      <button class="btn btn-sm" :disabled="loading" @click="loadPlugins">
+      <div class="tabs" role="tablist" style="flex:1">
+        <button
+          v-for="t in TABS"
+          :key="t.id"
+          role="tab"
+          :aria-selected="tab === t.id"
+          :class="['tab', { on: tab === t.id }]"
+          @click="tab = t.id"
+        >
+          {{ t.label }}
+          <span v-if="countFor(t)" class="cnt">{{ countFor(t) }}</span>
+        </button>
+      </div>
+      <button class="btn sm" type="button" :disabled="loading" @click="loadPlugins">
         {{ loading ? 'Loading…' : 'Refresh plugins' }}
       </button>
     </div>
 
-    <div v-if="unreachable.length" class="int-warn">
+    <div v-if="unreachable.length" class="callout" style="--c:var(--warn);margin-bottom:16px" role="alert">
       Could not read plugins from: <strong>{{ unreachable.join(', ') }}</strong>.
       That list is incomplete until those services answer — this is not the same as “no plugins”.
     </div>
@@ -89,20 +91,7 @@ onMounted(loadPlugins)
 </script>
 
 <style scoped>
-.int-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
-.int-tabs-spacer { flex: 1; }
-.int-tab {
-  background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
-  color: var(--text2); font-size: 13px; font-weight: 500; padding: 9px 14px;
-  display: flex; align-items: center; gap: 7px;
-}
-.int-tab:hover { color: var(--text); }
-.int-tab.active { color: var(--text); border-bottom-color: var(--accent); }
-.int-tab-count { font-size: 11px; background: var(--bg3); border-radius: 9px; padding: 0 6px; color: var(--text2); }
-.int-warn {
-  font-size: 12px; color: var(--text); background: var(--bg3);
-  border: 1px solid var(--border); border-left: 3px solid var(--warn, #c98a1b);
-  border-radius: 6px; padding: 9px 12px; margin-bottom: 16px; line-height: 1.6;
-}
-.int-foot { color: var(--text2); font-size: 12px; line-height: 1.6; margin-top: 18px; }
+.int-tabs { display: flex; align-items: flex-end; gap: 12px; border-bottom: 1px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
+.int-tabs .tabs { border-bottom: 0; }
+.int-foot { color: var(--muted); font-size: 12.5px; line-height: 1.6; margin-top: 18px; }
 </style>

@@ -12,6 +12,10 @@ from .interfaces import (
     SessionBroker,
     SessionTarget,
     TriggerSource,
+    HostRef,
+    ScanParseError,
+    ScanRecord,
+    VulnScanner,
 )
 
 __all__ = [
@@ -29,4 +33,8 @@ __all__ = [
     "SessionBroker",
     "SessionTarget",
     "BrokeredSession",
+    "HostRef",
+    "ScanParseError",
+    "ScanRecord",
+    "VulnScanner",
 ]

@@ -133,3 +133,32 @@ async def job_run(run_id: str) -> dict | None:
         return None
     r.raise_for_status()
     return r.json()
+
+
+# ── integration state (which scanners an admin switched off) ─────────────────
+# Same policy as automation-service's executor switch: cached 30 s; a failed
+# lookup keeps the last good answer; never read at all = nothing disabled (a
+# fresh deployment).
+_state_cache: dict = {"at": 0.0, "value": None}
+_STATE_TTL = 30.0
+
+
+async def disabled_scanners() -> set[str]:
+    import time
+
+    now = time.monotonic()
+    cached = _state_cache["value"]
+    if cached is None or now - _state_cache["at"] >= _STATE_TTL:
+        s = get_settings()
+        try:
+            r = await client().get(f"{s.identity_service_url}/api/v1/internal/integration-state",
+                                   headers=_token("identity-service"), timeout=4.0)
+            if r.status_code == 200:
+                _state_cache["value"] = r.json() or {}
+                _state_cache["at"] = now
+        except httpx.HTTPError as exc:
+            logger.warning("integration state fetch failed: %s", type(exc).__name__)
+        cached = _state_cache["value"]
+    if cached is None:
+        return set()
+    return set(((cached.get("disabled") or {}).get("scanners")) or [])

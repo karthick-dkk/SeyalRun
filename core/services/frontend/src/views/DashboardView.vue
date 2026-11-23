@@ -146,7 +146,7 @@
               <thead><tr><th>Rule</th><th>Targets</th><th class="r">Ends</th></tr></thead>
               <tbody>
                 <tr v-for="a in myAccess" :key="a.id">
-                  <td><span class="nm">{{ a.name }}</span><span class="s2">{{ (a.actions || []).join(', ') }}</span></td>
+                  <td><span class="nm">{{ a.name }}</span><span class="s2">{{ (a.actions || []).join(', ') }}<template v-if="a.via === 'group'"> · via {{ a.groups.length === 1 ? 'group' : 'groups' }} {{ a.groups.join(', ') }}</template></span></td>
                   <td>{{ targetLabel(a) }}</td>
                   <td class="r">
                     <span v-if="a.status === 'pending_approval'" class="b pend">Awaiting approval</span>
@@ -156,7 +156,8 @@
                 </tr>
               </tbody>
             </table></div>
-            <div v-if="!myAccess.length" class="empty-state">No access rules are assigned to you directly. Access granted through a group is not listed here.</div>
+            <div v-if="accessError" class="empty-state">{{ accessError }}</div>
+            <div v-else-if="!myAccess.length" class="empty-state">No access rules apply to you, directly or through your groups.</div>
           </div>
         </section>
       </div>
@@ -179,6 +180,10 @@ const m = ref<any>(null)
 const runs = ref<any[]>([])
 const sessions = ref<any[]>([])
 const authz = ref<any[]>([])
+// Rules that apply to ME — direct and through my groups — from the self-scoped
+// GET /auth/my-access (any role may call it; it never returns other users' rules).
+const myAccess = ref<any[]>([])
+const accessError = ref('')
 const userMap = ref<Record<string, string>>({})
 const hosts = ref<any[]>([])
 
@@ -189,9 +194,14 @@ async function load() {
   if (metrics) m.value = metrics
   if (users) userMap.value = Object.fromEntries(users.map((u: any) => [u.id, u.username || u.name || u.id]))
   const safe = async (p: Promise<any>) => { try { return (await p).data } catch { return null } }
-  const [r, s, a, h] = await Promise.all([
+  const [r, s, a, h, mine] = await Promise.all([
     safe(api.get('/job-runs')), safe(api.get('/ssh/sessions')), safe(api.get('/authorizations')), isAdmin.value ? Promise.resolve(null) : safe(api.get('/hosts')),
+    isAdmin.value ? Promise.resolve(null) : safe(api.get('/auth/my-access')),
   ])
+  if (!isAdmin.value) {
+    myAccess.value = Array.isArray(mine?.items) ? mine.items : []
+    accessError.value = mine ? '' : 'Could not load your access rules.'
+  }
   runs.value = Array.isArray(r) ? r : []
   sessions.value = Array.isArray(s) ? s : []
   authz.value = Array.isArray(a) ? a : []
@@ -404,9 +414,8 @@ const recentActivity = computed<ActivityRow[]>(() => {
 })
 
 // ── Non-admin: your access ────────────────────────────────────────────────
-const myAccess = computed(() => authz.value.filter((a) => (a.user_ids || []).includes(me.value) || a.user_id === me.value))
 function targetLabel(a: any) {
-  const h = (a.host_ids || []).length + (a.host_id ? 1 : 0), g = (a.host_group_ids || []).length + (a.host_group_id ? 1 : 0)
+  const h = (a.host_ids || []).length, g = (a.host_group_ids || []).length
   return [h ? `${h} host${h === 1 ? '' : 's'}` : '', g ? `${g} group${g === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ') || '—'
 }
 function endsSoon(a: any) { if (!a.date_expired) return false; const d = new Date(a.date_expired).getTime() - Date.now(); return d > 0 && d < DAY }

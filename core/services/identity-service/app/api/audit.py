@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,11 @@ from ..deps import require_admin, require_service_token
 from ..models import ZAAuditLog
 from ..schemas import AuditLogOut
 
+# Named event sources -> action prefix. Every MCP tool call the gateway relays is
+# written as action "mcp.tool_call" (api-gateway/app/mcp_gate.py), so source=mcp
+# is the audit view of "what did the agents do".
+AUDIT_SOURCES = {"mcp": "mcp."}
+
 router = APIRouter(prefix="/audit", tags=["audit"], dependencies=[Depends(require_service_token), Depends(require_admin)])
 
 
@@ -22,6 +27,7 @@ async def list_audit_logs(
     offset: int = Query(default=0, ge=0),
     action: str | None = Query(default=None, description="Action prefix, e.g. 'sftp.' for all file operations"),
     result_filter: str | None = Query(default=None, alias="result", description="success | failure"),
+    source: str | None = Query(default=None, description="mcp = only MCP tool calls (action 'mcp.*')"),
 ):
     """Filtering exists so a specific class of event can be found at all.
 
@@ -32,6 +38,11 @@ async def list_audit_logs(
     rename, delete) rather than requiring six separate queries.
     """
     stmt = select(ZAAuditLog)
+    if source is not None:
+        prefix = AUDIT_SOURCES.get(source)
+        if prefix is None:
+            raise HTTPException(status_code=422, detail=f"unknown source {source!r}; one of: {', '.join(AUDIT_SOURCES)}")
+        stmt = stmt.where(ZAAuditLog.action.startswith(prefix))
     if action:
         stmt = stmt.where(ZAAuditLog.action.startswith(action))
     if result_filter:

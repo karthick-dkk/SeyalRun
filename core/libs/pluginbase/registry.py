@@ -30,6 +30,7 @@ AXES: dict[str, tuple[str, bool, str]] = {
     "triggers": ("Trigger sources", True, ""),
     "brokers": ("Session brokers", True, ""),
     "command_filters": ("Command-filter matchers", True, ""),
+    "scanners": ("Vulnerability scanners", True, ""),
     "credentials": ("Credential kinds", False,
                     "Disabling a credential kind would orphan every stored credential of that kind."),
     "kms": ("Key providers", False,

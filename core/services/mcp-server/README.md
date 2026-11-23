@@ -47,6 +47,7 @@ tool the token lacks the scope for returns a gateway `403` (surfaced as a tool e
 | `inventory:write` | create/edit hosts, zones, groups |
 | `sessions:open` | open interactive SSH/SFTP sessions |
 | `notifications:ack` | acknowledge notifications |
+| `posture:read` | read posture summary and vulnerability findings |
 
 **Never grantable to a token:** `credentials:*` (an agent can *use* a credential to
 open a session, if it holds `sessions:open`, but can never read the secret) and
@@ -55,7 +56,8 @@ token is denied everything.
 
 ## Tools
 
-`tools/list` returns 13 tools; each declares the scope it requires.
+`tools/list` returns 15 tools (12 when an admin has turned write tools off); each
+declares the scope it requires.
 
 | Tool | Scope | Does |
 |---|---|---|
@@ -72,6 +74,8 @@ token is denied everything.
 | `list_sessions` | `sessions:read` | Recorded SSH sessions |
 | `list_notifications` | `notifications:read` | Notifications / alerts |
 | `ack_notification` | `notifications:ack` | Acknowledge a notification |
+| `get_posture_summary` | `posture:read` | Posture summary + open findings by severity / KEV |
+| `list_findings` | `posture:read` | Vulnerability findings; filter by host, severity, kev, status; limit ≤ 100 |
 
 ## Resources
 
@@ -109,6 +113,26 @@ curl -sk -X POST "$SR/mcp" -H "Authorization: Bearer $TOK" -H 'Content-Type: app
   -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"run_automation","arguments":{"template_id":"<id>","host_ids":["<host>"]}}}'
 ```
 
+## Admin settings
+
+Superadmins set these on the MCP page (stored as the `mcp` platform setting,
+`PUT /api/v1/settings/mcp`, every change audited as `settings.update`). Defaults
+equal the behaviour before the settings existed.
+
+| Setting | Default | Enforced by |
+|---|---|---|
+| Allow MCP connections | on | mcp-server refuses every request with JSON-RPC error `-32003`; gateway refuses `X-MCP-Tool` calls. PATs keep working on the REST API. |
+| Allow tools that change things | on | off: `create_host`, `run_automation`, `ack_notification` are not listed and calls get `-32003` |
+| Playbooks agents may run | any enabled playbook | gateway, for **every** PAT on `POST job-templates/{id}/run` |
+| Calls per token | 60 / min (30, 60, 120) | gateway, Redis sliding window keyed by token, on `X-MCP-Tool` calls |
+
+mcp-server reads the switches from the gateway's `GET /api/v1/mcp/policy` (with the
+caller's PAT, cached 5 s; the gateway caches the setting 5 s and drops it on save),
+so a change applies within about 10 s. A failed read keeps the last known value, or
+the defaults if there is none. Every tool call is audited by the gateway as
+`mcp.tool_call` (token name, tool, status, refusal reason) — `GET
+/api/v1/audit/logs?source=mcp`.
+
 ## Design notes
 
 - **One security path.** The MCP server is a stateless translator: MCP tool/resource
@@ -121,7 +145,10 @@ curl -sk -X POST "$SR/mcp" -H "Authorization: Bearer $TOK" -H 'Content-Type: app
   server-filtered parameters, fully recorded. (`sessions:open` governs interactive,
   human-driven sessions.)
 - **Everything is audited.** Because calls land on the gateway, each one produces the
-  same audit-chain row a console or API caller would.
+  same audit-chain row a console or API caller would, plus one `mcp.tool_call` row
+  naming the token and tool.
+- **No secrets here.** The rate limiter lives in the gateway so this internet-facing
+  service never holds the Redis password.
 
 ## Configuration
 

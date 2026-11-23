@@ -174,7 +174,9 @@ def parse_facts(text: str) -> dict:
         status = r[3] if len(r) > 3 else "installed"
         if not status.strip().endswith("installed") or r[0] == "gpg-pubkey":
             continue
-        installed.append({"name": r[0], "version": r[1], "arch": r[2] if len(r) > 2 else ""})
+        installed.append({"name": r[0], "version": r[1], "arch": r[2] if len(r) > 2 else "",
+                          "source": (r[4].strip() if len(r) > 4 else ""),
+                          "source_version": (r[5].strip() if len(r) > 5 else "")})
     by_name: dict[str, str] = {}
     by_name_arch: dict[tuple[str, str], str] = {}
     for p in installed:

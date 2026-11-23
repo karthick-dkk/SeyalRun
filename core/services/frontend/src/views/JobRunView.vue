@@ -1,79 +1,87 @@
 <template>
   <AppShell>
     <div class="page">
-      <div class="page-header">
+      <div class="ph">
         <div>
-          <div class="page-title">Job Run</div>
-          <div class="page-subtitle" v-if="run">{{ run.job_template_name || run.job_template_id }}</div>
+          <h1 class="h1">Run details</h1>
+          <p class="sub" v-if="run">{{ run.job_template_name || run.job_template_id }}</p>
         </div>
-        <div v-if="run" style="display:flex;gap:12px;align-items:center">
-          <span :class="statusClass(run.status)" style="font-size:14px">{{ run.status }}</span>
-          <span v-if="run.params?._dry_run" class="badge" style="font-size:11px;color:var(--warn);border-color:rgba(210,153,34,0.4);background:rgba(210,153,34,0.08)" title="Ran with --check --diff — no changes were applied">DRY RUN</span>
+        <div v-if="run" class="acts">
+          <span :class="statusClass(run.status)">{{ run.status }}</span>
+          <span v-if="run.params?._dry_run" class="b warn" title="Ran with --check --diff — no changes were applied">Dry run</span>
           <template v-if="run.status === 'pending_approval'">
-            <button v-if="canApprove && !isOwnRun" class="btn btn-sm" style="color:var(--accent)" :disabled="approving" @click="approveRun">Approve</button>
-            <button v-if="canApprove" class="btn btn-sm text-danger" :disabled="approving" @click="rejectRun">{{ isOwnRun ? 'Withdraw' : 'Reject' }}</button>
-            <span class="text-muted-sm" v-if="isOwnRun">Waiting for another approver — you requested this run</span>
-            <span class="text-muted-sm" v-else-if="!canApprove">Waiting for approval</span>
+            <button v-if="canApprove && !isOwnRun" class="btn p" type="button" :disabled="approving" @click="approveRun">Approve</button>
+            <button v-if="canApprove" class="btn d" type="button" :disabled="approving" @click="rejectRun">{{ isOwnRun ? 'Withdraw' : 'Reject' }}</button>
+            <span class="muted" style="font-size:12.5px" v-if="isOwnRun">Waiting for another approver — you requested this run</span>
+            <span class="muted" style="font-size:12.5px" v-else-if="!canApprove">Waiting for approval</span>
           </template>
-          <button v-else-if="['pending','running'].includes(run.status)" class="btn btn-sm text-danger" @click="cancelRun">Cancel</button>
-          <button v-else class="btn btn-sm" :disabled="rerunning" @click="rerun">{{ rerunning ? 'Re-running…' : '↻ Re-run' }}</button>
-          <button class="btn btn-sm" @click="router.push('/jobs')">← Job Runs</button>
+          <button v-else-if="['pending','running'].includes(run.status)" class="btn d" type="button" @click="cancelRun">Cancel</button>
+          <button v-else class="btn" type="button" :disabled="rerunning" @click="rerun">{{ rerunning ? 'Re-running…' : '↻ Re-run' }}</button>
+          <button class="btn" type="button" @click="router.push('/jobs')">← Job runs</button>
         </div>
       </div>
 
-      <div v-if="run" class="card u-mb-16">
-        <div class="card-header u-fs-13">Run Details</div>
-        <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;font-size:13px">
-          <div><span class="text-muted">Template:</span> {{ run.job_template_name || run.job_template_id }}</div>
-          <div><span class="text-muted">Action:</span> {{ run.action_type || '—' }}</div>
-          <div><span class="text-muted">Triggered by:</span> {{ triggeredByLabel }}</div>
-          <div class="u-gcol-1--1" v-if="isAccountOp"><span class="text-muted">Account (subject):</span> {{ subjectLabel }}</div>
-          <div><span class="text-muted">Connection login:</span> {{ credentialLabel }}</div>
-          <div class="u-gcol-1--1"><span class="text-muted">Hosts:</span> {{ hostsLabel }}</div>
-          <div><span class="text-muted">Run ID:</span> <code class="text-xs">{{ run.id }}</code></div>
-          <div><span class="text-muted">Started:</span> {{ run.started_at ? new Date(run.started_at).toLocaleString() : '—' }}</div>
-          <div><span class="text-muted">Duration:</span> {{ durationLabel }}</div>
-          <div v-if="run.exit_code != null"><span class="text-muted">Exit code:</span> {{ run.exit_code }}</div>
-          <div class="u-gcol-1--1" v-if="run.status === 'rejected' && run.params?._rejection_reason"><span class="text-muted">Rejection reason:</span> {{ run.params._rejection_reason }}</div>
-        </div>
-      </div>
-
-      <div v-if="run?.action_type === 'chain'" class="card u-mb-16">
-        <div class="card-header u-fs-13">Chain Steps</div>
-        <div v-if="!chainSteps.length" style="padding:14px 16px;font-size:12px;color:var(--text2)">Steps haven't started yet…</div>
-        <table v-else class="table u-m-0">
-          <thead><tr><th style="width:36px">#</th><th>Template</th><th>Status</th><th>Duration</th><th></th></tr></thead>
-          <tbody>
-            <tr v-for="(s, i) in chainSteps" :key="s.id">
-              <td>{{ i + 1 }}</td>
-              <td>{{ s.job_template_name || s.job_template_id }}</td>
-              <td><span :class="statusClass(s.status)">{{ s.status }}</span></td>
-              <td class="text-muted-sm">{{ stepDuration(s) }}</td>
-              <td><router-link :to="`/jobs/${s.id}`" class="btn btn-sm">View →</router-link></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <div class="card-header u-fs-13">
-          Output Log
-          <div style="display:flex;align-items:center;gap:14px">
-            <button class="btn btn-sm" :disabled="!lines.length" @click="copyOutput" :title="copyError || (copied ? 'Copied!' : 'Copy output')">
-              {{ copied ? '✓ Copied' : (copyError ? '✕ Copy failed' : '⧉ Copy') }}
-            </button>
-            <label style="display:flex;align-items:center;gap:6px;font-weight:400;font-size:12px;cursor:pointer">
-              <input type="checkbox" v-model="autoScroll" />
-              Auto-scroll
-            </label>
+      <div class="stack">
+        <section v-if="run" class="card">
+          <div class="ch"><h2 class="ct">Run details</h2></div>
+          <div class="cb">
+            <dl class="kv">
+              <dt>Template</dt><dd>{{ run.job_template_name || run.job_template_id }}</dd>
+              <dt>Action</dt><dd>{{ run.action_type || '—' }}</dd>
+              <dt>Triggered by</dt><dd>{{ triggeredByLabel }}</dd>
+              <template v-if="isAccountOp"><dt>Account (subject)</dt><dd>{{ subjectLabel }}</dd></template>
+              <dt>Connection login</dt><dd>{{ credentialLabel }}</dd>
+              <dt>Hosts</dt><dd>{{ hostsLabel }}</dd>
+              <dt>Run ID</dt><dd><code class="mono">{{ run.id }}</code></dd>
+              <dt>Started</dt><dd>{{ run.started_at ? new Date(run.started_at).toLocaleString() : '—' }}</dd>
+              <dt>Duration</dt><dd>{{ durationLabel }}</dd>
+              <template v-if="run.exit_code != null"><dt>Exit code</dt><dd class="mono">{{ run.exit_code }}</dd></template>
+              <template v-if="run.status === 'rejected' && run.params?._rejection_reason"><dt>Rejection reason</dt><dd>{{ run.params._rejection_reason }}</dd></template>
+            </dl>
           </div>
-        </div>
-        <div ref="logEl" style="background:#0d1117;color:#c9d1d9;font-family:monospace;font-size:12px;padding:16px;min-height:320px;max-height:60vh;overflow-y:auto;white-space:pre-wrap;border-radius:0 0 8px 8px">
-          <span v-if="!lines.length && !run" style="color:#8b949e">Loading…</span>
-          <span v-else-if="!lines.length" style="color:#8b949e">(no output yet)</span>
-          <span v-for="(line, i) in lines" :key="i">{{ line }}<br /></span>
-          <span v-if="['pending','running'].includes(run?.status ?? '')" style="color:var(--link)">● live…</span>
-        </div>
+        </section>
+
+        <section v-if="run?.action_type === 'chain'" class="card">
+          <div class="ch"><h2 class="ct">Chain steps</h2></div>
+          <div v-if="!chainSteps.length" class="empty-state">Steps haven't started yet…</div>
+          <div v-else class="tw">
+            <table class="t">
+              <thead><tr><th style="width:36px">#</th><th>Template</th><th>Status</th><th>Duration</th><th class="r"><span class="vh">Open</span></th></tr></thead>
+              <tbody>
+                <tr v-for="(s, i) in chainSteps" :key="s.id">
+                  <td class="num">{{ i + 1 }}</td>
+                  <td><span class="nm">{{ s.job_template_name || s.job_template_id }}</span></td>
+                  <td><span :class="statusClass(s.status)">{{ s.status }}</span></td>
+                  <td class="muted">{{ stepDuration(s) }}</td>
+                  <td class="r"><router-link :to="`/jobs/${s.id}`" class="btn sm">View →</router-link></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="ch">
+            <h2 class="ct">Output log</h2>
+            <div class="acts">
+              <button class="btn sm" type="button" :disabled="!lines.length" @click="copyOutput" :title="copyError || (copied ? 'Copied!' : 'Copy output')">
+                {{ copied ? '✓ Copied' : (copyError ? '✕ Copy failed' : '⧉ Copy') }}
+              </button>
+              <label class="row" style="gap:6px;font-size:12.5px;cursor:pointer">
+                <input type="checkbox" class="chk" v-model="autoScroll" />
+                Auto-scroll
+              </label>
+            </div>
+          </div>
+          <div class="cb">
+            <div ref="logEl" class="console" style="min-height:320px;max-height:60vh;overflow-y:auto;white-space:pre-wrap" role="log" aria-label="Run output">
+              <span v-if="!lines.length && !run" style="color:#8b949e">Loading…</span>
+              <span v-else-if="!lines.length" style="color:#8b949e">(no output yet)</span>
+              <span v-for="(line, i) in lines" :key="i">{{ line }}<br /></span>
+              <span v-if="['pending','running'].includes(run?.status ?? '')" style="color:#6FA8FF">● live…</span>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </AppShell>
@@ -339,11 +347,11 @@ async function copyOutput() {
 }
 
 function statusClass(s: string) {
-  if (s === 'success') return 'badge badge-green'
-  if (s === 'failed' || s === 'error' || s === 'rejected') return 'badge badge-red'
-  if (s === 'running') return 'badge badge-blue'
-  if (s === 'pending_approval') return 'badge badge-yellow'
-  return 'badge badge-gray'
+  if (s === 'success') return 'b ok'
+  if (s === 'failed' || s === 'error' || s === 'rejected') return 'b bad'
+  if (s === 'running') return 'b info'
+  if (s === 'pending_approval') return 'b pend'
+  return 'b off'
 }
 
 const durationLabel = computed(() => {

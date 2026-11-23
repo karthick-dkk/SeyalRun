@@ -301,6 +301,11 @@ class TokenVerifyResponse(BaseModel):
     username: str | None = None
     role: str | None = None
     scopes: list[str] = Field(default_factory=list)
+    # Which token authenticated — lets the gateway attribute an MCP tool call to
+    # the token (not just its owner) in the audit row and key the per-token MCP
+    # rate limit. The name is the owner's own label; never the secret.
+    token_id: str | None = None
+    token_name: str | None = None
 
 
 class AuditLogOut(BaseModel):

@@ -114,7 +114,9 @@ def test_build_request_substitutes_path_placeholder_and_bodies_the_rest():
     method, path, params, body = mcp._build_request(tool, {"template_id": "T1", "host_ids": ["h1"]})
     assert method == "POST"
     assert path == "/api/v1/job-templates/T1/run"   # {template_id} substituted
-    assert body == {"host_ids": ["h1"]}             # non-path, non-query -> body
+    # non-path, non-query -> body, under the name automation-service's RunPayload
+    # actually reads (it ignores unknown keys, so "host_ids" was silently dropped)
+    assert body == {"target_host_ids": ["h1"]}
     assert params == {}
 
 

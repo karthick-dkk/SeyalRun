@@ -1,11 +1,11 @@
 <template>
   <div>
     <div class="card">
-      <div class="card-header">
+      <div class="ch ct">
         Zabbix connection
         <button class="btn btn-sm" @click="load">Refresh</button>
       </div>
-      <div class="u-p-18">
+      <div class="cb">
         <div class="text-muted" v-if="loading">Loading…</div>
         <template v-else>
           <div class="int-grid">
@@ -40,9 +40,9 @@
       </div>
     </div>
 
-    <div v-if="auth.isSuperAdmin" class="card u-mt-16">
-      <div class="card-header">Zabbix Settings <span class="badge badge-blue">superadmin</span></div>
-      <div class="u-p-18">
+    <div v-if="auth.isSuperAdmin" class="card" style="margin-top:20px">
+      <div class="ch ct">Zabbix Settings <span class="b info">superadmin</span></div>
+      <div class="cb">
         <div class="fp-field">
           <label class="fp-label">Zabbix Console URL <span class="hint">(the "Open Zabbix" link / header button)</span></label>
           <input v-model="form.zabbix_console_url" class="fp-input" placeholder="https://zabbix.example.com" />
@@ -77,8 +77,8 @@
       @changed="$emit('changed')"
     />
 
-    <div class="card u-mt-16">
-      <div class="card-header">Open SeyalRun from the Zabbix UI</div>
+    <div class="card" style="margin-top:20px">
+      <div class="ch ct">Open SeyalRun from the Zabbix UI</div>
       <div class="u-borderbottom-1solidborder_c-text2_fs-12_p-1016">
         Add these as <strong>global scripts</strong> in Zabbix (Alerts → Scripts). They appear in the
         host / problem context menus. The one-click webhook variant lives on the
@@ -86,13 +86,13 @@
       </div>
       <div style="padding:16px;display:flex;flex-direction:column;gap:18px">
         <div class="zs-block">
-          <div class="zs-title">SSH Terminal from a host <span class="badge badge-blue">URL · Manual host action</span></div>
+          <div class="zs-title">SSH Terminal from a host <span class="b info">URL · Manual host action</span></div>
           <div class="zs-desc">Opens SeyalRun's terminal and auto-connects using the credential the operator is authorized for. Secured by SeyalRun login + RBAC.</div>
           <div class="zs-code"><code>{{ sshUrl }}</code><button class="btn-pill btn-pill-outline" @click="copy(sshUrl)">Copy</button></div>
         </div>
 
         <div class="zs-block">
-          <div class="zs-title">Run remediation in the console <span class="badge badge-blue">URL · Manual event action</span></div>
+          <div class="zs-title">Run remediation in the console <span class="b info">URL · Manual event action</span></div>
           <div class="zs-desc">Opens SeyalRun pre-targeted to the problem's host + bound playbook. Operator confirms and runs; output posts back to the Problem.</div>
           <div class="zs-code"><code>{{ runUrl }}</code><button class="btn-pill btn-pill-outline" @click="copy(runUrl)">Copy</button></div>
         </div>

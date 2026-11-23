@@ -197,6 +197,10 @@ async def verify_pat(token: str) -> dict:
         "role": data.get("role", "user"),
         "roles": data.get("roles") or [data.get("role", "user")],
         "scopes": data.get("scopes") or [],
+        # Which token — MCP audit attribution and the per-token MCP rate limit
+        # (mcp_gate.py). Never forwarded downstream as a header.
+        "token_id": data.get("token_id") or "",
+        "token_name": data.get("token_name") or "",
         # Marks a PAT caller so the gateway enforces scopes even when the list is
         # empty — an empty-scope token must be denied everything, not (as a falsy
         # scopes list would) fall through to full role access like a session caller.

@@ -1,8 +1,8 @@
 <template>
   <div>
     <div class="card">
-      <div class="card-header">Inbound webhook</div>
-      <div class="u-p-18">
+      <div class="ch ct">Inbound webhook</div>
+      <div class="cb">
         <div class="int-grid">
           <div class="int-row">
             <span class="int-k">Endpoint</span>
@@ -11,7 +11,7 @@
           </div>
           <div class="int-row">
             <span class="int-k">Authentication</span>
-            <span class="badge badge-green">HMAC-SHA256</span>
+            <span class="b ok">HMAC-SHA256</span>
             <span style="color:var(--text2);font-size:12px">header <code>X-SeyalRun-Signature</code> over the raw body</span>
           </div>
           <div class="int-row">
@@ -30,8 +30,8 @@
       </div>
     </div>
 
-    <div class="card u-mt-16">
-      <div class="card-header">One-click remediation from a Zabbix problem</div>
+    <div class="card" style="margin-top:20px">
+      <div class="ch ct">One-click remediation from a Zabbix problem</div>
       <div class="u-borderbottom-1solidborder_c-text2_fs-12_p-1016">
         Add as a <strong>Webhook · Manual event action</strong> in Zabbix. Runs the pre-bound playbook
         server-side and writes the complete output onto the Problem, without leaving Zabbix. Requires

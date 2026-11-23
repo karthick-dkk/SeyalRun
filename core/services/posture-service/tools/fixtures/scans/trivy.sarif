@@ -1,0 +1,18 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {"ruleId": "CVE-2023-5678", "level": "warning",
+         "message": {"text": "Package: libssl3\nInstalled Version: 3.0.11-1~deb12u2\nVulnerability CVE-2023-5678\nSeverity: MEDIUM\nFixed Version: 3.0.13-1~deb12u1\nLink: [CVE-2023-5678](https://avd.aquasec.com/nvd/cve-2023-5678)"},
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "web01"}}}]},
+        {"ruleId": "semgrep.sql-injection", "level": "error", "message": {"text": "possible SQL injection"}}
+      ],
+      "tool": {"driver": {"name": "Trivy", "rules": [
+        {"id": "CVE-2023-5678", "shortDescription": {"text": "openssl: excessive time spent in DH check"},
+         "helpUri": "javascript:alert(1)", "properties": {"security-severity": "5.3", "tags": ["vulnerability", "MEDIUM"]}}]}},
+      "invocations": [{"executionSuccessful": true, "machine": "web01"}]
+    }
+  ]
+}

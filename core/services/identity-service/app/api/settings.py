@@ -209,3 +209,65 @@ async def put_zabbix_module(
     }
     await _put_value(session, ZABBIX_MODULE_KEY, new, actor_id, actor_name)
     return new
+
+
+# ── MCP (AI-agent) settings ────────────────────────────────────────────────
+#
+# Shape, defaults and normalisation live in libs/mcpsettings (shared with the
+# gateway and mcp-server). Defaults == behaviour before this setting existed, so
+# no row means nothing changes on upgrade. Read by api-gateway on demand (short
+# cache) via /internal/settings/mcp; mcp-server gets the switches it enforces
+# from the gateway's GET /api/v1/mcp/policy.
+#
+# Edit tier = superadmin, like every other platform setting in this file (the
+# gateway's `settings` segment is superadmin-only in libs/rbaccore). Turning MCP
+# off, or narrowing the playbook list, is a platform-wide change to what every
+# agent token may do.
+
+MCP_KEY = "mcp"
+
+
+class McpSettingsIn(BaseModel):
+    enabled: bool = True
+    allow_write_tools: bool = True
+    calls_per_minute: int = 60
+    # None = any enabled playbook (today's behaviour); a list = only these ids.
+    agent_template_ids: list[str] | None = None
+
+
+async def get_mcp_value(session: AsyncSession) -> dict:
+    from libs.mcpsettings import normalize
+    return normalize(await _get_value(session, MCP_KEY))
+
+
+@router.get("/mcp", dependencies=[Depends(require_admin)])
+async def get_mcp(session: AsyncSession = Depends(get_session)):
+    return await get_mcp_value(session)
+
+
+@router.put("/mcp", dependencies=[Depends(require_superadmin)])
+async def put_mcp(
+    payload: McpSettingsIn,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+):
+    from fastapi import HTTPException
+    from libs.mcpsettings import CALLS_PER_MINUTE_CHOICES, clean_template_ids
+
+    # Refuse rather than clamp: a silently-changed rate limit is a setting the
+    # admin did not choose.
+    if payload.calls_per_minute not in CALLS_PER_MINUTE_CHOICES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"calls_per_minute must be one of {', '.join(map(str, CALLS_PER_MINUTE_CHOICES))}",
+        )
+    ids = payload.agent_template_ids
+    new = {
+        "enabled": bool(payload.enabled),
+        "allow_write_tools": bool(payload.allow_write_tools),
+        "calls_per_minute": payload.calls_per_minute,
+        "agent_template_ids": None if ids is None else clean_template_ids(ids),
+    }
+    await _put_value(session, MCP_KEY, new, actor_id, actor_name)
+    return new

@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     posture_poll_interval_seconds: int = 5
     posture_collect_timeout_minutes: int = 60
 
+    # M2 findings. The feed is reported stale (and the Findings page warns)
+    # once the active snapshot was generated more than this many days ago.
+    posture_feed_stale_days: int = 7
+    # Upper bounds for one imported scanner result file.
+    posture_scan_max_bytes: int = 64 * 1024 * 1024
+    posture_scan_max_records: int = 500000
+
     log_level: str = "INFO"
     log_path: str = "/var/log/seyalrun/posture-service.jsonl"
 

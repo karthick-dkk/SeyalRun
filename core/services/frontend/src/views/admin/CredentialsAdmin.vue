@@ -1,87 +1,93 @@
 <template>
-  <div>
+  <div class="stack">
     <!-- Credentials card -->
-    <div class="card u-mb-20">
-      <div class="card-header">
-        Credentials
-        <button class="btn btn-primary btn-sm" @click="openCreateCred">+ Credential</button>
+    <section class="card">
+      <div class="ch">
+        <h2 class="ct">Credentials <span class="cnt">{{ credentials.length }}</span></h2>
+        <button class="btn p sm" type="button" @click="openCreateCred">+ Credential</button>
       </div>
-      <table class="table">
-        <thead>
-          <tr><th>Name</th><th>Username</th><th>Type</th><th>Strength</th><th>Scope</th><th>Flags</th><th>Hosts</th><th></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in credentials" :key="c.id" :class="{ 'row-active': activeCredId === c.id }">
-            <td class="fw-600">{{ c.name || '—' }}</td>
-            <td>{{ c.username }}</td>
-            <td><span class="badge badge-blue">{{ c.secret_type }}</span></td>
-            <td>
-              <span v-if="c.strength_score != null" class="badge" :class="strengthClass(c.strength_score)">{{ strengthLabel(c.strength_score) }}</span>
-              <span class="text-muted" v-else>—</span>
-            </td>
-            <td class="text-muted">{{ c.credential_scope }}</td>
-            <td>
-              <span v-if="c.is_default" class="badge badge-green">Default</span>
-              <span v-if="c.is_push_account" class="badge badge-orange" title="Push account for its linked hosts">Push</span>
-              <span v-if="c.is_sudo" class="badge badge-blue" title="May escalate via sudo">sudo</span>
-              <span class="text-muted" v-if="!c.is_default && !c.is_push_account && !c.is_sudo">—</span>
-            </td>
-            <td>
-              <span v-if="c.host_ids?.length" class="badge badge-gray">{{ c.host_ids.length }} host{{ c.host_ids.length > 1 ? 's' : '' }}</span>
-              <span class="text-muted" v-else>—</span>
-            </td>
-            <td>
-              <div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">
-                <button class="btn-pill btn-pill-outline" @click="openReveal(c)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg> View</button>
-                <button class="btn-pill btn-pill-outline" @click="openRotation(c)">↻ Rotate</button>
-                <button class="btn-pill btn-pill-outline" @click="openEditCred(c)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeCred(c)">&#128465; Delete</button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="empty-cell" v-if="!credentials.length && !loading">No credentials yet.</div>
-      <div class="empty-cell" v-if="loading">Loading…</div>
-    </div>
+      <div class="tw">
+        <table class="t">
+          <thead>
+            <tr><th>Name</th><th>Username</th><th>Type</th><th>Strength</th><th>Scope</th><th>Flags</th><th>Hosts</th><th class="r"><span class="vh">Actions</span></th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in credentials" :key="c.id" :class="{ sel: activeCredId === c.id }">
+              <td><span class="nm">{{ c.name || '—' }}</span></td>
+              <td>{{ c.username }}</td>
+              <td><span class="tag">{{ c.secret_type }}</span></td>
+              <td>
+                <span v-if="c.strength_score != null" class="badge" :class="strengthClass(c.strength_score)">{{ strengthLabel(c.strength_score) }}</span>
+                <span class="muted" v-else>—</span>
+              </td>
+              <td class="muted">{{ c.credential_scope }}</td>
+              <td>
+                <span class="row" style="gap:4px">
+                  <span v-if="c.is_default" class="b ok">Default</span>
+                  <span v-if="c.is_push_account" class="b warn" title="Push account for its linked hosts">Push</span>
+                  <span v-if="c.is_sudo" class="b info" title="May escalate via sudo">sudo</span>
+                  <span class="muted" v-if="!c.is_default && !c.is_push_account && !c.is_sudo">—</span>
+                </span>
+              </td>
+              <td>
+                <span v-if="c.host_ids?.length" class="tag">{{ c.host_ids.length }} host{{ c.host_ids.length > 1 ? 's' : '' }}</span>
+                <span class="muted" v-else>—</span>
+              </td>
+              <td class="r">
+                <span class="acts" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px">
+                  <button class="btn sm" type="button" @click="openReveal(c)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg> View</button>
+                  <button class="btn sm" type="button" @click="openRotation(c)">↻ Rotate</button>
+                  <button class="btn sm" type="button" @click="openEditCred(c)">✎ Edit</button>
+                  <button class="btn sm d" type="button" @click="removeCred(c)">Delete</button>
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="empty-state" v-if="!credentials.length && !loading"><b>No credentials yet</b>Add a credential to broker access to hosts.</div>
+      <div class="empty-state" v-if="loading">Loading…</div>
+    </section>
 
     <!-- Templates card -->
-    <div class="card">
-      <div class="card-header">
-        Credential Templates
-        <button class="btn btn-primary btn-sm" @click="openCreateTemplate">+ Template</button>
+    <section class="card">
+      <div class="ch">
+        <h2 class="ct">Credential templates <span class="cnt">{{ templates.length }}</span></h2>
+        <button class="btn p sm" type="button" @click="openCreateTemplate">+ Template</button>
       </div>
-      <table class="table">
-        <thead>
-          <tr><th>Name</th><th>Type</th><th>Secret</th><th>Default Username</th><th>Push</th><th>Rotation (days)</th><th>Description</th><th></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="t in templates" :key="t.id" :class="{ 'row-active': activeTemplateId === t.id }">
-            <td class="fw-600">{{ t.name }}</td>
-            <td><span class="badge badge-blue">{{ t.secret_type }}</span></td>
-            <td>
-              <span v-if="t.has_secret" class="badge badge-green">Stored</span>
-              <span class="text-muted" v-else>—</span>
-            </td>
-            <td class="text-muted">{{ t.default_username || '—' }}</td>
-            <td>
-              <span v-if="t.push_enabled" class="badge badge-green">Enabled</span>
-              <span class="text-muted" v-else>—</span>
-            </td>
-            <td class="text-muted">{{ t.rotation_days ?? '—' }}</td>
-            <td class="text-muted-sm">{{ t.description || '—' }}</td>
-            <td>
-              <div class="form-actions">
-                <button class="btn-pill btn-pill-outline" @click="openEditTemplate(t)">✎ Edit</button>
-                <button class="btn-pill btn-pill-outline btn-danger-outline" @click="removeTemplate(t)">&#128465; Delete</button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="empty-cell" v-if="!templates.length && !loadingTemplates">No credential templates yet.</div>
-      <div class="empty-cell" v-if="loadingTemplates">Loading…</div>
-    </div>
+      <div class="tw">
+        <table class="t">
+          <thead>
+            <tr><th>Name</th><th>Type</th><th>Secret</th><th>Default username</th><th>Push</th><th>Rotation (days)</th><th>Description</th><th class="r"><span class="vh">Actions</span></th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="t in templates" :key="t.id" :class="{ sel: activeTemplateId === t.id }">
+              <td><span class="nm">{{ t.name }}</span></td>
+              <td><span class="tag">{{ t.secret_type }}</span></td>
+              <td>
+                <span v-if="t.has_secret" class="b ok">Stored</span>
+                <span class="muted" v-else>—</span>
+              </td>
+              <td class="muted">{{ t.default_username || '—' }}</td>
+              <td>
+                <span v-if="t.push_enabled" class="b ok">Enabled</span>
+                <span class="muted" v-else>—</span>
+              </td>
+              <td class="muted">{{ t.rotation_days ?? '—' }}</td>
+              <td class="muted">{{ t.description || '—' }}</td>
+              <td class="r">
+                <span class="acts" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px">
+                  <button class="btn sm" type="button" @click="openEditTemplate(t)">✎ Edit</button>
+                  <button class="btn sm d" type="button" @click="removeTemplate(t)">Delete</button>
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="empty-state" v-if="!templates.length && !loadingTemplates"><b>No credential templates yet</b></div>
+      <div class="empty-state" v-if="loadingTemplates">Loading…</div>
+    </section>
 
     <!-- ── Credential panel ──────────────────────────────────────────────── -->
     <SlidePanel

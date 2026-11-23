@@ -1,8 +1,8 @@
 <template>
   <div>
     <div class="card">
-      <div class="card-header">JumpServer delegated login</div>
-      <div class="u-p-18">
+      <div class="ch ct">JumpServer delegated login</div>
+      <div class="cb">
         <div class="int-grid">
           <div class="int-row">
             <span class="int-k">Provider</span>
@@ -57,9 +57,9 @@
       @changed="$emit('changed')"
     />
 
-    <div class="card u-mt-16">
-      <div class="card-header">Session brokering</div>
-      <div class="u-p-18">
+    <div class="card" style="margin-top:20px">
+      <div class="ch ct">Session brokering</div>
+      <div class="cb">
         <p class="note u-mt-0">
           Sessions are currently brokered <strong>natively</strong>: terminal-service opens the SSH
           connection itself, unwrapping the credential with its own service identity, and records the
