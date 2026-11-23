@@ -343,6 +343,8 @@ services:
     environment:
       # Upload spool on the data volume: the root fs is read-only and /tmp is RAM.
       TMPDIR: /var/lib/seyalrun/posture/uploads
+      # Findings page warns when the active feed is older than this (days).
+      POSTURE_FEED_STALE_DAYS: ${POSTURE_FEED_STALE_DAYS:-7}
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [seyalrun_net]
     volumes:

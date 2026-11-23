@@ -47,7 +47,9 @@ collect() {
 
   if command -v dpkg-query >/dev/null 2>&1; then
     printf 'M\tdpkg\n'
-    dpkg-query -W -f='I\t${Package}\t${Version}\t${Architecture}\t${Status}\n' 2>/dev/null
+    # Source package + version too: Debian/Ubuntu advisories name source
+    # packages (openssl), hosts install binaries (libssl3).
+    dpkg-query -W -f='I\t${Package}\t${Version}\t${Architecture}\t${Status}\t${source:Package}\t${source:Version}\n' 2>/dev/null
     # Pending updates from the host's EXISTING apt lists — no `apt-get update`
     # (that needs root and would fetch). Freshness is whatever the host last fetched.
     if command -v apt >/dev/null 2>&1; then

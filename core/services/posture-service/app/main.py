@@ -15,17 +15,20 @@ import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
+from libs.pluginbase import describe_plugins
 from libs.obsmetrics import ServiceMetrics
 from libs.securelog import configure_logging
 from libs.servicetoken import ServiceTokenError, verify
 from sqlalchemy import text
 
-from . import audit, clients, collector, feeds
+from . import audit, clients, collector, feeds, scanning
 from .api.feeds import router as feeds_router
+from .api.findings import router as findings_router
 from .api.hosts import router as hosts_router
 from .config import get_settings
 from .database import engine
+from .deps import require_service_token
 
 settings = get_settings()
 configure_logging("posture-service", settings.log_level, settings.log_path)
@@ -51,6 +54,7 @@ async def lifespan(app: FastAPI):
         await feeds.fail_interrupted_imports()
     except Exception:
         logger.exception("could not reconcile interrupted feed imports")
+    scanning.registry()  # discover scanner plugins at startup, not on first request
     poller = asyncio.create_task(collector.poll_loop())
     yield
     poller.cancel()
@@ -78,6 +82,16 @@ _AUDIT_ROUTES: list[tuple[str, re.Pattern, str, str]] = [
     ("POST", re.compile(r"^/api/v1/posture/feeds/import/?$"), "posture.feed.import", "feed_snapshot"),
     ("POST", re.compile(r"^/api/v1/posture/feeds/([^/]+)/activate/?$"), "posture.feed.activate", "feed_snapshot"),
     ("GET", re.compile(r"^/api/v1/posture/summary/?$"), "posture.summary.view", ""),
+    # M2 findings. summary before {id}: the first match wins.
+    ("GET", re.compile(r"^/api/v1/posture/findings/?$"), "posture.findings.list", "finding"),
+    ("GET", re.compile(r"^/api/v1/posture/findings/summary/?$"), "posture.findings.summary", ""),
+    ("GET", re.compile(r"^/api/v1/posture/findings/([^/]+)/?$"), "posture.finding.view", "finding"),
+    ("POST", re.compile(r"^/api/v1/posture/findings/([^/]+)/status/?$"), "posture.finding.status", "finding"),
+    ("GET", re.compile(r"^/api/v1/posture/unmatched/?$"), "posture.unmatched.list", "unmatched"),
+    ("POST", re.compile(r"^/api/v1/posture/unmatched/([^/]+)/assign/?$"), "posture.unmatched.assign", "unmatched"),
+    ("GET", re.compile(r"^/api/v1/posture/scanners/?$"), "posture.scanners.list", "scanner"),
+    ("POST", re.compile(r"^/api/v1/posture/scanners/native/run/?$"), "posture.native.run", "scanner"),
+    ("POST", re.compile(r"^/api/v1/posture/scans/import/?$"), "posture.scan.import", "scan"),
 ]
 
 
@@ -128,6 +142,13 @@ async def audit_every_call(request: Request, call_next):
 
 app.include_router(hosts_router, prefix="/api/v1")
 app.include_router(feeds_router, prefix="/api/v1")
+app.include_router(findings_router, prefix="/api/v1")
+
+
+@app.get("/api/v1/internal/plugins", dependencies=[Depends(require_service_token)])
+async def internal_plugins():
+    """Scanner plugins for api-gateway's Integration page aggregation."""
+    return {"plugins": describe_plugins("scanners", scanning.registry(), "posture-service")}
 
 
 @app.get("/health")

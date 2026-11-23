@@ -1,19 +1,19 @@
 <template>
   <div>
-    <div class="card">
-      <div class="card-header">
-        Authorizations
-        <div style="display:flex;align-items:center;gap:10px">
+    <section class="card">
+      <div class="ch">
+        <h2 class="ct">Access rules <span class="cnt">{{ authorizations.length }}</span></h2>
+        <div class="acts">
           <span v-if="selectedIds.size" class="bulk-sel-badge">{{ selectedIds.size }} selected</span>
-          <button v-if="selectedIds.size" class="btn btn-sm btn-danger-outline" @click="bulkDelete">Delete Selected</button>
-          <button class="btn btn-primary btn-sm" @click="openCreate" :disabled="!!expandedId">+ Authorization</button>
+          <button v-if="selectedIds.size" class="btn sm d" type="button" @click="bulkDelete">Delete selected</button>
+          <button class="btn p sm" type="button" @click="openCreate" :disabled="!!expandedId">+ Access rule</button>
         </div>
       </div>
       <p class="authz-model-note">
         <span class="authz-model-dot"></span>
         <span><strong>How actions combine.</strong> Rules at the same level are combined — a login gets the union of their actions. A more-specific rule overrides a broader one: a direct <em>user + host</em> rule replaces a <em>group</em> rule’s actions for that host, so you can use one to restrict a user below their group’s access.</span>
       </p>
-      <table class="table">
+      <div class="tw"><table class="t">
         <thead>
           <tr>
             <th style="width:36px">
@@ -143,57 +143,57 @@
               <td>
                 <input type="checkbox" :checked="selectedIds.has(a.id)" @change="toggleRow(a.id)" style="accent-color:var(--link);cursor:pointer" />
               </td>
-              <td class="fw-600">{{ a.name }}</td>
+              <td><span class="nm">{{ a.name }}</span></td>
               <td>
                 <template v-if="principalsOf(a).type === 'user'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue u-m-1"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="tag" style="margin:2px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg> {{ userName(id) }}</span>
                 </template>
                 <template v-else-if="principalsOf(a).type === 'user_group'">
-                  <span v-for="id in principalsOf(a).ids" :key="id" class="badge badge-blue u-m-1"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(id) }}</span>
+                  <span v-for="id in principalsOf(a).ids" :key="id" class="tag" style="margin:2px"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9M17.5 14.2a6 6 0 0 1 4 5.3"/></svg> {{ userGroupName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>—</span>
               </td>
               <td>
                 <template v-if="targetsOf(a).type === 'host'">
-                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray u-m-1">&#128187; {{ hostName(id) }}</span>
+                  <span v-for="id in targetsOf(a).ids" :key="id" class="tag" style="margin:2px">&#128187; {{ hostName(id) }}</span>
                 </template>
                 <template v-else-if="targetsOf(a).type === 'host_group'">
-                  <span v-for="id in targetsOf(a).ids" :key="id" class="badge badge-gray u-m-1">&#128193; {{ hostGroupName(id) }}</span>
+                  <span v-for="id in targetsOf(a).ids" :key="id" class="tag" style="margin:2px">&#128193; {{ hostGroupName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>—</span>
               </td>
               <td class="text-sm">
                 <template v-if="credsOf(a).length">
-                  <span v-for="id in credsOf(a)" :key="id" class="badge badge-gray u-m-1">{{ credentialName(id) }}</span>
+                  <span v-for="id in credsOf(a)" :key="id" class="tag" style="margin:2px">{{ credentialName(id) }}</span>
                 </template>
                 <span class="text-muted" v-else>any</span>
               </td>
-              <td class="text-sm">{{ (a.actions||[]).join(', ') }}</td>
+              <td>{{ (a.actions||[]).join(', ') }}</td>
               <td class="text-muted-sm">
                 <div v-if="a.date_start">From {{ formatDate(a.date_start) }}</div>
                 <div v-if="a.date_expired">Until {{ formatDate(a.date_expired) }}</div>
                 <div v-if="!a.date_start && !a.date_expired">Always</div>
               </td>
               <td>
-                <span v-if="a.status === 'active'" class="badge badge-green">Active</span>
-                <span v-else-if="a.status === 'pending_approval'" class="badge badge-yellow">Pending Approval</span>
-                <span v-else-if="a.status === 'rejected'" class="badge badge-gray">Rejected</span>
-                <span v-else-if="a.status === 'expired'" class="badge badge-gray">Expired</span>
-                <span v-else class="badge badge-gray">{{ a.status || (a.enabled ? 'Active' : 'Disabled') }}</span>
+                <span v-if="a.status === 'active'" class="b ok">Active</span>
+                <span v-else-if="a.status === 'pending_approval'" class="b pend">Pending approval</span>
+                <span v-else-if="a.status === 'rejected'" class="b bad">Rejected</span>
+                <span v-else-if="a.status === 'expired'" class="b off">Expired</span>
+                <span v-else class="b off">{{ a.status || (a.enabled ? 'Active' : 'Disabled') }}</span>
               </td>
               <td>
-                <div class="form-actions">
+                <div class="acts" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px">
                   <template v-if="a.status === 'pending_approval'">
                     <button
-                      class="btn-pill btn-pill-outline" style="color:var(--accent2);border-color:var(--accent2)"
+                      class="btn sm ok2"
                       :disabled="!!expandedId || a.requested_by === auth.user?.id"
                       :title="a.requested_by === auth.user?.id ? 'You requested this — a different admin must approve it' : ''"
                       @click="approve(a)"
                     >✓ Approve</button>
-                    <button class="btn-pill btn-pill-outline btn-danger-outline" :disabled="!!expandedId" @click="reject(a)">✕ Reject</button>
+                    <button class="btn sm d" :disabled="!!expandedId" @click="reject(a)">✕ Reject</button>
                   </template>
-                  <button class="btn-pill btn-pill-outline" :disabled="!!expandedId" @click="openEdit(a)">✎ Edit</button>
-                  <button class="btn-pill btn-pill-outline btn-danger-outline" :disabled="!!expandedId" @click="remove(a)">✕</button>
+                  <button class="btn sm" :disabled="!!expandedId" @click="openEdit(a)">✎ Edit</button>
+                  <button class="btn sm d" :disabled="!!expandedId" @click="remove(a)">✕</button>
                 </div>
               </td>
             </tr>
@@ -300,10 +300,10 @@
             </tr>
           </template>
         </tbody>
-      </table>
-      <div class="empty-cell" v-if="!authorizations.length && !loading && expandedId !== '__new__'">No authorizations yet.</div>
-      <div class="empty-cell" v-if="loading">Loading…</div>
-    </div>
+      </table></div>
+      <div class="empty-state" v-if="!authorizations.length && !loading && expandedId !== '__new__'"><b>No access rules yet</b>Add a rule to grant users or groups access to hosts.</div>
+      <div class="empty-state" v-if="loading">Loading…</div>
+    </section>
   </div>
 </template>
 

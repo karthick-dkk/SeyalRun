@@ -29,7 +29,7 @@
       </nav>
 
       <div class="admin-content">
-        <div v-if="activeLabel" class="content-title">{{ activeLabel }}</div>
+        <div v-if="activeLabel" class="ph"><div><h1 class="h1">{{ activeLabel }}</h1></div></div>
 
         <IntegrationAdmin v-if="section === 'integration'" />
         <PlatformSettingsAdmin v-else-if="section === 'platform'" />

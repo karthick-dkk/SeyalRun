@@ -1,10 +1,10 @@
 <template>
   <div class="card">
-    <div class="card-header">
+    <div class="ch ct">
       {{ title }}
       <span class="pl-count">{{ shown.length }}</span>
     </div>
-    <div class="u-p-18">
+    <div class="cb">
       <p v-if="description" class="pl-desc">{{ description }}</p>
 
       <div v-if="!shown.length" class="pl-empty">
@@ -18,7 +18,7 @@
             <span class="badge" :class="p.enabled ? 'badge-green' : 'badge-gray'">
               {{ p.enabled ? 'Enabled' : 'Disabled' }}
             </span>
-            <span v-if="!p.togglable" class="badge badge-blue" :title="p.locked_reason">built-in</span>
+            <span v-if="!p.togglable" class="b info" :title="p.locked_reason">built-in</span>
           </div>
           <div class="pl-summary">{{ p.summary || '—' }}</div>
           <div class="pl-meta">{{ p.axis_label }} · {{ p.service }} · <code>{{ p.module }}</code></div>

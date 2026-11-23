@@ -64,7 +64,7 @@ def test_every_api_route_has_a_named_audit_action():
     table = re.findall(r'\("(GET|POST|PUT|PATCH|DELETE)", re\.compile\(r"([^"]+)"\), "([^"]+)"', main)
     assert len(table) >= 8
     routes = _api_routes()
-    assert len(routes) == 8, routes
+    assert len(routes) == 17, routes  # M1: 8, M2: +9 findings routes
     for method, path in routes:
         concrete = re.sub(r"\{[^}]+\}", "abc-123", path)
         hits = [a for m, rx, a in table if m == method and re.match(rx, concrete)]

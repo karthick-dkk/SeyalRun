@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oval_results xmlns="http://oval.mitre.org/XMLSchema/oval-results-5" xmlns:oval="http://oval.mitre.org/XMLSchema/oval-common-5">
+  <generator><oval:product_name>cpe:/a:open-scap:oscap</oval:product_name></generator>
+  <oval_definitions xmlns="http://oval.mitre.org/XMLSchema/oval-definitions-5">
+    <definitions>
+      <definition class="patch" id="oval:com.redhat.rhsa:def:20242722" version="1">
+        <metadata>
+          <title>RHSA-2024:2722: glibc security update (Important)</title>
+          <affected family="unix"><platform>Red Hat Enterprise Linux 9</platform></affected>
+          <reference ref_id="RHSA-2024:2722" ref_url="https://access.redhat.com/errata/RHSA-2024:2722" source="RHSA"/>
+          <reference ref_id="CVE-2024-2961" ref_url="https://access.redhat.com/security/cve/CVE-2024-2961" source="CVE"/>
+          <reference ref_id="EVIL" ref_url="javascript:alert(1)" source="EVIL"/>
+          <advisory><severity>Important</severity><cve cvss3="8.8/CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" href="https://access.redhat.com/security/cve/CVE-2024-2961">CVE-2024-2961</cve></advisory>
+        </metadata>
+        <criteria operator="AND">
+          <criterion comment="glibc is earlier than 0:2.34-100.el9_4.2" test_ref="oval:com.redhat.rhsa:tst:20242722001"/>
+          <criterion comment="glibc is signed with Red Hat redhatrelease2 key" test_ref="oval:com.redhat.rhsa:tst:20242722002"/>
+        </criteria>
+      </definition>
+      <definition class="patch" id="oval:com.redhat.rhsa:def:20240627" version="1">
+        <metadata>
+          <title>RHSA-2024:0627: openssl security update (Moderate)</title>
+          <reference ref_id="CVE-2023-5678" ref_url="https://access.redhat.com/security/cve/CVE-2023-5678" source="CVE"/>
+        </metadata>
+        <criteria><criterion comment="openssl is earlier than 1:3.0.7-25.el9_3" test_ref="t2"/></criteria>
+      </definition>
+    </definitions>
+  </oval_definitions>
+  <results>
+    <system>
+      <definitions>
+        <definition definition_id="oval:com.redhat.rhsa:def:20242722" result="true" version="1"/>
+        <definition definition_id="oval:com.redhat.rhsa:def:20240627" result="false" version="1"/>
+      </definitions>
+      <oval_system_characteristics xmlns="http://oval.mitre.org/XMLSchema/oval-system-characteristics-5">
+        <system_info>
+          <os_name>Linux</os_name>
+          <primary_host_name>db01.example.com</primary_host_name>
+          <interfaces>
+            <interface><interface_name>lo</interface_name><ip_address>127.0.0.1</ip_address></interface>
+            <interface><interface_name>eth0</interface_name><ip_address>10.0.0.6</ip_address></interface>
+          </interfaces>
+        </system_info>
+      </oval_system_characteristics>
+    </system>
+  </results>
+</oval_results>

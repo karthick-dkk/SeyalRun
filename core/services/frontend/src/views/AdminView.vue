@@ -36,7 +36,7 @@
       </nav>
 
       <div class="admin-content">
-        <div v-if="activeLabel" class="content-title">{{ activeLabel }}</div>
+        <div v-if="activeLabel" class="ph"><div><h1 class="h1">{{ activeLabel }}</h1></div></div>
 
         <UsersAdmin v-if="section === 'users'" />
         <RolesAdmin v-else-if="section === 'roles'" />

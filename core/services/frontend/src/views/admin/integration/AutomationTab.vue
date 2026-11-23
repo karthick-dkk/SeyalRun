@@ -10,12 +10,12 @@
     />
 
     <!-- ── Ansible Galaxy ───────────────────────────────────────────────── -->
-    <div class="card u-mt-16">
-      <div class="card-header">
+    <div class="card" style="margin-top:20px">
+      <div class="ch ct">
         Ansible Galaxy
         <span class="badge" :class="cfg.galaxy?.server ? 'badge-green' : 'badge-gray'">{{ cfg.galaxy?.server ? 'Configured' : 'Default (galaxy.ansible.com)' }}</span>
       </div>
-      <div class="u-p-18">
+      <div class="cb">
         <p class="note u-mt-0">
           Where the Ansible executor resolves collections and roles from. Point it at a private Galaxy /
           Automation Hub to keep playbook dependencies inside your own network.

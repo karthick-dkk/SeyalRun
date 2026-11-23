@@ -211,3 +211,60 @@ class SessionBroker(ABC):
         reads that as "use the in-app terminal only".
         """
         raise NotImplementedError
+
+
+# ── vulnerability scanners (posture-service, SeyalRun 3.0 M2) ────────────────
+
+class ScanParseError(ValueError):
+    """An uploaded scanner result is malformed or not the format claimed. The
+    message is shown to the admin verbatim, so it says what and where."""
+
+
+@dataclass
+class HostRef:
+    """How a scanner names the host a finding is on. Any field may be empty;
+    posture-service correlates by host_id, then hostname/FQDN, then IP."""
+
+    host_id: str = ""
+    hostname: str = ""
+    fqdn: str = ""
+    ip: str = ""
+
+    def key(self) -> tuple[str, str, str, str]:
+        return (self.host_id, self.hostname.lower(), self.fqdn.lower(), self.ip)
+
+
+@dataclass
+class ScanRecord:
+    """One normalised (host, vulnerability, package) observation."""
+
+    host: HostRef
+    cve_id: str
+    package: str = ""
+    installed_version: str = ""
+    fixed_version: str | None = None
+    severity: str = ""            # free text as the scanner said it; normalised later
+    cvss: float | None = None
+    summary: str | None = None
+    references: list[str] = field(default_factory=list)
+
+
+class VulnScanner(ABC):
+    """A vulnerability-result source for posture-service.
+
+    Upload scanners (``accepts_upload``) turn a result FILE into ScanRecords —
+    they parse; they never run or import the tool that produced the file (GPL
+    tools such as OpenSCAP and Vuls stay out of the process). The built-in
+    ``native`` matcher has no file: posture-service drives it from host facts
+    and the active feed snapshot.
+    """
+
+    name: str
+    kind: str = "plugin"          # builtin | plugin
+    accepts_upload: bool = True
+    formats: tuple[str, ...] = ()
+
+    def parse(self, path: str):
+        """Yield ScanRecords from the file at ``path``, streaming. Blocking —
+        callers run it off the event loop. Raise ScanParseError on bad input."""
+        raise NotImplementedError

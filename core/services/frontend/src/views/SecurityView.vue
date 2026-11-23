@@ -1,95 +1,108 @@
 <template>
   <AppShell>
     <div class="page">
-      <div class="card" style="max-width:560px;margin:0 auto">
-        <div class="card-header">Security — Multi-Factor Authentication</div>
-        <div class="u-p-18">
-          <template v-if="status.method">
-            <div class="mfa-status">
-              <span class="badge badge-green">● MFA enabled — {{ status.method === 'totp' ? 'Authenticator app' : 'Email OTP' }}</span>
-            </div>
-            <div style="font-size:12px;color:var(--text2);margin:10px 0 16px">
-              Disabling MFA requires proof of possession — enter a current code
-              {{ status.method === 'email' ? '(request one below) ' : '' }}to continue.
-            </div>
-
-            <template v-if="!disableStep">
-              <button class="btn" @click="startDisable">Disable MFA</button>
-            </template>
-            <template v-else>
-              <div v-if="status.method === 'email'" style="margin-bottom:10px">
-                <button class="btn btn-sm" :disabled="sending" @click="requestDisableCode">
-                  {{ sending ? 'Sending…' : (disableCodeSent ? 'Resend code' : 'Send code') }}
-                </button>
-              </div>
-              <div class="fp-field">
-                <label class="fp-label">Confirmation code</label>
-                <input v-model="disableCode" class="fp-input" placeholder="123456" inputmode="numeric" maxlength="6" />
-              </div>
-              <div v-if="error" class="fp-error">{{ error }}</div>
-              <div style="display:flex;gap:8px;margin-top:10px">
-                <button class="btn" @click="disableStep = false; disableCode = ''; error = ''">Cancel</button>
-                <button class="btn btn-primary" :disabled="saving || !disableCode" @click="doDisable">{{ saving ? 'Disabling…' : 'Confirm Disable' }}</button>
-              </div>
-            </template>
-          </template>
-
-          <template v-else-if="!auth.can('security.mfa')">
-            <div class="u-c-text2_fs-13">
-              Your role does not allow enrolling in MFA. Ask a superadmin to grant the "Allow MFA enrollment" permission on your role.
-            </div>
-          </template>
-
-          <template v-else>
-            <div class="u-c-text2_fs-12_mb-16">
-              MFA is not enabled. Choose a method — an authenticator app (Google
-              Authenticator, Authy, ...) or a one-time code emailed to you.
-            </div>
-
-            <div class="fp-toggle-group u-mb-16">
-              <button :class="['fp-toggle', enrollMethod === 'totp' && 'active']" @click="enrollMethod = 'totp'; resetEnroll()">Authenticator App</button>
-              <button :class="['fp-toggle', enrollMethod === 'email' && 'active']" @click="enrollMethod = 'email'; resetEnroll()">Email OTP</button>
-            </div>
-
-            <template v-if="enrollMethod === 'totp'">
-              <template v-if="!totpSecret">
-                <button class="btn btn-primary" :disabled="loading" @click="startTotpSetup">{{ loading ? 'Generating…' : 'Generate QR Code' }}</button>
-              </template>
-              <template v-else>
-                <div style="display:flex;justify-content:center;margin-bottom:12px">
-                  <img v-if="qrDataUrl" :src="qrDataUrl" alt="TOTP QR code" style="width:200px;height:200px;border-radius:8px;background:#fff;padding:8px" />
-                </div>
-                <div style="font-size:11px;color:var(--text2);text-align:center;margin-bottom:12px">
-                  Can't scan? Enter this secret manually: <code>{{ totpSecret }}</code>
-                </div>
-                <div class="fp-field">
-                  <label class="fp-label">Code from your app</label>
-                  <input v-model="enrollCode" class="fp-input" placeholder="123456" inputmode="numeric" maxlength="6" />
-                </div>
-                <div v-if="error" class="fp-error">{{ error }}</div>
-                <button class="btn btn-primary" style="margin-top:10px" :disabled="saving || !enrollCode" @click="confirmTotp">{{ saving ? 'Verifying…' : 'Enable Authenticator' }}</button>
-              </template>
-            </template>
-
-            <template v-else>
-              <template v-if="!emailCodeSent">
-                <button class="btn btn-primary" :disabled="loading" @click="startEmailSetup">{{ loading ? 'Sending…' : 'Send Code to My Email' }}</button>
-              </template>
-              <template v-else>
-                <div style="font-size:12px;color:var(--text2);margin-bottom:10px">A code was sent to your account's email address.</div>
-                <div class="fp-field">
-                  <label class="fp-label">Code from your email</label>
-                  <input v-model="enrollCode" class="fp-input" placeholder="123456" inputmode="numeric" maxlength="6" />
-                </div>
-                <div v-if="error" class="fp-error">{{ error }}</div>
-                <div style="display:flex;gap:8px;margin-top:10px">
-                  <button class="btn" :disabled="loading" @click="startEmailSetup">Resend</button>
-                  <button class="btn btn-primary" :disabled="saving || !enrollCode" @click="confirmEmail">{{ saving ? 'Verifying…' : 'Enable Email OTP' }}</button>
-                </div>
-              </template>
-            </template>
-          </template>
+      <div class="ph">
+        <div>
+          <h1 class="h1">Profile &amp; security</h1>
+          <p class="sub">Two-factor sign-in for your account.</p>
         </div>
+      </div>
+
+      <div class="sec-col">
+        <section class="card">
+          <div class="ch">
+            <div>
+              <h2 class="ct">Two-factor sign-in</h2>
+              <p class="sub" style="font-size:12.5px">A code from your phone or email on every sign-in.</p>
+            </div>
+            <span v-if="status.method" class="b ok">On · {{ status.method === 'totp' ? 'Authenticator app' : 'Email OTP' }}</span>
+            <span v-else class="b off">Off</span>
+          </div>
+          <div class="cb">
+            <template v-if="status.method">
+              <p class="muted" style="margin:0 0 14px;font-size:13.5px">
+                Disabling MFA requires proof of possession — enter a current code
+                {{ status.method === 'email' ? '(request one below) ' : '' }}to continue.
+              </p>
+
+              <template v-if="!disableStep">
+                <button class="btn d" type="button" @click="startDisable">Disable MFA</button>
+              </template>
+              <template v-else>
+                <div v-if="status.method === 'email'" style="margin-bottom:10px">
+                  <button class="btn sm" type="button" :disabled="sending" @click="requestDisableCode">
+                    {{ sending ? 'Sending…' : (disableCodeSent ? 'Resend code' : 'Send code') }}
+                  </button>
+                </div>
+                <div class="fp-field">
+                  <label class="fp-label" for="mfa-dis">Confirmation code</label>
+                  <input id="mfa-dis" v-model="disableCode" class="in" placeholder="123456" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+                </div>
+                <div v-if="error" class="callout" style="--c:var(--bad);margin-top:10px" role="alert">{{ error }}</div>
+                <div class="acts" style="margin-top:12px">
+                  <button class="btn" type="button" @click="disableStep = false; disableCode = ''; error = ''">Cancel</button>
+                  <button class="btn p" type="button" :disabled="saving || !disableCode" @click="doDisable">{{ saving ? 'Disabling…' : 'Confirm disable' }}</button>
+                </div>
+              </template>
+            </template>
+
+            <template v-else-if="!auth.can('security.mfa')">
+              <p class="muted" style="margin:0;font-size:13.5px">
+                Your role does not allow enrolling in MFA. Ask a superadmin to grant the "Allow MFA enrollment" permission on your role.
+              </p>
+            </template>
+
+            <template v-else>
+              <p class="muted" style="margin:0 0 14px;font-size:13.5px">
+                MFA is not enabled. Choose a method — an authenticator app (Google
+                Authenticator, Authy, ...) or a one-time code emailed to you.
+              </p>
+
+              <span class="seg" role="group" aria-label="MFA method" style="margin-bottom:16px">
+                <button type="button" :class="{ on: enrollMethod === 'totp' }" @click="enrollMethod = 'totp'; resetEnroll()">Authenticator app</button>
+                <button type="button" :class="{ on: enrollMethod === 'email' }" @click="enrollMethod = 'email'; resetEnroll()">Email OTP</button>
+              </span>
+
+              <template v-if="enrollMethod === 'totp'">
+                <template v-if="!totpSecret">
+                  <button class="btn p" type="button" :disabled="loading" @click="startTotpSetup">{{ loading ? 'Generating…' : 'Generate QR code' }}</button>
+                </template>
+                <template v-else>
+                  <div style="display:flex;justify-content:center;margin-bottom:12px">
+                    <img v-if="qrDataUrl" :src="qrDataUrl" alt="TOTP QR code" style="width:200px;height:200px;border-radius:8px;background:#fff;padding:8px" />
+                  </div>
+                  <p class="muted" style="font-size:12.5px;text-align:center;margin:0 0 12px">
+                    Can't scan? Enter this secret manually: <code class="mono">{{ totpSecret }}</code>
+                  </p>
+                  <div class="fp-field">
+                    <label class="fp-label" for="mfa-totp">Code from your app</label>
+                    <input id="mfa-totp" v-model="enrollCode" class="in" placeholder="123456" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+                  </div>
+                  <div v-if="error" class="callout" style="--c:var(--bad);margin-top:10px" role="alert">{{ error }}</div>
+                  <button class="btn p" type="button" style="margin-top:12px" :disabled="saving || !enrollCode" @click="confirmTotp">{{ saving ? 'Verifying…' : 'Enable authenticator' }}</button>
+                </template>
+              </template>
+
+              <template v-else>
+                <template v-if="!emailCodeSent">
+                  <button class="btn p" type="button" :disabled="loading" @click="startEmailSetup">{{ loading ? 'Sending…' : 'Send code to my email' }}</button>
+                </template>
+                <template v-else>
+                  <p class="muted" style="font-size:13px;margin:0 0 10px">A code was sent to your account's email address.</p>
+                  <div class="fp-field">
+                    <label class="fp-label" for="mfa-email">Code from your email</label>
+                    <input id="mfa-email" v-model="enrollCode" class="in" placeholder="123456" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+                  </div>
+                  <div v-if="error" class="callout" style="--c:var(--bad);margin-top:10px" role="alert">{{ error }}</div>
+                  <div class="acts" style="margin-top:12px">
+                    <button class="btn" type="button" :disabled="loading" @click="startEmailSetup">Resend</button>
+                    <button class="btn p" type="button" :disabled="saving || !enrollCode" @click="confirmEmail">{{ saving ? 'Verifying…' : 'Enable email OTP' }}</button>
+                  </div>
+                </template>
+              </template>
+            </template>
+          </div>
+        </section>
       </div>
     </div>
   </AppShell>
@@ -208,13 +221,7 @@ onMounted(loadStatus)
 </script>
 
 <style scoped>
-.mfa-status { margin-bottom: 4px; }
-.fp-field { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
-.fp-label { font-size: 12px; color: var(--text2); font-weight: 500; }
-.fp-input { padding: 7px 10px; background: var(--bg3); border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-size: 13px; outline: none; width: 100%; box-sizing: border-box; }
-.fp-input:focus { border-color: var(--accent2); }
-.fp-error { font-size: 12px; color: var(--danger); padding: 8px 0; }
-.fp-toggle-group { display: flex; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-.fp-toggle { flex: 1; padding: 7px 0; font-size: 12px; font-weight: 500; background: transparent; border: none; color: var(--text2); cursor: pointer; }
-.fp-toggle.active { background: var(--bg2); color: var(--text); }
+.sec-col { max-width: 640px; }
+.fp-field { display: flex; flex-direction: column; gap: 5px; }
+.fp-label { font-size: 12.5px; color: var(--muted); font-weight: 500; }
 </style>

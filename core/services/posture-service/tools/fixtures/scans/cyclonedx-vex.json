@@ -1,0 +1,19 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "vulnerabilities": [
+    {"id": "CVE-2024-2961", "source": {"name": "NVD", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-2961"},
+     "ratings": [{"score": 8.8, "severity": "high", "method": "CVSSv31"}],
+     "description": "glibc iconv buffer overflow",
+     "affects": [{"ref": "pkg:rpm/rocky/glibc@2.34-100.el9?arch=x86_64"}],
+     "advisories": [{"url": "vbscript:msgbox(1)"}, {"url": "https://errata.rockylinux.org/RLSA-2024:2722"}],
+     "analysis": {"state": "exploitable"}},
+    {"id": "GHSA-xxxx-yyyy-zzzz", "references": [{"id": "CVE-2023-0001", "source": {"name": "NVD"}}],
+     "ratings": [{"severity": "low"}],
+     "affects": [{"ref": "comp-openssl"}]},
+    {"id": "CVE-2023-9998", "affects": [{"ref": "comp-openssl"}], "analysis": {"state": "not_affected", "justification": "code_not_reachable"}}
+  ],
+  "metadata": {"component": {"type": "device", "name": "db01"},
+               "properties": [{"name": "seyalrun:ip", "value": "10.0.0.6"}]},
+  "components": [{"bom-ref": "comp-openssl", "type": "library", "name": "openssl-libs", "version": "1:3.0.7-24.el9"}]
+}

@@ -1,0 +1,5 @@
+Hostname,IP,CVE,Package,Installed Version,Fixed Version,Severity,CVSS,Summary,References
+web01.example.com,,CVE-2023-5678,libssl3,3.0.11-1~deb12u2,3.0.13-1~deb12u1,Moderate,5.3,DH keys,https://example.org/a javascript:alert(1)
+,10.0.0.6,CVE-2024-2961,glibc,2.34-100.el9,2.34-100.el9_4.2,Important,8.8,iconv overflow,https://example.org/b
+ghost.example.net,10.9.9.9,CVE-2021-44228,log4j,2.14.1,2.15.0,Critical,10.0,Log4Shell,https://example.org/c
+ghost.example.net,10.9.9.9,CVE-2022-22965,spring-beans,5.3.17,5.3.18,Critical,9.8,Spring4Shell,

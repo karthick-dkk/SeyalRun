@@ -1,23 +1,19 @@
 <template>
   <AppShell>
-    <div class="sp-wrap">
+    <div class="page sp-wrap">
 
-      <!-- Header -->
-      <div class="sp-header">
-        <router-link to="/sessions" class="sp-back">&#8592; Sessions</router-link>
-        <div v-if="meta" class="sp-meta">
-          <span class="sp-meta-host">{{ meta.session_info?.host_name || '—' }}</span>
-          <span class="sp-meta-sep">·</span>
-          <span class="sp-meta-user">{{ meta.session_info?.username || '—' }}</span>
-          <span class="sp-meta-sep">·</span>
-          <span class="sp-meta-dur">{{ fmtDuration(meta.duration_seconds) }}</span>
-          <span class="sp-meta-sep">·</span>
-          <span class="sp-meta-date">{{ fmtDate(meta.created_at) }}</span>
+      <div class="ph">
+        <div>
+          <h1 class="h1">Session playback</h1>
+          <p v-if="meta" class="sub">
+            <b>{{ meta.session_info?.host_name || '—' }}</b> · {{ meta.session_info?.username || '—' }} · <span class="mono">{{ fmtDuration(meta.duration_seconds) }}</span> · {{ fmtDate(meta.created_at) }}
+          </p>
         </div>
+        <div class="acts"><router-link to="/sessions" class="btn">&#8592; Sessions</router-link></div>
       </div>
 
-      <div v-if="loading" class="sp-loading">Loading recording…</div>
-      <div v-else-if="error" class="sp-error">{{ error }}</div>
+      <div v-if="loading" class="card"><div class="empty-state">Loading recording…</div></div>
+      <div v-else-if="error" class="callout" style="--c:var(--bad)" role="alert">{{ error }}</div>
 
       <template v-else>
         <div class="sp-layout">
@@ -323,16 +319,7 @@ watch(speed, () => {
 </script>
 
 <style scoped>
-.sp-wrap {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  padding: 16px 20px;
-  background: var(--bg);
-  color: var(--text);
-  box-sizing: border-box;
-}
+.sp-wrap { display: flex; flex-direction: column; min-height: 0; }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 .sp-header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; flex-shrink: 0; }
@@ -349,12 +336,10 @@ watch(speed, () => {
 .sp-error   { color: var(--danger); padding: 16px; background: var(--bg3); border-radius: 6px; }
 
 /* ── Two-panel layout ────────────────────────────────────────────────────── */
-.sp-layout {
-  display: flex;
-  gap: 12px;
-  flex: 1;
-  min-height: 0;
-}
+.sp-layout { display: flex; gap: 12px; flex: 1; min-height: 480px; flex-wrap: wrap; }
+.sp-player { min-height: 420px; }
+.sp-sidebar { max-height: 560px; }
+@media (max-width: 900px) { .sp-sidebar { width: 100%; } }
 
 /* Player + sidebar below are the embedded terminal-replay widget — kept
    intentionally dark like a video player's chrome, matching the live terminal

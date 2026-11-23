@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import audit, feedbundle, feeds
+from .. import audit, feedbundle, feeds, scanning
 from ..config import get_settings
 from ..database import get_session
 from ..deps import Caller, get_caller, require_admin
@@ -142,4 +142,6 @@ async def activate_feed(snapshot_id: str, request: Request, caller: Caller = Dep
     await session.commit()
     await session.refresh(snap)
     request.state.audited = True
+    # M2: new EPSS/KEV re-score every finding; new advisories re-match every host.
+    scanning.after_feed_activation()
     return feeds.snapshot_out(snap)

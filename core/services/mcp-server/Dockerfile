@@ -8,6 +8,9 @@ FROM python:3.12-slim
 RUN useradd -r -u 10001 -m appuser
 WORKDIR /app
 COPY --from=build /deps /usr/local/lib/python3.12/site-packages
+# Only the one stdlib-only lib it needs (MCP settings shape/defaults) — not libs/*,
+# so this internet-facing image carries no service-token or crypto code.
+COPY libs/mcpsettings ./libs/mcpsettings
 COPY services/mcp-server/app ./app
 USER appuser
 EXPOSE 8110

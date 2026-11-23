@@ -21,6 +21,16 @@ see, not on a proxy for it:
            POSTURE_E2E_HOST_IDS=<id>,<id>  e.g. one Debian- and one RHEL-family
              inventory host with a working credential: facts are collected and
              show a distro family + package count for each.
+  * 3.0 M2 findings: findings / summary / unmatched / scanners answer in the
+         contract shape and are audited, a malformed scanner file is refused
+         (400) and audited, a posture:read PAT reads findings but cannot import.
+         With POSTURE_E2E_HOST_IDS: the same CVE imported from two scanners
+         (generic CSV + Vuls JSON) is ONE finding on that host listing both; a
+         javascript: reference in the file never comes back; a result for an
+         unknown host lands in the unmatched queue and assigning it creates the
+         finding; accept/reopen round-trips and is audited; a native run is
+         accepted. The CVE used is a fixed fake id, so repeated runs update one
+         finding instead of piling up.
 
 Everything it creates (second admin, project, template, PAT) is removed at the
 end, so repeated runs do not pile up on staging. Standard library only.
@@ -53,6 +63,7 @@ if os.environ.get("SEYALRUN_CA_FILE"):
     CTX.check_hostname = False
 
 results: list[bool] = []
+PAT: dict = {}  # posture:read token issued by posture_checks, reused by findings_checks
 cleanup: list[tuple[str, str]] = []  # (path, token-name) deleted in reverse order
 
 
@@ -180,10 +191,12 @@ def main(A):
     check("F-12 notification is now marked read", row.get("read") is True, row)
 
 
-def call_multipart(path, token, filename, data: bytes):
+def call_multipart(path, token, filename, data: bytes, fields=None):
     boundary = "----e2e" + secrets.token_hex(8)
-    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
-            f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    body = b"".join(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode()
+                    for k, v in (fields or {}).items())
+    body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+             f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(BASE + path, method="POST", data=body)
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
     req.add_header("Authorization", f"Bearer {token}")
@@ -232,6 +245,7 @@ def posture_checks(A):
         check("posture:read PAT reads hosts (200)", s == 200, s)
         s, _ = call("POST", "/api/v1/posture/collect", pat["token"])
         check("posture:read PAT cannot collect (403)", s == 403, s)
+        PAT["token"] = pat["token"]
 
     bundle = os.environ.get("POSTURE_E2E_BUNDLE")
     if bundle:
@@ -277,6 +291,95 @@ def posture_checks(A):
         print("NOTE POSTURE_E2E_HOST_IDS not set — skipping live facts collection")
 
 
+E2E_CVE = "CVE-1999-99001"   # fake, fixed: repeated runs update one finding
+
+
+def findings_checks(A, pat_token=None):
+    """SeyalRun 3.0 M2 — findings through the real gateway."""
+    s, f = call("GET", "/api/v1/posture/findings?limit=5", A)
+    if not check("findings GET (200, {items, total})", s == 200 and {"items", "total"} <= set(f or {}), f"{s} {f}"):
+        return
+    s, sm = call("GET", "/api/v1/posture/findings/summary", A)
+    check("findings summary has the contract fields", s == 200 and {
+        "open_total", "by_severity", "kev_open", "hosts_affected", "feed_stale", "feed_age_days",
+        "stale_after_days"} <= set(sm or {}), f"{s} {sm}")
+    s, ps = call("GET", "/api/v1/posture/summary", A)
+    check("posture summary carries findings_open + kev_open", {"findings_open", "kev_open"} <= set(ps or {}), ps)
+    s, um = call("GET", "/api/v1/posture/unmatched", A)
+    check("unmatched GET (200)", s == 200 and "items" in (um or {}), f"{s} {um}")
+    s, sc = call("GET", "/api/v1/posture/scanners", A)
+    names = {x.get("name") for x in sc} if isinstance(sc, list) else set()
+    check("scanners: native, generic, openscap, vuls discovered", {"native", "generic", "openscap", "vuls"} <= names, sc)
+    time.sleep(2)
+    check("findings reads are audited (posture.findings.list)", bool(audit_any(A, "posture.findings.list")))
+
+    before = {e.get("id") for e in audit_any(A, "posture.scan.import")}
+    s, d = call_multipart("/api/v1/posture/scans/import", A, "bad.xml", b"<html>nope</html>", {"scanner": "openscap"})
+    check("malformed OpenSCAP file refused (400)", s == 400 and isinstance(d, dict) and d.get("detail"), f"{s} {d}")
+    time.sleep(2)
+    check("refused scan import is audited as a failure",
+          any(r.get("result") == "failure" for r in audit_any(A, "posture.scan.import", before)))
+    if pat_token:
+        s, _ = call("GET", "/api/v1/posture/findings", pat_token)
+        check("posture:read PAT reads findings (200)", s == 200, s)
+        s, _ = call_multipart("/api/v1/posture/scans/import", pat_token, "x.csv", b"cve\n", {"scanner": "generic"})
+        check("posture:read PAT cannot import (403)", s == 403, s)
+
+    host_ids = [h for h in os.environ.get("POSTURE_E2E_HOST_IDS", "").split(",") if h]
+    if not host_ids:
+        print("NOTE POSTURE_E2E_HOST_IDS not set — skipping the two-scanner dedupe / unmatched / status checks")
+        return
+    hid = host_ids[0]
+    csv_body = (f"host_id,cve,package,installed_version,fixed_version,severity,cvss,references\n"
+                f"{hid},{E2E_CVE},e2e-dummy-pkg,1.0-1,1.0-2,high,7.5,"
+                f"https://example.org/e2e javascript:alert(1)\n").encode()
+    s, d = call_multipart("/api/v1/posture/scans/import", A, "e2e.csv", csv_body, {"scanner": "generic"})
+    check("generic CSV import (201)", s == 201 and (d or {}).get("unmatched") == 0, f"{s} {d}")
+    vuls = {"serverName": "e2e-not-a-real-host", "scannedCves": {E2E_CVE: {
+        "cveID": E2E_CVE, "affectedPackages": [{"name": "e2e-dummy-pkg", "fixedIn": "1.0-2"}],
+        "cveContents": {"nvd": [{"cvss3Score": 7.5, "summary": "SeyalRun e2e fixture"}]}}}, "packages": {}}
+    s, d = call_multipart("/api/v1/posture/scans/import", A, "e2e-vuls.json", json.dumps(vuls).encode(),
+                          {"scanner": "vuls", "host_id": hid})
+    check("vuls JSON import with host override (201)", s == 201, f"{s} {d}")
+    _, f = call("GET", f"/api/v1/posture/findings?host_id={hid}&q={E2E_CVE}", A)
+    items = (f or {}).get("items") or []
+    check("same CVE from two scanners is ONE finding on the right host",
+          len(items) == 1 and items[0].get("host_id") == hid and {"generic", "vuls"} <= set(items[0].get("sources") or []),
+          items)
+    if len(items) != 1:
+        return
+    fid = items[0]["id"]
+    _, det = call("GET", f"/api/v1/posture/findings/{fid}", A)
+    refs = (det or {}).get("references") or []
+    check("javascript: reference from the file is not served", refs and all(
+        r.startswith(("http://", "https://")) for r in refs), refs)
+    check("finding detail carries history", bool((det or {}).get("history")), det)
+
+    ghost = f"e2e-ghost-{secrets.token_hex(4)}.invalid"
+    s, d = call_multipart("/api/v1/posture/scans/import", A, "ghost.csv",
+                          f"hostname,cve,package\n{ghost},{E2E_CVE},e2e-dummy-pkg\n".encode(), {"scanner": "generic"})
+    check("unknown host goes to the unmatched queue (unmatched=1)", s == 201 and (d or {}).get("unmatched") == 1, f"{s} {d}")
+    _, um = call("GET", "/api/v1/posture/unmatched?limit=500", A)
+    row = next((u for u in (um or {}).get("items") or [] if u.get("reported_host") == ghost), None)
+    if check("unmatched result is listed, not dropped", row is not None and row.get("cve_count") == 1, um):
+        s, d = call("POST", f"/api/v1/posture/unmatched/{row['id']}/assign", A, {"host_id": hid})
+        check("assigning the unmatched result succeeds", s == 200 and "created_findings" in (d or {}), f"{s} {d}")
+        _, um2 = call("GET", "/api/v1/posture/unmatched?limit=500", A)
+        check("assigned result leaves the queue",
+              not any(u.get("id") == row["id"] for u in (um2 or {}).get("items") or []), um2)
+
+    s, d = call("POST", f"/api/v1/posture/findings/{fid}/status", A, {"status": "accepted"})
+    check("accepting without a reason is refused (400)", s == 400, f"{s} {d}")
+    s, d = call("POST", f"/api/v1/posture/findings/{fid}/status", A, {"status": "accepted", "reason": "e2e"})
+    check("accept with reason (200)", s == 200 and (d or {}).get("status") == "accepted", f"{s} {d}")
+    s, d = call("POST", f"/api/v1/posture/findings/{fid}/status", A, {"status": "open", "reason": "e2e reopen"})
+    check("reopen (200)", s == 200 and (d or {}).get("status") == "open", f"{s} {d}")
+    time.sleep(2)
+    check("status change is audited", bool(audit_any(A, "posture.finding.status")))
+    s, d = call("POST", "/api/v1/posture/scanners/native/run", A, {"host_ids": host_ids})
+    check("native run accepted (202)", s == 202 and "queued" in (d or {}), f"{s} {d}")
+
+
 if __name__ == "__main__":
     try:
         A = login("Admin", ADMIN_PW)
@@ -291,6 +394,10 @@ if __name__ == "__main__":
         posture_checks(A)
     except Exception as exc:
         check("posture e2e completed without an exception", False, repr(exc))
+    try:
+        findings_checks(A, PAT.get("token"))
+    except Exception as exc:
+        check("findings e2e completed without an exception", False, repr(exc))
     finally:
         for path, _ in reversed(cleanup):
             call("DELETE", path, A)

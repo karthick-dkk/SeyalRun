@@ -1,12 +1,7 @@
 <template>
-  <div>
-    <!-- Chain verification. The tamper-evident hash chain is the control this
-         product leads with, and until now it had no presence in the interface
-         at all: /audit/verify existed but nothing in the SPA ever called it, so
-         the only way to answer "is this log intact?" was curl. An assessor
-         looking at this page could read the entries and learn nothing about
-         whether they had been altered. -->
-    <div class="card audit-verify" :class="verifyClass">
+  <div class="stack">
+    <!-- Chain verification: "cannot check" and "tampered with" are different answers, shown differently. -->
+    <section class="card audit-verify" :class="verifyClass" :aria-live="verifyState === 'broken' ? 'assertive' : 'polite'">
       <div class="audit-verify-body">
         <span class="audit-verify-icon" v-html="verifyIcon" aria-hidden="true" />
         <div>
@@ -14,66 +9,57 @@
           <div class="audit-verify-detail">{{ verifyDetail }}</div>
         </div>
       </div>
-      <button class="btn btn-sm" @click="runVerify" :disabled="verifying">
+      <button class="btn sm" type="button" @click="runVerify" :disabled="verifying">
         {{ verifying ? 'Verifying…' : 'Re-verify' }}
       </button>
-    </div>
+    </section>
 
-    <div class="card">
-      <div class="card-header">Audit Logs</div>
-      <div class="audit-filters">
-        <button
-          v-for="f in FILTERS"
-          :key="f.key"
-          class="btn btn-sm"
-          :class="actionFilter === f.key ? 'btn-primary' : ''"
-          @click="actionFilter = f.key; applyFilter()"
-        >{{ f.label }}</button>
-        <span class="audit-filter-sep" />
-        <button
-          class="btn btn-sm"
-          :class="resultFilter === 'failure' ? 'btn-primary' : ''"
+    <section class="card">
+      <div class="ch"><h2 class="ct">Audit logs</h2>
+        <span class="seg" role="group" aria-label="Filter by action">
+          <button v-for="f in FILTERS" :key="f.key" type="button" :class="{ on: actionFilter === f.key }" @click="actionFilter = f.key; applyFilter()">{{ f.label }}</button>
+        </span>
+        <button type="button" class="btn sm" :class="{ p: resultFilter === 'failure' }" :aria-pressed="resultFilter === 'failure'"
           @click="resultFilter = resultFilter === 'failure' ? '' : 'failure'; applyFilter()"
-          title="Show only refused or failed operations"
-        >Failures only</button>
+          title="Show only refused or failed operations">Failures only</button>
       </div>
-      <table class="table">
-        <thead>
-          <tr><th>Time</th><th>User</th><th>Action</th><th>Result</th><th>Resource</th><th>Details</th><th>IP Address</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="l in logs" :key="l.id">
-            <td style="font-size:12px;color:var(--text2);white-space:nowrap">{{ formatDate(l.created_at) }}</td>
-            <td class="fw-600">{{ l.username }}</td>
-            <td><span class="badge badge-blue">{{ l.action }}</span></td>
-            <!-- PCI DSS Req 10.2.2 counts a success/failure indication as a
-                 required element of an audit record. It was being stored on
-                 some rows and displayed on none. Rows written before that was
-                 recorded show "—" rather than guessing an outcome. -->
-            <td>
-              <span v-if="l.result" class="badge" :class="resultClass(l.result)">{{ l.result }}</span>
-              <span class="text-muted" v-else>—</span>
-            </td>
-            <td class="text-sm">
-              <span class="badge badge-gray">{{ l.resource_type }}</span>
-              <span class="text-muted">{{ l.resource_id }}</span>
-            </td>
-            <td style="font-size:12px;color:var(--text2);max-width:360px;overflow:hidden;text-overflow:ellipsis">{{ formatDetails(l.details) }}</td>
-            <td><span class="ip-mono">{{ l.ip_address }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="empty-cell" v-if="!logs.length && !loading">No audit log entries yet.</div>
-      <div class="empty-cell-sm" v-if="loading">Loading…</div>
-      <div style="display:flex;justify-content:center;padding:16px;border-top:1px solid var(--border)">
-        <button class="btn" @click="loadMore" :disabled="loading || !hasMore">{{ hasMore ? 'Load more' : 'No more entries' }}</button>
+      <div class="tw">
+        <table class="t">
+          <thead>
+            <tr><th>Time</th><th>User</th><th>Action</th><th>Result</th><th>Resource</th><th>Details</th><th>IP address</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="l in logs" :key="l.id">
+              <td class="muted">{{ formatDate(l.created_at) }}</td>
+              <td><span class="nm">{{ l.username }}</span></td>
+              <td><span class="b nd info">{{ l.action }}</span></td>
+              <!-- PCI DSS 10.2.2: success/failure indication. Rows written before it was recorded show a dash. -->
+              <td>
+                <span v-if="l.result" class="b" :class="resultClass(l.result)">{{ l.result }}</span>
+                <span class="muted" v-else>—</span>
+              </td>
+              <td>
+                <span class="tag">{{ l.resource_type }}</span>
+                <span class="muted mono" style="margin-left:6px">{{ l.resource_id }}</span>
+              </td>
+              <td class="muted audit-details" :title="formatDetails(l.details)">{{ formatDetails(l.details) }}</td>
+              <td class="mono">{{ l.ip_address }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-    </div>
+      <div class="empty-state" v-if="!logs.length && !loading"><b>No audit log entries</b>Entries appear here as users act.</div>
+      <div class="empty-state" v-if="loading">Loading…</div>
+      <div class="foot" style="justify-content:center">
+        <button class="btn" type="button" @click="loadMore" :disabled="loading || !hasMore">{{ hasMore ? 'Load more' : 'No more entries' }}</button>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '@/api/client'
 
 const PAGE_SIZE = 100
@@ -89,7 +75,7 @@ function formatDetails(details: Record<string, unknown>) {
   return JSON.stringify(details)
 }
 function resultClass(r: string) {
-  return /fail|denied|error/i.test(r) ? 'badge-red' : 'badge-green'
+  return /fail|denied|error/i.test(r) ? 'bad' : 'ok'
 }
 
 // Quick filters. Without these, "show me the file transfers" meant paging
@@ -101,8 +87,12 @@ const FILTERS = [
   { key: 'credential.',   label: 'Credentials' },
   { key: 'session.',      label: 'Sessions' },
   { key: 'auth.',         label: 'Authentication' },
+  { key: 'mcp.',          label: 'MCP' },
 ]
-const actionFilter = ref('')
+// The MCP page links here with ?action=mcp. — start on that filter.
+const route = useRoute()
+const _qa = typeof route.query.action === 'string' ? route.query.action : ''
+const actionFilter = ref(FILTERS.some(f => f.key === _qa) ? _qa : '')
 const resultFilter = ref('')
 
 function applyFilter() {
@@ -190,24 +180,18 @@ onMounted(() => { loadMore(); runVerify() })
 </script>
 
 <style scoped>
-.audit-verify {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 14px 18px; margin-bottom: 16px;
-}
+.audit-verify { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; flex-wrap: wrap; }
 .audit-verify-body { display: flex; align-items: center; gap: 12px; }
 .audit-verify-icon { display: flex; width: 26px; height: 26px; flex-shrink: 0; }
 .audit-verify-icon :deep(svg) { width: 100%; height: 100%; }
 .audit-verify-headline { font-weight: 600; font-size: 14px; }
-.audit-verify-detail { font-size: 12.5px; color: var(--text2); margin-top: 2px; }
-.audit-verify--ok      { border-color: rgba(34,197,94,0.4); }
-.audit-verify--ok      .audit-verify-icon, .audit-verify--ok .audit-verify-headline { color: var(--accent); }
-.audit-verify--broken  { border-color: rgba(239,68,68,0.5); background: rgba(239,68,68,0.06); }
-.audit-verify--broken  .audit-verify-icon, .audit-verify--broken .audit-verify-headline { color: var(--danger); }
+.audit-verify-detail { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.audit-verify--ok { border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.audit-verify--ok .audit-verify-icon, .audit-verify--ok .audit-verify-headline { color: var(--ok); }
+.audit-verify--broken { border-color: color-mix(in srgb, var(--bad) 50%, var(--border)); background: color-mix(in srgb, var(--bad) 7%, var(--surface)); }
+.audit-verify--broken .audit-verify-icon, .audit-verify--broken .audit-verify-headline { color: var(--bad); }
 .audit-verify--unknown .audit-verify-icon, .audit-verify--unknown .audit-verify-headline { color: var(--warn); }
-.audit-verify--checking .audit-verify-icon { color: var(--text2); }
-.audit-filters {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  padding: 10px 14px; border-bottom: 1px solid var(--border);
-}
-.audit-filter-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+.audit-verify--checking .audit-verify-icon { color: var(--muted); }
+.audit-details { max-width: 360px; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+.foot { display: flex; padding: 12px 16px; border-top: 1px solid var(--border); }
 </style>

@@ -341,6 +341,63 @@ def _bounded_read(stream, limit: int, what: str) -> bytes:
     return data
 
 
+# CVSS ────────────────────────────────────────────────────────────────────────
+
+_CVSS_W = {
+    "AV": {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2},
+    "AC": {"L": 0.77, "H": 0.44},
+    "UI": {"N": 0.85, "R": 0.62},
+    "CIA": {"H": 0.56, "L": 0.22, "N": 0.0},
+}
+_LEAD_FLOAT = re.compile(r"^\s*(\d+(?:\.\d+)?)")
+
+
+def _roundup(x: float) -> float:
+    i = int(round(x * 100000))
+    return i / 100000.0 if i % 10000 == 0 else (i // 10000 + 1) / 10.0
+
+
+def cvss3_base(vector: str) -> float | None:
+    """'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H' -> 9.8 (FIRST CVSS 3.1
+    specification, section 7.1). OSV ships vectors, not numbers."""
+    if not isinstance(vector, str) or not vector.startswith("CVSS:3"):
+        return None
+    try:
+        m = dict(part.split(":", 1) for part in vector.split("/")[1:])
+        changed = m["S"] == "C"
+        pr = {"N": 0.85, "L": 0.68 if changed else 0.62, "H": 0.5 if changed else 0.27}[m["PR"]]
+        iss = 1 - (1 - _CVSS_W["CIA"][m["C"]]) * (1 - _CVSS_W["CIA"][m["I"]]) * (1 - _CVSS_W["CIA"][m["A"]])
+        impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15 if changed else 6.42 * iss
+        expl = 8.22 * _CVSS_W["AV"][m["AV"]] * _CVSS_W["AC"][m["AC"]] * pr * _CVSS_W["UI"][m["UI"]]
+    except (KeyError, ValueError):
+        return None
+    if impact <= 0:
+        return 0.0
+    return _roundup(min((1.08 if changed else 1.0) * (impact + expl), 10))
+
+
+def lead_float(value) -> float | None:
+    """'5.3/CVSS:3.1/AV:N/...' or '7.5' -> the score, if it is one (0-10)."""
+    m = _LEAD_FLOAT.match(str(value or ""))
+    if not m:
+        return None
+    v = float(m.group(1))
+    return v if 0.0 <= v <= 10.0 else None
+
+
+def osv_cvss(adv: dict) -> float | None:
+    best = None
+    for s in adv.get("severity") or []:
+        if not isinstance(s, dict):
+            continue
+        score = str(s.get("score") or "")
+        v = cvss3_base(score) if score.startswith("CVSS:3") else (
+            lead_float(score) if str(s.get("type", "")).upper().startswith("CVSS") and "/" not in score else None)
+        if v is not None and (best is None or v > best):
+            best = v
+    return best
+
+
 # OSV ─────────────────────────────────────────────────────────────────────────
 
 def osv_rows(adv: dict) -> list[dict]:
@@ -357,6 +414,9 @@ def osv_rows(adv: dict) -> list[dict]:
         cves = [None]
     sev = (adv.get("database_specific") or {}).get("severity")
     modified = str(adv.get("modified") or "")[:40] or None
+    cvss = osv_cvss(adv)
+    summary = (str(adv.get("summary") or "").strip() or
+               (str(adv.get("details") or "").strip().splitlines() or [""])[0])[:255] or None
     rows: list[dict] = []
 
     def emit(eco: str, pkg: str, rtype: str, intro, fixed, last) -> None:
@@ -364,7 +424,7 @@ def osv_rows(adv: dict) -> list[dict]:
             rows.append({"vuln_id": vid, "cve_id": c, "ecosystem": eco[:64], "package": pkg[:255],
                          "range_type": rtype[:16], "introduced": intro, "fixed": fixed,
                          "last_affected": last, "severity": (str(sev)[:32] if sev else None),
-                         "modified": modified})
+                         "modified": modified, "cvss": cvss, "summary": summary})
 
     for aff in adv.get("affected") or []:
         pkg = aff.get("package") or {}
@@ -534,15 +594,17 @@ def iter_oval(path: Path, stats: dict) -> Iterator[dict]:
         d = state["def"]
         if local == "definition":
             state["def"] = {"id": str(attrs.get("id", ""))[:128], "cves": [], "platforms": [],
-                            "severity": None, "pkgs": []}
+                            "severity": None, "pkgs": [], "cvss": {}, "title": None}
         elif d is None:
             return
         elif local == "reference" and attrs.get("source", "").upper() == "CVE":
             c = _cve(attrs.get("ref_id"))
             if c and c not in d["cves"]:
                 d["cves"].append(c)
-        elif local in ("cve", "platform", "severity"):
+        elif local in ("cve", "platform", "severity", "title"):
             state["tag"], state["text"] = local, []
+            if local == "cve":
+                state["cve_score"] = lead_float(attrs.get("cvss3") or attrs.get("cvss_score"))
         elif local == "criterion":
             hit = oval_criterion(attrs.get("comment", ""))
             if hit and hit not in d["pkgs"]:
@@ -563,6 +625,10 @@ def iter_oval(path: Path, stats: dict) -> Iterator[dict]:
                 c = _cve(val)
                 if c and c not in d["cves"]:
                     d["cves"].append(c)
+                if c and state.get("cve_score") is not None:
+                    d["cvss"][c] = state["cve_score"]
+            elif local == "title" and val and d["title"] is None:
+                d["title"] = val[:255]
             elif local == "platform" and val:
                 d["platforms"].append(val)
             elif local == "severity" and val:
@@ -574,7 +640,8 @@ def iter_oval(path: Path, stats: dict) -> Iterator[dict]:
             for pkg, ver in d["pkgs"]:
                 for c in d["cves"] or [None]:
                     out.append({"definition_id": d["id"], "cve_id": c, "platform": platform,
-                                "package": pkg[:255], "fixed_version": ver[:255], "severity": d["severity"]})
+                                "package": pkg[:255], "fixed_version": ver[:255], "severity": d["severity"],
+                                "cvss": d["cvss"].get(c) if c else None, "summary": d["title"]})
             state["def"] = None
 
     parser.StartElementHandler = start

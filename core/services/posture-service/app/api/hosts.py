@@ -14,6 +14,7 @@ from ..database import get_session
 from ..deps import Caller, get_caller, require_admin
 from ..models import (
     FeedSnapshot,
+    PostureFinding,
     PostureHost,
     PostureInstalledPackage,
     PosturePendingUpdate,
@@ -188,6 +189,12 @@ async def summary(caller: Caller = Depends(get_caller), session: AsyncSession = 
     if active is not None and active.generated_at is not None:
         gen = active.generated_at if active.generated_at.tzinfo else active.generated_at.replace(tzinfo=UTC)
         age = max(0, (datetime.now(UTC) - gen).days)
+    open_q = [PostureFinding.status == "open"]
+    if not caller.sees_all_hosts:
+        open_q.append(PostureFinding.host_id.in_([h["id"] for h in hosts] or [""]))
+    findings_open = (await session.execute(select(func.count()).select_from(PostureFinding).where(*open_q))).scalar_one()
+    kev_open = (await session.execute(select(func.count()).select_from(PostureFinding)
+                                      .where(*open_q, PostureFinding.kev.is_(True)))).scalar_one()
     return {
         "hosts_total": len(hosts),
         "hosts_reporting": reporting,
@@ -197,4 +204,7 @@ async def summary(caller: Caller = Depends(get_caller), session: AsyncSession = 
         "feed_age_days": age,
         # Additive: how many feed snapshots exist at all.
         "feed_snapshots": (await session.execute(select(func.count()).select_from(FeedSnapshot))).scalar_one(),
+        # M2
+        "findings_open": findings_open,
+        "kev_open": kev_open,
     }

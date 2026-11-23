@@ -543,6 +543,7 @@ async def verify_token(payload: TokenVerifyRequest, session: AsyncSession = Depe
 
         return TokenVerifyResponse(
             valid=True, user_id=user.id, username=user.username, role=role_name, scopes=token.scopes,
+            token_id=token.id, token_name=token.name,
         )
 
     return TokenVerifyResponse(valid=False)
@@ -599,3 +600,12 @@ async def internal_get_zabbix_module(session: AsyncSession = Depends(get_session
     row = await session.get(ZASetting, ZABBIX_MODULE_KEY)
     v = dict(row.value) if row and isinstance(row.value, dict) else {}
     return {**_ZABBIX_MODULE_DEFAULTS, **v}
+
+
+@router.get("/settings/mcp")
+async def internal_get_mcp(session: AsyncSession = Depends(get_session)):
+    """MCP (AI-agent) settings for api-gateway's short-lived cache — normalised, so
+    a missing row returns the defaults (today's behaviour)."""
+    from .settings import get_mcp_value
+
+    return await get_mcp_value(session)

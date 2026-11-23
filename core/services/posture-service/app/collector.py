@@ -108,7 +108,8 @@ async def ingest(host_id: str, run_id: str, run: dict) -> None:
             await session.execute(delete(PostureInstalledPackage).where(PostureInstalledPackage.host_id == host_id))
             await session.execute(delete(PosturePendingUpdate).where(PosturePendingUpdate.host_id == host_id))
             pkgs = [{"host_id": host_id, "name": p["name"][:255], "version": p["version"][:255],
-                     "arch": p["arch"][:32]} for p in parsed["installed"]]
+                     "arch": p["arch"][:32], "source": (p.get("source") or "")[:255],
+                     "source_version": (p.get("source_version") or "")[:255]} for p in parsed["installed"]]
             for i in range(0, len(pkgs), 2000):
                 await session.execute(insert(PostureInstalledPackage), pkgs[i:i + 2000])
             pend = [{"host_id": host_id, "name": p["name"][:255], "arch": p["arch"][:32],
@@ -125,6 +126,10 @@ async def ingest(host_id: str, run_id: str, run: dict) -> None:
                      "security": parsed["security_updates"]} if parsed else {"error": (error or "")[:300]})},
         result="success" if parsed else "failure",
     )
+    if parsed:
+        # M2: every successful facts collection is followed by a native match.
+        from . import scanning
+        scanning.enqueue_native([host_id], requested_by=None, requested_by_name="facts collection")
 
 
 async def poll_once() -> int:

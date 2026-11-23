@@ -20,6 +20,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
@@ -78,6 +79,10 @@ class PostureInstalledPackage(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     arch: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    # Debian family: the source package and its version (advisories name
+    # source packages). Empty on RPM hosts and on facts from before M2.
+    source: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    source_version: Mapped[str] = mapped_column(String(255), nullable=False, default="")
 
 
 class PosturePendingUpdate(Base):
@@ -138,6 +143,8 @@ class FeedOsv(Base):
     last_affected: Mapped[str | None] = mapped_column(String(255), nullable=True)
     severity: Mapped[str | None] = mapped_column(String(32), nullable=True)
     modified: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    cvss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class FeedEpss(Base):
@@ -180,3 +187,121 @@ class FeedOval(Base):
     package: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     fixed_version: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     severity: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    cvss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+# ── M2: findings ─────────────────────────────────────────────────────────────
+
+class PostureFinding(Base):
+    """One vulnerability on one host. Dedupe key (host_id, cve_id, package)."""
+
+    __tablename__ = "posture_findings"
+    __table_args__ = (
+        UniqueConstraint("host_id", "cve_id", "package", name="uq_posture_finding_key"),
+        Index("ix_posture_findings_status_risk", "status", "risk_score"),
+        Index("ix_posture_findings_host_status", "host_id", "status"),
+        Index("ix_posture_findings_cve", "cve_id"),
+        Index("ix_posture_findings_last_seen", "last_seen"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    host_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    cve_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    package: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    installed_version: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    fixed_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    cvss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    epss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    epss_percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
+    kev: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    risk_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sources: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    references: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # open | fixed | accepted
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fixed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PostureFindingEvent(Base):
+    """A finding's history: detected, reported by another scanner, fixed,
+    reopened, status changes. Written on changes only, never per sighting."""
+
+    __tablename__ = "posture_finding_events"
+    __table_args__ = (Index("ix_posture_finding_events_finding", "finding_id", "at"),)
+
+    id: Mapped[int] = mapped_column(_BigId, primary_key=True, autoincrement=True)
+    finding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    event: Mapped[str] = mapped_column(String(64), nullable=False)
+    by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class PostureScan(Base):
+    """One scanner run: a native match of one host, or one imported file."""
+
+    __tablename__ = "posture_scans"
+    __table_args__ = (Index("ix_posture_scans_scanner_started", "scanner", "started_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    scanner: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="import")  # import | native
+    host_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # running | ok | failed | skipped
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    findings_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    findings_updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    findings_fixed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unmatched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requested_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    requested_by_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+class PostureUnmatched(Base):
+    """Results for a host posture could not correlate to inventory. Kept until
+    an admin assigns them to a host; never dropped."""
+
+    __tablename__ = "posture_unmatched"
+    __table_args__ = (Index("ix_posture_unmatched_status_received", "status", "received_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    scan_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scanner: Mapped[str] = mapped_column(String(64), nullable=False)
+    reported_host: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    reported_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reported_ref: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    cve_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # pending | assigned
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    assigned_host_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    assigned_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class PostureUnmatchedItem(Base):
+    __tablename__ = "posture_unmatched_items"
+    __table_args__ = (Index("ix_posture_unmatched_items_parent", "unmatched_id"),)
+
+    id: Mapped[int] = mapped_column(_BigId, primary_key=True, autoincrement=True)
+    unmatched_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    cve_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    package: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    installed_version: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    fixed_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    cvss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    references: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
