@@ -61,10 +61,11 @@ def rate_key(identity: dict) -> str:
 
 UNAVAILABLE: Decision = (503, "MCP settings are temporarily unavailable; try again shortly")
 
-# Other ways a token could get a playbook run started: re-running a past run
-# (any template) and creating/editing a schedule (runs later as the owner).
-_RERUN_RE = re.compile(r"job-runs/[^/]+/rerun/?")
-_SCHEDULE_RE = re.compile(r"schedules(?:/[^/]+)?/?")
+# Other ways a token could get a playbook run started: re-running or approving
+# a run (any template), firing a Zabbix trigger by hand, and creating/editing a
+# schedule or a trigger binding (both run playbooks later as the owner).
+_RUN_ACTION_RE = re.compile(r"job-runs/[^/]+/(?:rerun|approve)/?|triggers/manual/?")
+_DEFERRED_RE = re.compile(r"(?:schedules|trigger-bindings)(?:/[^/]+)?/?")
 
 
 async def check_mcp_call(identity: dict, method: str, settings: dict | None, limiter: Limiter) -> Decision:
@@ -87,15 +88,15 @@ def starts_run(method: str, path: str) -> bool:
     m, p = method.upper(), path.strip("/")
     if run_template_id(m, p) is not None:
         return True
-    if m == "POST" and _RERUN_RE.fullmatch(p):
+    if m == "POST" and _RUN_ACTION_RE.fullmatch(p):
         return True
-    return m in ("POST", "PUT", "PATCH") and bool(_SCHEDULE_RE.fullmatch(p))
+    return m in ("POST", "PUT", "PATCH") and bool(_DEFERRED_RE.fullmatch(p))
 
 
 def check_run_allowlist(identity: dict, method: str, path: str, settings: dict | None) -> Decision:
     """Any PAT starting a playbook run -> refused unless the template is on the
     agent list (no list configured = every enabled template, today's behaviour).
-    Re-runs and schedule writes can't be tied to one listed template here, so
+    Re-runs, approvals, manual triggers, schedule and binding writes can't be tied to one listed template here, so
     while a list is set they are refused for tokens. settings None = fail closed."""
     if not identity.get("is_pat") or not starts_run(method, path):
         return None
@@ -108,7 +109,7 @@ def check_run_allowlist(identity: dict, method: str, path: str, settings: dict |
         return 403, "this playbook is not on the list agents may run (MCP settings)"
     if normalize(settings)["agent_template_ids"] is None:
         return None
-    return 403, "agent tokens cannot re-run or schedule playbooks while a playbook list is set (MCP settings)"
+    return 403, "agent tokens cannot re-run, approve, trigger or schedule playbooks while a playbook list is set (MCP settings)"
 
 
 def audit_entry(identity: dict, tool: str, method: str, path: str, status: int,

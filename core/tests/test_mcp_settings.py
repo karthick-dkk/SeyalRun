@@ -425,7 +425,9 @@ def test_unloaded_settings_fail_closed():
 
 
 @pytest.mark.parametrize("method,path", [
-    ("POST", "job-runs/r1/rerun"), ("POST", "schedules"), ("PUT", "schedules/s1"),
+    ("POST", "job-runs/r1/rerun"), ("POST", "job-runs/r1/approve"), ("POST", "triggers/manual"),
+    ("POST", "schedules"), ("PUT", "schedules/s1"),
+    ("POST", "trigger-bindings"), ("PUT", "trigger-bindings/b1"),
 ])
 def test_rerun_and_schedules_held_to_the_list(method, path):
     listed = mcpsettings.normalize({"agent_template_ids": ["abc"]})
@@ -440,3 +442,8 @@ def test_listed_template_still_runs():
     listed = mcpsettings.normalize({"agent_template_ids": ["abc"]})
     assert gate.check_run_allowlist(_PAT, "POST", "job-templates/abc/run", listed) is None
     assert gate.check_run_allowlist(_PAT, "POST", "job-templates/xyz/run", listed)[0] == 403
+
+
+def test_reject_and_reads_are_not_run_starts():
+    assert not gate.starts_run("POST", "job-runs/r1/reject")
+    assert not gate.starts_run("GET", "trigger-bindings")
