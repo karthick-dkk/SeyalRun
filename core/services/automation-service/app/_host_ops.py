@@ -18,6 +18,8 @@ OP_TOKEN_PARAM = "_op_token"
 
 # Runs of these are never replayed by the generic re-run button: a re-run skips
 # the rollout's approval, window and checks.
+# The template a rollout's hook run was created from; approving another one is refused.
+HOOK_TEMPLATE_PARAM = "_hook_template_updated_at"
 # Set on a run by the approve endpoint only; a continuation of the same operation keeps it.
 APPROVED_BY_PARAM = "_approved_by"
 NO_RERUN_ACTIONS = frozenset({PACKAGE_ACTION, REBOOT_ACTION})

@@ -284,3 +284,20 @@ def test_per_run_approval_of_a_hook_is_barred_to_its_editors(svc, monkeypatch):
             await call("POST", f"/job-runs/{r['run_id']}/approve", uid=uid, code=403)
         await call("POST", f"/job-runs/{r['run_id']}/approve", uid="bob", code=202)
     run_case(svc, monkeypatch, body)
+
+
+def test_hook_edited_while_it_waits_cannot_be_approved(svc, monkeypatch):
+    """The editor is not on the run's list: the list was made before the edit."""
+    async def body(call, w):
+        t = await template(call, script_content="true")
+        got = await call("GET", f"/internal/posture/hook-templates/{t['id']}")
+        r = await call("POST", "/internal/posture/hook-runs", code=202, job_template_id=t["id"], expect_updated_at=got["updated_at"],
+                       host_id=H2, requested_by="erin")
+        await call("PUT", f"/job-templates/{t['id']}", uid="mallory", code=200, script_content="evil")
+        for uid in ("mallory", "bob"):
+            await call("POST", f"/job-runs/{r['run_id']}/approve", uid=uid, code=409)
+        await asyncio.sleep(0.02)
+        assert not w.executed and not any(a["action"] == "job.approve" for a in w.audit)
+        assert (await get(svc, r["run_id"])).status == "pending_approval"
+        await call("POST", f"/job-runs/{r['run_id']}/reject", uid="bob", code=200, reason="changed")
+    run_case(svc, monkeypatch, body)

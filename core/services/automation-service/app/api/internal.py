@@ -19,6 +19,7 @@ from app._params import ParamNotAllowedError, filter_caller_params, template_cod
 from app import audit
 from app._host_ops import (
     APPROVED_BY_PARAM,
+    HOOK_TEMPLATE_PARAM,
     HOST_OP_PARAM,
     NO_RERUN_ACTIONS,
     OP_TOKEN_PARAM,
@@ -412,7 +413,7 @@ async def create_hook_run(payload: HookRunCreate, request: Request, session: Asy
                                     action=f"hook:{tmpl.action_type}", run_id=run_id)
     params = {**(tmpl.default_params or {}), **template_code_params(tmpl), "run_local": False,
               "_target_host_ids": [payload.host_id], "_credential_id": tmpl.credential_id, "_host_credentials": {},
-              "_max_parallel": 1, "_run_id": run_id,
+              "_max_parallel": 1, "_run_id": run_id, HOOK_TEMPLATE_PARAM: payload.expect_updated_at,
               ACCOUNTABLE_PARAM: accountable_ids(
                   payload.requested_by, *payload.accountable_user_ids, tmpl.created_by, *(tmpl.editor_ids or []),
                   *(payload.approval.accountable_user_ids if payload.approval else []))}

@@ -222,7 +222,7 @@ def test_boot_marker_survives_hostile_snapshots():
 def _sync_keys(tmp_path: Path, files: dict[str, str]) -> subprocess.CompletedProcess:
     """Run the worker's sync_rpm_keys against a fake rpm whose keyring is a text file.
     A key file's content is the list of keys in it."""
-    fn = re.search(r"^sync_rpm_keys\(\) \{.*?^\}$", WORKER, re.S | re.M).group(0)
+    fn = re.search(r"^rpm_keys\(\) \{.*?^sync_rpm_keys\(\) \{.*?^\}$", WORKER, re.S | re.M).group(0)
     asc = tmp_path / "asc"
     shutil.rmtree(asc, ignore_errors=True)
     asc.mkdir()
@@ -236,8 +236,9 @@ def _sync_keys(tmp_path: Path, files: dict[str, str]) -> subprocess.CompletedPro
 RING={ring}
 rpm() {{
   case "$1" in
-    -q) if [ -s "$RING" ]; then cat "$RING"; else echo "package gpg-pubkey is not installed"; return 1; fi ;;
-    --import) while IFS= read -r x; do grep -qxF -- "gpg-pubkey-$x" "$RING" || echo "gpg-pubkey-$x" >> "$RING"; done < "$2" ;;
+    -qa) [ -z "${{DBFAIL:-}}" ] || return 0; echo bash-5.1.8-9.el9; cat "$RING" ;;      # as real rpm: empty, exit 0
+    --import) [ -z "${{KILL:-}}" ] || {{ cat "$2" | sed 's/^/gpg-pubkey-/' >> "$RING"; exit 137; }}
+      while IFS= read -r x; do grep -qxF -- "gpg-pubkey-$x" "$RING" || echo "gpg-pubkey-$x" >> "$RING"; done < "$2"; [ -z "${{HALF:-}}" ] || return 1 ;;
     -e) [ -z "${{FAIL:-}}" ] || return 1; grep -vxF -- "$3" "$RING" > "$RING.n"; mv "$RING.n" "$RING" ;;
   esac
 }}
@@ -284,3 +285,37 @@ def test_key_that_cannot_be_removed_is_an_error_and_is_tried_again(tmp_path, mon
     assert r.returncode != 0 and "could not remove the signing key" in r.stdout
     monkeypatch.delenv("FAIL")
     assert _sync_keys(tmp_path, {}).returncode == 0 and not _ring(tmp_path)
+
+
+def test_interrupted_import_is_still_revoked_later(tmp_path, monkeypatch):
+    (tmp_path / "ring").write_text("gpg-pubkey-vendor-1\n")
+    monkeypatch.setenv("KILL", "1")                 # killed between the import and the record
+    assert _sync_keys(tmp_path, {"seyalrun-a.asc": "k-1\n"}).returncode == 137
+    assert "gpg-pubkey-k-1" in _ring(tmp_path)
+    monkeypatch.delenv("KILL")
+    assert _sync_keys(tmp_path, {}).returncode == 0
+    assert _ring(tmp_path) == {"gpg-pubkey-vendor-1"}
+
+
+def test_half_failed_import_is_recorded_and_revoked(tmp_path, monkeypatch):
+    monkeypatch.setenv("HALF", "1")                 # rpm imported some keys and returned an error
+    r = _sync_keys(tmp_path, {"seyalrun-a.asc": "k-1\n"})
+    assert r.returncode != 0 and "could not be imported" in r.stdout
+    monkeypatch.delenv("HALF")
+    _sync_keys(tmp_path, {})
+    assert not _ring(tmp_path)
+
+
+def test_unreadable_key_list_never_claims_the_hosts_own_keys(tmp_path, monkeypatch):
+    (tmp_path / "ring").write_text("gpg-pubkey-vendor-1\n")
+    monkeypatch.setenv("DBFAIL", "1")
+    assert _sync_keys(tmp_path, {"seyalrun-a.asc": "k-1\n"}).returncode != 0
+    monkeypatch.delenv("DBFAIL")
+    _sync_keys(tmp_path, {"seyalrun-a.asc": "k-1\n"})
+    _sync_keys(tmp_path, {})
+    assert _ring(tmp_path) == {"gpg-pubkey-vendor-1"}
+
+
+def test_removed_mirror_files_go_before_the_key_sync():
+    body = WORKER[WORKER.index("  repo_apply)"):]
+    assert body.index('rm -f -- "$f"') < body.index("sync_rpm_keys")

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit
 from app._attribution import ACCOUNTABLE_PARAM, actor_user_id, is_requester
-from app._host_ops import APPROVED_BY_PARAM, NO_RERUN_ACTIONS
+from app._host_ops import APPROVED_BY_PARAM, HOOK_TEMPLATE_PARAM, NO_RERUN_ACTIONS
 from app._posture import HOST_OP_TEMPLATES, mutating_host_ops
 from app._params import template_code_params
 from app.database import get_session, SessionLocal
@@ -179,6 +179,12 @@ async def approve_run(
     if is_requester(run.triggered_by, user_id, accountable):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="the requester, or whoever configured the schedule/trigger that started it, cannot approve this run")
+
+    # The script is read from the template now. A hook edited while it waited is not the
+    # one that was planned, and its new editor is not on the run's list of barred people.
+    planned = (run.params or {}).get(HOOK_TEMPLATE_PARAM)
+    if planned and planned != (tmpl.updated_at.isoformat() if tmpl.updated_at else ""):
+        raise HTTPException(status_code=409, detail="the hook template changed after this run was requested; reject it")
 
     if tmpl.action_type in HOST_OP_TEMPLATES:
         # It was free when the run was requested; a rollout may be working on it now.

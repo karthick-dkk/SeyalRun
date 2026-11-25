@@ -201,18 +201,32 @@ guard_removal() {
 # apt scopes a key to its mirror (Signed-By). rpm has one key list for every repo, so a
 # mirror's key must leave it together with the mirror. Only keys imported here are ever
 # removed: one the host already trusted is not recorded.
+# What an import adds is found by comparing the key list, so the list before it is kept on
+# disk until the result is recorded: an interrupted import is accounted for next time.
+rpm_keys() {
+  # rpm prints nothing and exits 0 for a database it cannot read. An empty list would make
+  # every key the host trusts look imported here, so the list must show bash, which runs this.
+  local o; o="$(rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}\n' 2>/dev/null)" && printf '%s\n' "$o" | grep -q '^bash-[0-9]' ||
+    { echo "the rpm database could not be read"; return 1; }
+  printf '%s\n' "$o" | grep '^gpg-pubkey-' | sort > "$1"; return 0
+}
 sync_rpm_keys() {       # STATE_DIR WANTED_FILES
-  local state="$1" f s k wanted=""
+  local state="$1" f s k r wanted=""
   mkdir -p "$state" && chmod 700 "$state" || return 1
   while IFS= read -r f; do
     case "$f" in *.asc) s="$(sha256sum < "$f" | cut -d' ' -f1)"; [ -n "$s" ] || return 1; wanted="$wanted $s" ;; esac
   done < "$2"
+  record() { rpm_keys "$state/.after" && comm -13 "$state/.before.$1" "$state/.after" >> "$state/$1" && rm -f "$state/.before.$1" "$state/.after"; }
+  for f in "$state"/.before.*; do
+    [ -f "$f" ] && { record "${f##*/.before.}" || return 1; }
+  done
   for f in "$state"/*; do
     [ -f "$f" ] || continue
     case " $wanted " in *" $(basename "$f") "*) continue ;; esac
     while IFS= read -r k; do
       case "$k" in gpg-pubkey-*) ;; *) continue ;; esac
-      rpm -q gpg-pubkey 2>/dev/null | grep -qxF -- "$k" || continue
+      rpm_keys "$state/.now" || return 1
+      grep -qxF -- "$k" "$state/.now" || continue
       echo "no longer trusting $k"
       rpm -e --allmatches "$k" || { echo "could not remove the signing key $k of a removed mirror"; return 1; }
     done < "$f"
@@ -222,12 +236,12 @@ sync_rpm_keys() {       # STATE_DIR WANTED_FILES
   while IFS= read -r f; do
     case "$f" in *.asc) ;; *) continue ;; esac
     s="$(sha256sum < "$f" | cut -d' ' -f1)"
-    rpm -q gpg-pubkey 2>/dev/null | sort > "$state/.before"
-    rpm --import "$f" || return 1
-    rpm -q gpg-pubkey 2>/dev/null | sort > "$state/.after"
-    touch "$state/$s" && comm -13 "$state/.before" "$state/.after" >> "$state/$s" || return 1
+    rpm_keys "$state/.now" && mv -f "$state/.now" "$state/.before.$s" || return 1
+    rpm --import "$f"; r=$?
+    record "$s" || return 1
+    [ "$r" = 0 ] || { echo "the signing key $(basename "$f") could not be imported"; return 1; }
   done < "$2"
-  rm -f "$state/.before" "$state/.after"
+  rm -f "$state/.now"
 }
 
 snap > "$dir/before"
@@ -334,10 +348,11 @@ case "$op" in
       echo "$d/$f" >> "$want"
     done
     chmod 755 "$kdir"
-    if [ "$pm" != apt ]; then sync_rpm_keys "$(dirname "$base")/rpm-keys" "$want" || finish 65; fi
     for f in "$rdir"/$pat "$kdir"/seyalrun-*.asc; do
       [ -e "$f" ] && ! grep -qxF -- "$f" "$want" && { echo "removing $f"; rm -f -- "$f"; }
     done
+    # After the files: a key that cannot be removed must not keep its mirror in use.
+    if [ "$pm" != apt ]; then sync_rpm_keys "$(dirname "$base")/rpm-keys" "$want" || finish 65; fi
     if [ "${#items[@]}" -gt 0 ]; then
       mode=managed
       case "$pm" in
