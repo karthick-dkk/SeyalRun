@@ -207,12 +207,14 @@ async def hook_template(template_id: str) -> dict:
                        f"/api/v1/internal/posture/hook-templates/{template_id}")
 
 
-async def hook_run(*, template_id: str, expect_updated_at: str, host_id: str, requested_by: str, approval: dict | None) -> dict:
+async def hook_run(*, template_id: str, expect_updated_at: str, host_id: str, requested_by: str, approval: dict | None,
+                   accountable: list[str] | None = None) -> dict:
     s = get_settings()
     return await _call("POST", s.automation_service_url, "automation-service", "/api/v1/internal/posture/hook-runs",
                        subject=requested_by, json_body={
                            "job_template_id": template_id, "expect_updated_at": expect_updated_at,
-                           "host_id": host_id, "requested_by": requested_by, "approval": approval})
+                           "host_id": host_id, "requested_by": requested_by, "approval": approval,
+                           "accountable_user_ids": accountable or []})
 
 
 async def notify(*, user_id: str | None, severity: str, title: str, message: str = "", source_id: str | None = None) -> None:

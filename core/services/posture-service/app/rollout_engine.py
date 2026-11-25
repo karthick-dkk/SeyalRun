@@ -157,7 +157,7 @@ async def _job(session, rh: RolloutHost, key: str, start, *, once: bool = False)
 async def _host_job(session, r: PatchRollout, rh: RolloutHost, key: str, action: str, op: str, args: dict) -> dict | None:
     return await _job(session, rh, key, lambda: clients.host_op_run(
         action=action, op=op, args=args, host_id=rh.host_id, token=_token(rh, key),
-        requested_by=r.created_by, approval=approval_of(r)))
+        requested_by=r.created_by, approval=approval_of(r), accountable=list(r.accountable_ids or [])))
 
 
 def _tail(run: dict, n: int = 3) -> str:
@@ -286,7 +286,7 @@ async def _hook(session, r, rh, which: str):
         return NEXT
     run = await _job(session, rh, which, lambda: clients.hook_run(
         template_id=hook["id"], expect_updated_at=hook["updated_at"], host_id=rh.host_id,
-        requested_by=r.created_by, approval=approval_of(r)), once=True)
+        requested_by=r.created_by, approval=approval_of(r), accountable=list(r.accountable_ids or [])), once=True)
     if run is None:
         return WAIT
     if run["status"] != "success":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 
@@ -26,7 +27,7 @@ class _Tail:
     """Counts the worker's log lines so a reconnect continues where it stopped."""
 
     def __init__(self, publish: Callable, label: str):
-        self.publish, self.label, self.seen, self.lines = publish, label, 0, []
+        self.publish, self.label, self.seen, self.lines = publish, label, 0, deque(maxlen=2000)
         self.in_log = False
 
     async def __call__(self, line: str) -> None:
@@ -54,7 +55,7 @@ async def run_detached(session: HostSession, worker: str, token: str, argv: list
                 raise HostSessionError(f"cannot connect: {type(exc).__name__}: {exc}") from exc
             rc = None
         if rc is not None and rc >= 0:
-            return rc, tail.lines
+            return rc, list(tail.lines)
         await publish(f"[host:{label}] connection lost; the operation continues on the host, "
                       f"reconnecting ({attempt + 1}/{MAX_RECONNECTS})")
         await asyncio.sleep(RECONNECT_DELAY)

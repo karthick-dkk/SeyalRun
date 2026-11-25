@@ -378,6 +378,7 @@ class HookRunCreate(BaseModel):
     requested_by: str = Field(min_length=1, max_length=36)
     # None only for a rollout that needed no approval; a production host is then gated per run.
     approval: HostOpApproval | None = None
+    accountable_user_ids: list[str] = Field(default_factory=list, max_length=200)
 
 
 _HOOK_ACTIONS = frozenset({"bash_script", "ansible_playbook"})
@@ -413,7 +414,8 @@ async def create_hook_run(payload: HookRunCreate, request: Request, session: Asy
               "_target_host_ids": [payload.host_id], "_credential_id": tmpl.credential_id, "_host_credentials": {},
               "_max_parallel": 1, "_run_id": run_id,
               ACCOUNTABLE_PARAM: accountable_ids(
-                  payload.requested_by, *(payload.approval.accountable_user_ids if payload.approval else []))}
+                  payload.requested_by, *payload.accountable_user_ids, tmpl.created_by, *(tmpl.editor_ids or []),
+                  *(payload.approval.accountable_user_ids if payload.approval else []))}
     triggered_by = f"user:{payload.requested_by}"
     session.add(ZAJobRun(id=run_id, job_template_id=tmpl.id, triggered_by=triggered_by,
                          status="pending_approval" if gated else "pending", params=params, output_lines=[]))

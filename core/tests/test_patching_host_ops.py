@@ -180,3 +180,107 @@ def test_snapshot_never_changes_the_host():
     s = (EXEC / "host_snapshot.sh").read_text()
     code = "\n".join(ln for ln in s.splitlines() if not ln.lstrip().startswith("#"))
     assert not re.search(r"\b(rm|mv|sudo|apt-get|dnf|yum|reboot|shutdown|systemctl (start|stop|restart))\b", code)
+
+
+# ── output a host controls ───────────────────────────────────────────────────
+
+def _marker_in():
+    """marker_in alone: its module needs asyncssh, which this suite does not install."""
+    import base64
+    import zlib
+
+    tree = ast.parse((EXEC / "host_reboot.py").read_text())
+    keep = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name == "marker_in")
+            or (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "MAX_SNAPSHOT")]
+    ns = {"base64": base64, "zlib": zlib}
+    exec(compile(ast.Module(keep, []), "host_reboot", "exec"), ns)  # noqa: S102
+    return ns["marker_in"], ns["MAX_SNAPSHOT"]
+
+
+def _snap(raw: bytes, gz=True) -> list[str]:
+    import base64
+
+    return ["noise", "SEYALRUN-SNAP-BEGIN v1" + (" gz" if gz else " raw"), base64.b64encode(raw).decode(), "SEYALRUN-SNAP-END"]
+
+
+def test_boot_marker_survives_hostile_snapshots():
+    import gzip
+
+    marker_in, limit = _marker_in()
+    good = b"V\t1\nB\tboot-1.22\nZ\tend\n"
+    assert marker_in(_snap(gzip.compress(good))) == marker_in(_snap(good, gz=False)) == "boot-1.22"
+    bomb = gzip.compress(good[:-7] + b"\0" * (limit * 8) + b"\nZ\tend\n")
+    assert len(bomb) < limit and marker_in(_snap(bomb)) == ""
+    packed = gzip.compress(good)
+    assert marker_in(_snap(packed[:10] + b"\xff" * 8)) == ""       # zlib.error
+    assert marker_in(_snap(packed[:-9])) == ""                      # cut short
+    assert marker_in(["SEYALRUN-SNAP-BEGIN v1 gz", "!!!"]) == ""
+
+
+# ── signing keys on rpm hosts ────────────────────────────────────────────────
+
+def _sync_keys(tmp_path: Path, files: dict[str, str]) -> subprocess.CompletedProcess:
+    """Run the worker's sync_rpm_keys against a fake rpm whose keyring is a text file.
+    A key file's content is the list of keys in it."""
+    fn = re.search(r"^sync_rpm_keys\(\) \{.*?^\}$", WORKER, re.S | re.M).group(0)
+    asc = tmp_path / "asc"
+    shutil.rmtree(asc, ignore_errors=True)
+    asc.mkdir()
+    for name, body in files.items():
+        (asc / name).write_text(body)
+    want = tmp_path / "want"
+    want.write_text("".join(f"{asc / n}\n" for n in files) + f"{asc}/seyalrun-x.repo\n")
+    ring = tmp_path / "ring"
+    ring.touch()
+    stub = f"""
+RING={ring}
+rpm() {{
+  case "$1" in
+    -q) if [ -s "$RING" ]; then cat "$RING"; else echo "package gpg-pubkey is not installed"; return 1; fi ;;
+    --import) while IFS= read -r x; do grep -qxF -- "gpg-pubkey-$x" "$RING" || echo "gpg-pubkey-$x" >> "$RING"; done < "$2" ;;
+    -e) [ -z "${{FAIL:-}}" ] || return 1; grep -vxF -- "$3" "$RING" > "$RING.n"; mv "$RING.n" "$RING" ;;
+  esac
+}}
+"""
+    return subprocess.run(["bash", "-c", f"{stub}\n{fn}\nsync_rpm_keys {tmp_path}/state {want}"],
+                          capture_output=True, text=True, env={**os.environ})
+
+
+def _ring(tmp_path: Path) -> set[str]:
+    return set((tmp_path / "ring").read_text().split())
+
+
+def test_key_of_a_removed_mirror_is_no_longer_trusted(tmp_path):
+    (tmp_path / "ring").write_text("gpg-pubkey-vendor-1\n")
+    assert _sync_keys(tmp_path, {"seyalrun-a.asc": "aaa-1\n", "seyalrun-b.asc": "bbb-1\n"}).returncode == 0
+    assert _ring(tmp_path) == {"gpg-pubkey-vendor-1", "gpg-pubkey-aaa-1", "gpg-pubkey-bbb-1"}
+    _sync_keys(tmp_path, {"seyalrun-b.asc": "bbb-1\n"})
+    assert _ring(tmp_path) == {"gpg-pubkey-vendor-1", "gpg-pubkey-bbb-1"}
+    _sync_keys(tmp_path, {"seyalrun-b.asc": "bbb-2\n"})              # rotated under the same file name
+    assert _ring(tmp_path) == {"gpg-pubkey-vendor-1", "gpg-pubkey-bbb-2"}
+    assert _sync_keys(tmp_path, {}).returncode == 0                  # the last mirror
+    assert _ring(tmp_path) == {"gpg-pubkey-vendor-1"}
+
+
+def test_key_the_host_already_trusted_is_left_alone(tmp_path):
+    (tmp_path / "ring").write_text("gpg-pubkey-vendor-1\n")
+    _sync_keys(tmp_path, {"seyalrun-a.asc": "vendor-1\n"})
+    _sync_keys(tmp_path, {})
+    assert _ring(tmp_path) == {"gpg-pubkey-vendor-1"}
+
+
+def test_key_shared_by_two_mirrors_stays_until_the_last_goes(tmp_path):
+    _sync_keys(tmp_path, {"seyalrun-a.asc": "k-1\n", "seyalrun-b.asc": "k-1\n\n"})     # same key, other bytes
+    _sync_keys(tmp_path, {"seyalrun-b.asc": "k-1\n\n"})
+    assert "gpg-pubkey-k-1" in _ring(tmp_path)
+    _sync_keys(tmp_path, {})
+    assert "gpg-pubkey-k-1" not in _ring(tmp_path)
+
+
+def test_key_that_cannot_be_removed_is_an_error_and_is_tried_again(tmp_path, monkeypatch):
+    _sync_keys(tmp_path, {"seyalrun-a.asc": "k-1\n"})
+    monkeypatch.setenv("FAIL", "1")
+    r = _sync_keys(tmp_path, {})
+    assert r.returncode != 0 and "could not remove the signing key" in r.stdout
+    monkeypatch.delenv("FAIL")
+    assert _sync_keys(tmp_path, {}).returncode == 0 and not _ring(tmp_path)

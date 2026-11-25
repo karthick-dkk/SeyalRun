@@ -270,3 +270,17 @@ def test_reconcile_works_before_the_new_migration_is_applied(svc, monkeypatch):
             assert await svc.posture.reconcile_interrupted(s) == 1
         assert (await get(svc, a["run_id"])).status == "error"
     run_case(svc, monkeypatch, body)
+
+
+def test_per_run_approval_of_a_hook_is_barred_to_its_editors(svc, monkeypatch):
+    async def body(call, w):
+        t = await template(call, script_content="true")
+        await call("PUT", f"/job-templates/{t['id']}", uid="carol", code=200, description="d")
+        got = await call("GET", f"/internal/posture/hook-templates/{t['id']}")
+        r = await call("POST", "/internal/posture/hook-runs", code=202, job_template_id=t["id"], expect_updated_at=got["updated_at"],
+                       host_id=H2, requested_by="erin", accountable_user_ids=["frank"])
+        assert r["status"] == "pending_approval"
+        for uid in ("erin", "frank", "alice", "carol"):
+            await call("POST", f"/job-runs/{r['run_id']}/approve", uid=uid, code=403)
+        await call("POST", f"/job-runs/{r['run_id']}/approve", uid="bob", code=202)
+    run_case(svc, monkeypatch, body)

@@ -100,7 +100,8 @@ class World:
             self._finish(rid, payload("PKG", ["M\tapt"]))
         return {"run_id": rid, "status": "pending"}
 
-    async def hook_run(self, *, template_id, expect_updated_at, host_id, requested_by, approval):
+    async def hook_run(self, *, template_id, expect_updated_at, host_id, requested_by, approval, accountable=None):
+        self.args.append((template_id, host_id, {}, accountable))
         if self.undrain_broken and template_id == "undrain-1":
             raise self.upstream(409, "hook template changed")
         rid = str(uuid.uuid4())
@@ -169,11 +170,12 @@ def _pkg(sub: str):
     return importlib.import_module(f"posture_m4.{sub}")
 
 
-def _headers(uid, role="admin", real=None):
+def _headers(uid, role="admin", real=None, kiosk=""):
     from libs.servicetoken import mint
 
     return {"X-Service-Token": mint("api-gateway", "posture-service", SECRET), "X-User-Id": uid, "X-User-Name": uid,
-            "X-User-Role": role, "X-User-Real-Role": real or role}
+            "X-User-Role": role, "X-User-Real-Role": real or role,
+            **({"X-Kiosk-Host-Id": kiosk} if kiosk else {})}
 
 
 def run_case(env, monkeypatch, body):
@@ -252,8 +254,8 @@ def run_case(env, monkeypatch, body):
                 s.add(finding(models, h))
             await s.commit()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://t") as c:
-            async def api(method, path, uid="alice", code=200, role="admin", real=None, **json):
-                r = await c.request(method, f"/api/v1/posture{path}", headers=_headers(uid, role, real), json=json or None)
+            async def api(method, path, uid="alice", code=200, role="admin", real=None, kiosk="", **json):
+                r = await c.request(method, f"/api/v1/posture{path}", headers=_headers(uid, role, real, kiosk), json=json or None)
                 assert r.status_code == code, (method, path, r.status_code, r.text)
                 return r.json() if r.content and "json" in r.headers.get("content-type", "") else r
 
@@ -678,4 +680,40 @@ def test_release_keeps_the_reason_of_the_failure(env, monkeypatch):
         await settle(engine)
         row = next(h for h in (await api("GET", f"/patches/{rid}"))["host_rows"] if h["host_id"] == hid)
         assert row["status"] == "failed" and not row["drained"] and "app.service" in row["error"]
+    run_case(env, monkeypatch, body)
+
+
+def test_kiosk_admin_is_limited_to_its_host(env, monkeypatch):
+    """A kiosk login carries its user's admin role but belongs to one host."""
+    async def body(w, api, drive, engine, models, scanning):
+        fast(engine, monkeypatch)
+        w.break_service = set(H)
+        r = await api("POST", "/patches", code=201, name="r", group_ids=["g1"], ignore_window=True, config=CFG)
+        rid = r["id"]
+        for k in (H[0], "00000009-0000-4000-8000-000000000000"):
+            await api("POST", f"/patches/{rid}/approve", uid="bob", kiosk=k, code=403, plan_hash=r["plan_hash"])
+            for a in ("reject", "pause", "resume", "cancel"):
+                await api("POST", f"/patches/{rid}/{a}", uid="bob", kiosk=k, code=403, reason="kiosk")
+        await api("POST", "/patches", kiosk=H[0], code=403, name="k", host_ids=[H[0]], ignore_window=True)
+        await api("POST", "/patch-windows", kiosk=H[0], code=403, name="k", timezone="UTC", days=[1], start="22:00", duration_minutes=60)
+        await api("POST", "/patch-baselines", kiosk=H[0], code=403, name="k", config={})
+        assert not (await api("GET", f"/patches/{rid}", uid="bob", kiosk=H[0]))["can_approve"]
+        await api("POST", f"/patches/{rid}/approve", uid="bob", plan_hash=r["plan_hash"])
+        bad = [h["host_id"] for h in (await drive(rid, n=120))["host_rows"] if h["status"] == "failed"]
+        other = next(h for h in H if h not in bad)
+        n = len(w.audit)
+        for a in ("retry", "rollback", "release", "force_release", "skip"):
+            await api("POST", f"/patches/{rid}/hosts/{bad[0]}/{a}", kiosk=other, code=404, reason="kiosk")
+        assert not any(x.get("critical") for x in w.audit[n:]), "the attempts are audited, but none was carried out"
+        assert {h["status"] for h in (await api("GET", f"/patches/{rid}"))["host_rows"] if h["host_id"] == bad[0]} == {"failed"}
+    run_case(env, monkeypatch, body)
+
+
+def test_everyone_accountable_is_named_on_every_run_of_a_rollout(env, monkeypatch):
+    """A host that becomes production after planning is gated per run: that second
+    approval must be barred to the same people as the rollout's own."""
+    async def body(w, api, drive, engine, models, scanning):
+        await drive(await make(api))
+        assert {op for op, *_ in w.args} >= {"upgrade", "drain-1", "undrain-1", "repo_apply"}
+        assert all({"alice", "hook-editor"} <= set(acc or []) for *_, acc in w.args)
     run_case(env, monkeypatch, body)

@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import audit, clients, rollout_core as core, rollout_engine as engine, scanning
 from ..config import get_settings
 from ..database import get_session
-from ..deps import Caller, get_caller, require_admin
+from ..deps import Caller, get_caller, require_admin, require_fleet_admin
 from ..models import (
     PackageOp,
     PatchBaseline,
@@ -128,7 +128,7 @@ async def list_repos(caller: Caller = Depends(get_caller), session: AsyncSession
 
 
 @router.post("/patch-repos", status_code=201)
-async def create_repo(payload: RepoIn, request: Request, caller: Caller = Depends(require_admin),
+async def create_repo(payload: RepoIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                       session: AsyncSession = Depends(get_session)):
     _check_repo(payload)
     row = PatchRepo(id=str(uuid.uuid4()), **payload.model_dump(), editor_ids=[caller.user_id])
@@ -140,7 +140,7 @@ async def create_repo(payload: RepoIn, request: Request, caller: Caller = Depend
 
 
 @router.put("/patch-repos/{repo_id}")
-async def update_repo(repo_id: str, payload: RepoIn, request: Request, caller: Caller = Depends(require_admin),
+async def update_repo(repo_id: str, payload: RepoIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                       session: AsyncSession = Depends(get_session)):
     row = await _get(session, PatchRepo, repo_id, "repo")
     _check_repo(payload)
@@ -154,7 +154,7 @@ async def update_repo(repo_id: str, payload: RepoIn, request: Request, caller: C
 
 
 @router.delete("/patch-repos/{repo_id}", status_code=204)
-async def delete_repo(repo_id: str, request: Request, caller: Caller = Depends(require_admin),
+async def delete_repo(repo_id: str, request: Request, caller: Caller = Depends(require_fleet_admin),
                       session: AsyncSession = Depends(get_session)):
     row = await _get(session, PatchRepo, repo_id, "repo")
     await _audit_critical(request, caller, "posture.patch_repo.delete", "patch_repo", row.id, {"slug": row.slug})
@@ -277,7 +277,7 @@ async def list_windows(caller: Caller = Depends(get_caller), session: AsyncSessi
 
 
 @router.post("/patch-windows", status_code=201)
-async def create_window(payload: WindowIn, request: Request, caller: Caller = Depends(require_admin),
+async def create_window(payload: WindowIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                         session: AsyncSession = Depends(get_session)):
     row = PatchWindow(id=str(uuid.uuid4()), **_check_win(payload), editor_ids=[caller.user_id])
     await _audit_critical(request, caller, "posture.patch_window.create", "patch_window", row.id, _win_dict(row))
@@ -287,7 +287,7 @@ async def create_window(payload: WindowIn, request: Request, caller: Caller = De
 
 
 @router.put("/patch-windows/{window_id}")
-async def update_window(window_id: str, payload: WindowIn, request: Request, caller: Caller = Depends(require_admin),
+async def update_window(window_id: str, payload: WindowIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                         session: AsyncSession = Depends(get_session)):
     row = await _get(session, PatchWindow, window_id, "window")
     d = _check_win(payload)
@@ -300,7 +300,7 @@ async def update_window(window_id: str, payload: WindowIn, request: Request, cal
 
 
 @router.delete("/patch-windows/{window_id}", status_code=204)
-async def delete_window(window_id: str, request: Request, caller: Caller = Depends(require_admin),
+async def delete_window(window_id: str, request: Request, caller: Caller = Depends(require_fleet_admin),
                         session: AsyncSession = Depends(get_session)):
     row = await _get(session, PatchWindow, window_id, "window")
     await _audit_critical(request, caller, "posture.patch_window.delete", "patch_window", row.id, {"name": row.name})
@@ -337,7 +337,7 @@ async def list_baselines(caller: Caller = Depends(get_caller), session: AsyncSes
 
 
 @router.post("/patch-baselines", status_code=201)
-async def create_baseline(payload: BaselineIn, request: Request, caller: Caller = Depends(require_admin),
+async def create_baseline(payload: BaselineIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                           session: AsyncSession = Depends(get_session)):
     row = PatchBaseline(id=str(uuid.uuid4()), name=payload.name, description=payload.description,
                         group_ids=payload.group_ids, config=_config(payload.config), editor_ids=[caller.user_id])
@@ -349,7 +349,7 @@ async def create_baseline(payload: BaselineIn, request: Request, caller: Caller 
 
 
 @router.put("/patch-baselines/{baseline_id}")
-async def update_baseline(baseline_id: str, payload: BaselineIn, request: Request, caller: Caller = Depends(require_admin),
+async def update_baseline(baseline_id: str, payload: BaselineIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                           session: AsyncSession = Depends(get_session)):
     row = await _get(session, PatchBaseline, baseline_id, "baseline")
     cfg = _config(payload.config)
@@ -362,7 +362,7 @@ async def update_baseline(baseline_id: str, payload: BaselineIn, request: Reques
 
 
 @router.delete("/patch-baselines/{baseline_id}", status_code=204)
-async def delete_baseline(baseline_id: str, request: Request, caller: Caller = Depends(require_admin),
+async def delete_baseline(baseline_id: str, request: Request, caller: Caller = Depends(require_fleet_admin),
                           session: AsyncSession = Depends(get_session)):
     row = await _get(session, PatchBaseline, baseline_id, "baseline")
     await _audit_critical(request, caller, "posture.patch_baseline.delete", "patch_baseline", row.id, {"name": row.name})
@@ -502,7 +502,7 @@ async def _build_plan(session: AsyncSession, payload: RolloutIn, caller: Caller)
 
 
 @router.post("/patches", status_code=201)
-async def create_rollout(payload: RolloutIn, request: Request, caller: Caller = Depends(require_admin),
+async def create_rollout(payload: RolloutIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                          session: AsyncSession = Depends(get_session)):
     plan, accountable, skipped = await _build_plan(session, payload, caller)
     needs = get_settings().posture_patch_approval != "production" or any(h["production"] for h in plan["hosts"])
@@ -579,7 +579,7 @@ async def get_rollout(rollout_id: str, caller: Caller = Depends(get_caller), ses
     blocked = caller.user_id in set(r.accountable_ids or [])
     return {**_rollout_out(r, (await _counts(session, [r.id], allowed))[r.id], allowed), "config": r.plan["config"],
             "drain_hook": (r.plan.get("drain_hook") or {}).get("name"), "undrain_hook": (r.plan.get("undrain_hook") or {}).get("name"),
-            "can_approve": caller.is_admin and r.status == "pending_approval" and not blocked,
+            "can_approve": caller.is_admin and not caller.kiosk_host_id and r.status == "pending_approval" and not blocked,
             "approve_blocked_reason": "you created this rollout or edited something it uses" if blocked else "",
             "host_rows": [{**_host_out(h), "production": plan_by[h.host_id]["production"],
                            "packages": plan_by[h.host_id]["packages"], "findings": plan_by[h.host_id]["findings"],
@@ -597,7 +597,7 @@ class ReasonIn(BaseModel):
 
 
 @router.post("/patches/{rollout_id}/approve")
-async def approve_rollout(rollout_id: str, payload: ApproveIn, request: Request, caller: Caller = Depends(require_admin),
+async def approve_rollout(rollout_id: str, payload: ApproveIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                           session: AsyncSession = Depends(get_session)):
     async with engine.lock(rollout_id):
         r = await _get(session, PatchRollout, rollout_id, "rollout")
@@ -634,19 +634,19 @@ async def _decide(rollout_id: str, request: Request, caller: Caller, session: As
 
 
 @router.post("/patches/{rollout_id}/reject")
-async def reject_rollout(rollout_id: str, payload: ReasonIn, request: Request, caller: Caller = Depends(require_admin),
+async def reject_rollout(rollout_id: str, payload: ReasonIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                          session: AsyncSession = Depends(get_session)):
     return await _decide(rollout_id, request, caller, session, "reject", ("pending_approval",), payload.reason, "rejected")
 
 
 @router.post("/patches/{rollout_id}/pause")
-async def pause_rollout(rollout_id: str, payload: ReasonIn, request: Request, caller: Caller = Depends(require_admin),
+async def pause_rollout(rollout_id: str, payload: ReasonIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                         session: AsyncSession = Depends(get_session)):
     return await _decide(rollout_id, request, caller, session, "pause", ("approved", "running"), payload.reason, "paused")
 
 
 @router.post("/patches/{rollout_id}/resume")
-async def resume_rollout(rollout_id: str, payload: ReasonIn, request: Request, caller: Caller = Depends(require_admin),
+async def resume_rollout(rollout_id: str, payload: ReasonIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                          session: AsyncSession = Depends(get_session)):
     row = await _get(session, PatchRollout, rollout_id, "rollout")
     limit = row.plan["config"]["max_failures"]
@@ -658,7 +658,7 @@ async def resume_rollout(rollout_id: str, payload: ReasonIn, request: Request, c
 
 
 @router.post("/patches/{rollout_id}/cancel")
-async def cancel_rollout(rollout_id: str, payload: ReasonIn, request: Request, caller: Caller = Depends(require_admin),
+async def cancel_rollout(rollout_id: str, payload: ReasonIn, request: Request, caller: Caller = Depends(require_fleet_admin),
                          session: AsyncSession = Depends(get_session)):
     return await _decide(rollout_id, request, caller, session, "cancel",
                          ("pending_approval", "approved", "running", "paused", "halted"), payload.reason, "cancelled")
@@ -680,9 +680,10 @@ async def host_action(rollout_id: str, host_id: str, action: str, payload: Reaso
         raise _bad("unknown action", 404)
     async with engine.lock(rollout_id):
         r = await _get(session, PatchRollout, rollout_id, "rollout")
+        allowed = await _visible_rollout(caller, r)
         rh = (await session.execute(select(RolloutHost).where(
             RolloutHost.rollout_id == rollout_id, RolloutHost.host_id == host_id))).scalar_one_or_none()
-        if rh is None:
+        if rh is None or (allowed is not None and host_id not in allowed):
             raise _bad("host is not in this rollout", 404)
         async with engine.lock(rh.id):
             await session.refresh(rh)

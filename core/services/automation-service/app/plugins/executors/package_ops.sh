@@ -31,7 +31,7 @@ if [ "$op" != plan ] && command -v transactional-update >/dev/null 2>&1 && ! [ -
 fi
 # A guard that cannot run is not a guard: without these the checks below would pass
 # on empty output.
-for t in awk grep sed sort comm head tail base64 find; do
+for t in awk grep sed sort comm head tail base64 find sha256sum; do
   command -v "$t" >/dev/null 2>&1 || { echo "required tool missing on this host: $t"; finish 69; }
 done
 echo "op=$op package-manager=$pm repos=$mode items=${#items[@]}"
@@ -198,6 +198,38 @@ guard_removal() {
   if printf '%s\n' "$out" | grep -qF -- "linux-image-$(uname -r)"; then echo "refused: this would remove the running kernel"; return 1; fi
 }
 
+# apt scopes a key to its mirror (Signed-By). rpm has one key list for every repo, so a
+# mirror's key must leave it together with the mirror. Only keys imported here are ever
+# removed: one the host already trusted is not recorded.
+sync_rpm_keys() {       # STATE_DIR WANTED_FILES
+  local state="$1" f s k wanted=""
+  mkdir -p "$state" && chmod 700 "$state" || return 1
+  while IFS= read -r f; do
+    case "$f" in *.asc) s="$(sha256sum < "$f" | cut -d' ' -f1)"; [ -n "$s" ] || return 1; wanted="$wanted $s" ;; esac
+  done < "$2"
+  for f in "$state"/*; do
+    [ -f "$f" ] || continue
+    case " $wanted " in *" $(basename "$f") "*) continue ;; esac
+    while IFS= read -r k; do
+      case "$k" in gpg-pubkey-*) ;; *) continue ;; esac
+      rpm -q gpg-pubkey 2>/dev/null | grep -qxF -- "$k" || continue
+      echo "no longer trusting $k"
+      rpm -e --allmatches "$k" || { echo "could not remove the signing key $k of a removed mirror"; return 1; }
+    done < "$f"
+    rm -f -- "$f"
+  done
+  # After the removals: a key still used by another mirror comes back here.
+  while IFS= read -r f; do
+    case "$f" in *.asc) ;; *) continue ;; esac
+    s="$(sha256sum < "$f" | cut -d' ' -f1)"
+    rpm -q gpg-pubkey 2>/dev/null | sort > "$state/.before"
+    rpm --import "$f" || return 1
+    rpm -q gpg-pubkey 2>/dev/null | sort > "$state/.after"
+    touch "$state/$s" && comm -13 "$state/.before" "$state/.after" >> "$state/$s" || return 1
+  done < "$2"
+  rm -f "$state/.before" "$state/.after"
+}
+
 snap > "$dir/before"
 rc=0
 case "$op" in
@@ -299,10 +331,10 @@ case "$op" in
       if [ "$t" = key ]; then d="$kdir"; elif [ "$t" = "$fam" ]; then d="$rdir"
       else echo "repo family $t does not fit this host ($fam)"; finish 65; fi
       printf '%s' "$b" | base64 -d > "$d/.$f.tmp" && chmod 644 "$d/.$f.tmp" && mv -f "$d/.$f.tmp" "$d/$f" || finish 73
-      [ "$t" = key ] && [ "$pm" != apt ] && { rpm --import "$d/$f" || finish 65; }
       echo "$d/$f" >> "$want"
     done
     chmod 755 "$kdir"
+    if [ "$pm" != apt ]; then sync_rpm_keys "$(dirname "$base")/rpm-keys" "$want" || finish 65; fi
     for f in "$rdir"/$pat "$kdir"/seyalrun-*.asc; do
       [ -e "$f" ] && ! grep -qxF -- "$f" "$want" && { echo "removing $f"; rm -f -- "$f"; }
     done

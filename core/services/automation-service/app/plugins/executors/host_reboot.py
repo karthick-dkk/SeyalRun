@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import gzip
 import time
+import zlib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -19,6 +19,7 @@ _DIR = Path(__file__).parent
 SNAPSHOT_SCRIPT = (_DIR / "host_snapshot.sh").read_text()
 REBOOT_WORKER = (_DIR / "host_reboot.sh").read_text()
 POLL = 10
+MAX_SNAPSHOT = 8 * 1024 * 1024      # of output, and again unpacked: a host controls both
 SETTLE_ATTEMPTS = 2     # consecutive good snapshots before the host counts as back
 
 
@@ -28,8 +29,13 @@ def marker_in(lines: list[str]) -> str:
         b = next(i for i, ln in enumerate(lines) if ln.startswith("SEYALRUN-SNAP-BEGIN v1")) + 1
         e = lines.index("SEYALRUN-SNAP-END")
         raw = base64.b64decode("".join(lines[b:e]))
-        text = (gzip.decompress(raw) if lines[b - 1].endswith(" gz") else raw).decode("utf-8", "replace")
-    except (StopIteration, ValueError, OSError, EOFError):
+        if lines[b - 1].endswith(" gz"):
+            d = zlib.decompressobj(wbits=31)
+            raw = d.decompress(raw, MAX_SNAPSHOT)
+            if not d.eof:       # larger than the limit, or cut short
+                return ""
+        text = raw.decode("utf-8", "replace")
+    except (StopIteration, ValueError, zlib.error):
         return ""
     if "\nZ\tend" not in text:
         return ""
@@ -38,9 +44,13 @@ def marker_in(lines: list[str]) -> str:
 
 async def _snapshot(session: HostSession, urls: list[str]) -> tuple[int | None, list[str]]:
     lines: list[str] = []
+    size = 0
 
     async def keep(line: str) -> None:
-        lines.append(line)
+        nonlocal size
+        size += len(line) + 1
+        if size <= MAX_SNAPSHOT:    # cut off = no end marker = not a snapshot
+            lines.append(line)
     return await session.run(SNAPSHOT_SCRIPT, urls, keep, root=False), lines
 
 
