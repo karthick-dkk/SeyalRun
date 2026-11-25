@@ -395,3 +395,66 @@ def test_chain_rerun_uses_the_steps_the_template_has_now(svc, monkeypatch):
         r = await call("POST", f"/job-runs/{rid}/rerun", code=202)
         assert (await get(svc, r["run_id"])).params["_chain_steps"] == [{"template_id": b["id"]}]
     run_case(svc, monkeypatch, body)
+
+
+def test_run_whose_template_changed_while_waiting_cannot_be_approved(svc, monkeypatch):
+    async def body(call, w):
+        async def waiting(t, **kw):
+            return (await call("POST", f"/job-templates/{t['id']}/run", code=202, target_host_ids=[H2], **kw))["run_id"]
+        a = await template(call, name="a", script_content="true")
+        t = await template(call, name="t", script_content="true")
+        rid = await waiting(t)
+        await call("PUT", f"/job-templates/{a['id']}", code=200, script_content="other")      # not this one
+        await call("PUT", f"/job-templates/{t['id']}", uid="bob", code=200, script_content="rm")
+        await call("POST", f"/job-runs/{rid}/approve", uid="carol", code=409)
+        assert (await get(svc, rid)).status == "pending_approval"
+        await call("POST", f"/job-runs/{rid}/reject", uid="carol", code=200, reason="changed")
+        rid = await waiting(t)
+        await call("POST", f"/job-runs/{rid}/approve", uid="carol", code=202)
+        # the webhook path, and a run from before versions were recorded
+        r = await call("POST", "/internal/job-runs", job_template_id=a["id"], triggered_by="zabbix_event:1", target_host_ids=[H2], params={})
+        await call("PUT", f"/job-templates/{a['id']}", code=200, approver_role="admin")
+        await call("POST", f"/job-runs/{r['run_id']}/approve", uid="carol", code=409)
+        async with svc.db.SessionLocal() as s:
+            run = await s.get(svc.models.ZAJobRun, r["run_id"])
+            run.params = {k: v for k, v in run.params.items() if k != "_template_version"}
+            await s.commit()
+        assert "before an upgrade" in (await call("POST", f"/job-runs/{r['run_id']}/approve", uid="carol", code=409))["detail"]
+        # a chain is also what its steps are
+        c = await template(call, name="c", action_type="chain", requires_approval=True, chain_steps=[{"template_id": t["id"]}])
+        rid = await waiting(c)
+        await call("PUT", f"/job-templates/{t['id']}", uid="bob", code=200, script_content="rm2")
+        await call("POST", f"/job-runs/{rid}/approve", uid="carol", code=409)
+        await call("POST", f"/job-runs/{rid}/reject", uid="carol", code=200, reason="changed")
+        rid = await waiting(c)
+        await call("POST", f"/job-runs/{rid}/approve", uid="carol", code=202)
+    run_case(svc, monkeypatch, body)
+
+
+@pytest.mark.parametrize("when", ["before", "during"])
+def test_chain_refuses_a_step_that_requires_approval(svc, monkeypatch, when):
+    async def body(call, w):
+        import app._production_gate as gate
+        import libs.pluginbase as pb
+        async def none(ids):
+            return False
+        monkeypatch.setattr(gate, "any_production_hosts", none)
+        a = await template(call, name="a", script_content="true")
+        b = await template(call, name="b", script_content="true", requires_approval=when == "before")
+        ran, lines = [], []
+        async def execute(run_id, executor, request, **kw):
+            ran.append(run_id)
+            async with svc.db.SessionLocal() as s:
+                (await s.get(svc.models.ZAJobRun, run_id)).status = "success"
+                (await s.get(svc.models.ZAJobTemplate, b["id"])).requires_approval = True
+                await s.commit()
+        monkeypatch.setattr(svc.runner, "execute", execute)
+        monkeypatch.setattr(pb, "discover_plugins", lambda *x: {"bash_script": SimpleNamespace(name="bash_script")})
+        async def line(text, *x):
+            lines.append(text)
+        res = await svc.chain.ChainExecutor().execute(pb.RunRequest(
+            action_type="chain", target_host_ids=[], credential_id=None, triggered_by="user:alice",
+            params={"_run_id": "p", "_chain_steps": [{"template_id": a["id"], "continue_on_failure": True}, {"template_id": b["id"]}]}), line)
+        assert not res.ok and "requires approval" in res.output, lines
+        assert len(ran) == (0 if when == "before" else 1), lines
+    run_case(svc, monkeypatch, body)

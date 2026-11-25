@@ -16,6 +16,7 @@ from app._attribution import ACCOUNTABLE_PARAM, accountable_ids, actor_user_id, 
 from app._host_ops import APPROVED_BY_PARAM, HOOK_TEMPLATE_PARAM, NO_RERUN_ACTIONS
 from app._posture import HOST_OP_TEMPLATES, mutating_host_ops
 from app._production_gate import any_production_hosts
+from app._template_version import TEMPLATE_VERSION_PARAM, template_version
 from app._params import template_code_params
 from app.database import get_session, SessionLocal
 from app.deps import require_service_token, get_user_id, get_user_name, get_user_role, get_user_real_role
@@ -204,6 +205,12 @@ async def approve_run(
     planned = (run.params or {}).get(HOOK_TEMPLATE_PARAM)
     if planned and planned != (tmpl.updated_at.isoformat() if tmpl.updated_at else ""):
         raise HTTPException(status_code=409, detail="the hook template changed after this run was requested; reject it")
+
+    requested = (run.params or {}).get(TEMPLATE_VERSION_PARAM)
+    if requested is None:       # waiting since before versions were recorded
+        raise HTTPException(status_code=409, detail="this run was requested before an upgrade; reject it and request it again")
+    if requested != await session.run_sync(lambda s: template_version(s.connection(), tmpl.id)):
+        raise HTTPException(status_code=409, detail="the template changed after this run was requested; reject it and request it again")
 
     if tmpl.action_type in HOST_OP_TEMPLATES:
         # It was free when the run was requested; a rollout may be working on it now.
