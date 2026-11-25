@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import audit, feedbundle, feeds, scanning
 from ..config import get_settings
 from ..database import get_session
-from ..deps import Caller, get_caller, require_admin
+from ..deps import Caller, get_caller, require_fleet_admin
 from ..models import FeedSnapshot
 
 router = APIRouter(prefix="/posture", tags=["posture-feeds"])
@@ -49,7 +49,7 @@ async def _save_upload(upload: UploadFile, dest: Path, max_bytes: int) -> tuple[
 
 @router.post("/feeds/import", status_code=status.HTTP_201_CREATED)
 async def import_feed(request: Request, file: UploadFile = File(...),
-                      caller: Caller = Depends(require_admin),
+                      caller: Caller = Depends(require_fleet_admin),
                       session: AsyncSession = Depends(get_session)):
     settings = get_settings()
     ad = request.state.audit
@@ -112,7 +112,7 @@ async def import_feed(request: Request, file: UploadFile = File(...),
 
 
 @router.post("/feeds/{snapshot_id}/activate")
-async def activate_feed(snapshot_id: str, request: Request, caller: Caller = Depends(require_admin),
+async def activate_feed(snapshot_id: str, request: Request, caller: Caller = Depends(require_fleet_admin),
                         session: AsyncSession = Depends(get_session)):
     snap = await session.get(FeedSnapshot, snapshot_id)
     if snap is None:

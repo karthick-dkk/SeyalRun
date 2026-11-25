@@ -41,10 +41,12 @@ def test_writes_recheck_the_real_role_downstream():
     assert "X-User-Real-Role" in deps
     assert re.search(r"def is_admin.*?return self\.real_role in ADMIN_ROLES", deps, re.DOTALL)
     hosts, feeds = (SVC / "app/api/hosts.py").read_text(), (SVC / "app/api/feeds.py").read_text()
-    for src, name in ((hosts, "collect_host"), (hosts, "collect_all"), (feeds, "import_feed"),
-                      (feeds, "activate_feed")):
+    # Feeds affect every host, so a kiosk login (one host) may not change them either.
+    assert "def require_fleet_admin(caller: Caller = Depends(require_admin))" in deps
+    for src, name, guard in ((hosts, "collect_host", "require_admin"), (hosts, "collect_all", "require_admin"),
+                             (feeds, "import_feed", "require_fleet_admin"), (feeds, "activate_feed", "require_fleet_admin")):
         header = re.search(rf"async def {name}\((.*?)\):\n", src, re.DOTALL)
-        assert header and "Depends(require_admin)" in header.group(1), name
+        assert header and f"Depends({guard})" in header.group(1), name
 
 
 def _api_routes() -> list[tuple[str, str]]:

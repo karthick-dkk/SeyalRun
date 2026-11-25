@@ -698,6 +698,10 @@ def test_kiosk_admin_is_limited_to_its_host(env, monkeypatch):
         await api("POST", "/patch-windows", kiosk=H[0], code=403, name="k", timezone="UTC", days=[1], start="22:00", duration_minutes=60)
         await api("POST", "/patch-baselines", kiosk=H[0], code=403, name="k", config={})
         assert not (await api("GET", f"/patches/{rid}", uid="bob", kiosk=H[0]))["can_approve"]
+        # the feed decides the findings of every host
+        for kiosk, codes in ((H[0], (403, 403)), ("", (422, 404))):
+            await api("POST", "/feeds/import", kiosk=kiosk, code=codes[0])
+            await api("POST", "/feeds/nope/activate", kiosk=kiosk, code=codes[1])
         await api("POST", f"/patches/{rid}/approve", uid="bob", plan_hash=r["plan_hash"])
         bad = [h["host_id"] for h in (await drive(rid, n=120))["host_rows"] if h["status"] == "failed"]
         other = next(h for h in H if h not in bad)
