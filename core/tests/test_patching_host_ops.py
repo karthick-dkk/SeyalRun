@@ -319,3 +319,17 @@ def test_unreadable_key_list_never_claims_the_hosts_own_keys(tmp_path, monkeypat
 def test_removed_mirror_files_go_before_the_key_sync():
     body = WORKER[WORKER.index("  repo_apply)"):]
     assert body.index('rm -f -- "$f"') < body.index("sync_rpm_keys")
+
+
+@pytest.mark.parametrize("blocked", [".now.tmp", ".after.tmp"])
+def test_key_list_that_cannot_be_written_claims_and_removes_nothing(tmp_path, blocked):
+    """As on a full disk. The list written before would otherwise be compared with a cut one."""
+    (tmp_path / "ring").write_text("gpg-pubkey-vendor-1\n")
+    _sync_keys(tmp_path, {"seyalrun-a.asc": "k-1\n"})
+    (tmp_path / "state" / blocked).mkdir()
+    r = _sync_keys(tmp_path, {"seyalrun-b.asc": "k-2\n"})
+    assert r.returncode != 0 and "could not be written" in r.stdout
+    assert "gpg-pubkey-vendor-1" in _ring(tmp_path)
+    (tmp_path / "state" / blocked).rmdir()
+    assert _sync_keys(tmp_path, {}).returncode == 0
+    assert _ring(tmp_path) == {"gpg-pubkey-vendor-1"}

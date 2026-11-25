@@ -208,14 +208,17 @@ rpm_keys() {
   # every key the host trusts look imported here, so the list must show bash, which runs this.
   local o; o="$(rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}\n' 2>/dev/null)" && printf '%s\n' "$o" | grep -q '^bash-[0-9]' ||
     { echo "the rpm database could not be read"; return 1; }
-  printf '%s\n' "$o" | grep '^gpg-pubkey-' | sort > "$1"; return 0
+  # sort's status: a list cut short by a full disk must never be compared with a whole one.
+  printf '%s\n' "$o" | grep '^gpg-pubkey-' | sort > "$1.tmp" && mv -f "$1.tmp" "$1" ||
+    { echo "the rpm key list could not be written"; return 1; }
 }
 sync_rpm_keys() {       # STATE_DIR WANTED_FILES
-  local state="$1" f s k r wanted=""
+  local state="$1" f s k r now wanted=""
   mkdir -p "$state" && chmod 700 "$state" || return 1
   while IFS= read -r f; do
     case "$f" in *.asc) s="$(sha256sum < "$f" | cut -d' ' -f1)"; [ -n "$s" ] || return 1; wanted="$wanted $s" ;; esac
   done < "$2"
+  # Recorded first, forgotten last: a failure in between only records a key twice.
   record() { rpm_keys "$state/.after" && comm -13 "$state/.before.$1" "$state/.after" >> "$state/$1" && rm -f "$state/.before.$1" "$state/.after"; }
   for f in "$state"/.before.*; do
     [ -f "$f" ] && { record "${f##*/.before.}" || return 1; }
@@ -226,7 +229,8 @@ sync_rpm_keys() {       # STATE_DIR WANTED_FILES
     while IFS= read -r k; do
       case "$k" in gpg-pubkey-*) ;; *) continue ;; esac
       rpm_keys "$state/.now" || return 1
-      grep -qxF -- "$k" "$state/.now" || continue
+      now="$(cat "$state/.now")" || return 1
+      case $'\n'"$now"$'\n' in *$'\n'"$k"$'\n'*) ;; *) continue ;; esac
       echo "no longer trusting $k"
       rpm -e --allmatches "$k" || { echo "could not remove the signing key $k of a removed mirror"; return 1; }
     done < "$f"
@@ -236,7 +240,7 @@ sync_rpm_keys() {       # STATE_DIR WANTED_FILES
   while IFS= read -r f; do
     case "$f" in *.asc) ;; *) continue ;; esac
     s="$(sha256sum < "$f" | cut -d' ' -f1)"
-    rpm_keys "$state/.now" && mv -f "$state/.now" "$state/.before.$s" || return 1
+    rpm_keys "$state/.now" && mv -f "$state/.now" "$state/.before.$s" || { echo "the key record could not be written"; return 1; }
     rpm --import "$f"; r=$?
     record "$s" || return 1
     [ "$r" = 0 ] || { echo "the signing key $(basename "$f") could not be imported"; return 1; }
