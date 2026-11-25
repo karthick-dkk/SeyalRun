@@ -344,3 +344,54 @@ def test_hook_run_cannot_be_rerun(svc, monkeypatch):
             await s.commit()
         await call("POST", f"/job-runs/{r['run_id']}/rerun", code=400)
     run_case(svc, monkeypatch, body)
+
+
+def test_original_requester_cannot_approve_a_rerun(svc, monkeypatch):
+    async def body(call, w):
+        t = await template(call, script_content="true", target_host_ids=[H2])
+        rid = str(uuid.uuid4())
+        async with svc.db.SessionLocal() as s:
+            s.add(svc.models.ZAJobRun(id=rid, job_template_id=t["id"], triggered_by="user:erin", status="failed", output_lines=[],
+                                      params={"_target_host_ids": [H2], "_accountable_user_ids": ["frank"]}))
+            await s.commit()
+        for uid in ("gina", "hank"):            # a re-run of a re-run keeps everyone
+            rid = (await call("POST", f"/job-runs/{rid}/rerun", uid=uid, code=202))["run_id"]
+            async with svc.db.SessionLocal() as s:
+                (await s.get(svc.models.ZAJobRun, rid)).status = "failed" if uid == "gina" else "pending_approval"
+                await s.commit()
+        for uid in ("erin", "frank", "gina", "hank"):
+            await call("POST", f"/job-runs/{rid}/approve", uid=uid, code=403)
+        await call("POST", f"/job-runs/{rid}/approve", uid="bob", code=202)
+    run_case(svc, monkeypatch, body)
+
+
+def test_rejected_run_stays_rejected(svc, monkeypatch):
+    async def body(call, w):
+        class Redis:
+            async def publish(self, *a):
+                return 0
+        monkeypatch.setattr(svc.runs, "get_redis", Redis)
+        t = await template(call, script_content="true", target_host_ids=[H2])
+        r = await call("POST", f"/job-templates/{t['id']}/run", code=202, target_host_ids=[H2])
+        await call("POST", f"/job-runs/{r['run_id']}/reject", uid="bob", code=200, reason="no")
+        await call("DELETE", f"/job-runs/{r['run_id']}", code=400)
+        assert (await get(svc, r["run_id"])).status == "rejected"
+        await call("POST", f"/job-runs/{r['run_id']}/rerun", code=400)
+        r = await call("POST", f"/job-templates/{t['id']}/run", code=202, target_host_ids=[H2])
+        await call("DELETE", f"/job-runs/{r['run_id']}", code=204)
+    run_case(svc, monkeypatch, body)
+
+
+def test_chain_rerun_uses_the_steps_the_template_has_now(svc, monkeypatch):
+    async def body(call, w):
+        a, b = await template(call, name="a"), await template(call, name="b")
+        c = await template(call, name="c", action_type="chain", chain_steps=[{"template_id": a["id"]}, {"template_id": b["id"]}])
+        rid = str(uuid.uuid4())
+        async with svc.db.SessionLocal() as s:
+            s.add(svc.models.ZAJobRun(id=rid, job_template_id=c["id"], triggered_by="user:erin", status="success", output_lines=[],
+                                      params={"_chain_steps": [{"template_id": a["id"]}, {"template_id": b["id"]}]}))
+            await s.commit()
+        await call("PUT", f"/job-templates/{c['id']}", code=200, chain_steps=[{"template_id": b["id"]}])
+        r = await call("POST", f"/job-runs/{rid}/rerun", code=202)
+        assert (await get(svc, r["run_id"])).params["_chain_steps"] == [{"template_id": b["id"]}]
+    run_case(svc, monkeypatch, body)
