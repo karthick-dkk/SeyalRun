@@ -99,14 +99,14 @@ async def visible_hosts(caller: Caller) -> list[dict]:
     return [h for h in hosts if h.get("id") in allowed]
 
 
-async def request_facts_runs(host_ids: list[str], requested_by: str) -> list[dict]:
+async def request_facts_runs(host_ids: list[str], requested_by: str, approval: dict | None = None) -> list[dict]:
     """Ask automation-service for one read-only facts run per host. Returns
     [{host_id, run_id, status, reused}]."""
     s = get_settings()
     try:
         r = await client().post(
             f"{s.automation_service_url}/api/v1/internal/posture/facts-runs",
-            json={"host_ids": host_ids, "requested_by": requested_by},
+            json={"host_ids": host_ids, "requested_by": requested_by, "approval": approval},
             headers=_token("automation-service", subject=requested_by),
             timeout=60.0,
         )
@@ -162,3 +162,71 @@ async def disabled_scanners() -> set[str]:
     if cached is None:
         return set()
     return set(((cached.get("disabled") or {}).get("scanners")) or [])
+
+
+# ── M3/M4: host operations, hooks, Zabbix, notifications ─────────────────────
+
+class UpstreamError(RuntimeError):
+    """A sibling service refused (``status``) or could not be reached (status 0)."""
+
+    def __init__(self, status_code: int, detail: str):
+        super().__init__(detail)
+        self.status = status_code
+        self.detail = detail
+
+
+async def _call(method: str, base: str, audience: str, path: str, *, subject: str | None = None,
+                json_body: dict | None = None, params: dict | None = None, timeout: float = 30.0) -> dict:
+    try:
+        r = await client().request(method, f"{base}{path}", json=json_body, params=params,
+                                   headers=_token(audience, subject=subject), timeout=timeout)
+    except httpx.HTTPError as exc:
+        raise UpstreamError(0, f"{audience} unreachable ({type(exc).__name__})") from exc
+    if r.status_code >= 400:
+        try:
+            detail = str(r.json().get("detail") or r.status_code)
+        except ValueError:
+            detail = str(r.status_code)
+        raise UpstreamError(r.status_code, f"{audience}: {detail}")
+    return r.json() if r.content else {}
+
+
+async def host_op_run(*, action: str, op: str, args: dict, host_id: str, token: str, requested_by: str,
+                      approval: dict | None, accountable: list[str] | None = None) -> dict:
+    s = get_settings()
+    return await _call("POST", s.automation_service_url, "automation-service", "/api/v1/internal/posture/host-runs",
+                       subject=requested_by, json_body={
+                           "action": action, "op": op, "args": args, "host_id": host_id, "token": token,
+                           "requested_by": requested_by, "approval": approval,
+                           "accountable_user_ids": accountable or []})
+
+
+async def hook_template(template_id: str) -> dict:
+    s = get_settings()
+    return await _call("GET", s.automation_service_url, "automation-service",
+                       f"/api/v1/internal/posture/hook-templates/{template_id}")
+
+
+async def hook_run(*, template_id: str, expect_updated_at: str, host_id: str, requested_by: str, approval: dict | None) -> dict:
+    s = get_settings()
+    return await _call("POST", s.automation_service_url, "automation-service", "/api/v1/internal/posture/hook-runs",
+                       subject=requested_by, json_body={
+                           "job_template_id": template_id, "expect_updated_at": expect_updated_at,
+                           "host_id": host_id, "requested_by": requested_by, "approval": approval})
+
+
+async def notify(*, user_id: str | None, severity: str, title: str, message: str = "", source_id: str | None = None) -> None:
+    """Best effort: a rollout must not stop because a notification could not be sent."""
+    s = get_settings()
+    try:
+        await _call("POST", s.automation_service_url, "automation-service", "/api/v1/internal/notifications",
+                    json_body={"user_id": user_id, "severity": severity, "title": title[:300],
+                               "message": message[:2000], "source_type": "patch_rollout", "source_id": source_id})
+    except UpstreamError as exc:
+        logger.error("notification failed: %s", exc)
+
+
+async def zabbix(method: str, path: str, *, json_body: dict | None = None, params: dict | None = None) -> dict:
+    s = get_settings()
+    return await _call(method, s.zabbix_integration_service_url, "zabbix-integration-service",
+                       f"/api/v1/internal/zabbix{path}", json_body=json_body, params=params)

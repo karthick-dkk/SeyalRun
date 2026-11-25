@@ -60,15 +60,19 @@ def _tool_requests(seen):
     return [r for r in seen if r.url.path != "/api/v1/mcp/policy"]
 
 
-def test_fifteen_tools_including_posture():
+def test_seventeen_tools_including_posture():
     names = [t["name"] for t in mcp.TOOLS]
-    assert len(names) == 15 and len(set(names)) == 15
-    assert {"get_posture_summary", "list_findings"} <= set(names)
+    assert len(names) == 17 and len(set(names)) == 17
+    assert {"get_posture_summary", "list_findings", "list_patch_rollouts", "get_patch_rollout"} <= set(names)
+    # An agent may look at a rollout. Creating, approving and steering one stay with people.
+    assert not any("posture" in t["path"] and t["kind"] == "write" for t in mcp.TOOLS)
 
 
 def test_posture_tools_need_posture_read_which_matches_the_gateway():
     for name, path in (("get_posture_summary", "posture/summary"),
-                       ("list_findings", "posture/findings")):
+                       ("list_findings", "posture/findings"),
+                       ("list_patch_rollouts", "posture/patches"),
+                       ("get_patch_rollout", "posture/patches/abc")):
         t = mcp._TOOLS_BY_NAME[name]
         assert t["scope"] == "posture:read" in AGENT_GRANTABLE and t["kind"] == "read"
         assert required_scope("posture", "GET", path) == t["scope"]

@@ -13,6 +13,7 @@ import uuid
 from typing import Callable
 
 from libs.pluginbase import ActionExecutor, RunRequest, RunResult
+from app._host_ops import NO_RERUN_ACTIONS
 
 
 class ChainExecutor(ActionExecutor):
@@ -90,8 +91,9 @@ class ChainExecutor(ActionExecutor):
             # A chain step can never itself be a chain — no nested chains. Keeps
             # this simple (no cycle detection needed) and matches the plan's own
             # scope: a chain is a flat, ordered list of "real" action templates.
-            if step_tmpl.action_type == "chain":
-                await publish_line(f"[error] step {i}: '{step_tmpl.name}' is itself a chain — nested chains aren't supported")
+            if step_tmpl.action_type == "chain" or step_tmpl.action_type in NO_RERUN_ACTIONS:
+                await publish_line(f"[error] step {i}: '{step_tmpl.name}' cannot be a chain step "
+                                   "(nested chains and Posture patching operations aren't supported)")
                 overall_ok = False
                 if not continue_on_failure:
                     break

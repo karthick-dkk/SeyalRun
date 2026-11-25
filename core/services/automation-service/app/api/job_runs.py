@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit
 from app._attribution import ACCOUNTABLE_PARAM, actor_user_id, is_requester
+from app._host_ops import APPROVED_BY_PARAM, NO_RERUN_ACTIONS
+from app._posture import HOST_OP_TEMPLATES, mutating_host_ops
 from app._params import template_code_params
 from app.database import get_session, SessionLocal
 from app.deps import require_service_token, get_user_id, get_user_name, get_user_role, get_user_real_role
@@ -105,6 +107,8 @@ async def rerun(
         raise HTTPException(status_code=400, detail="job template no longer exists")
     if not tmpl.enabled:
         raise HTTPException(status_code=400, detail="template is disabled")
+    if tmpl.action_type in NO_RERUN_ACTIONS:
+        raise HTTPException(status_code=400, detail="patch and reboot runs cannot be re-run; start them from Patching")
 
     params = dict(orig.params or {})
     targets = params.get("_target_host_ids") or list(tmpl.target_host_ids or [])
@@ -176,6 +180,12 @@ async def approve_run(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="the requester, or whoever configured the schedule/trigger that started it, cannot approve this run")
 
+    if tmpl.action_type in HOST_OP_TEMPLATES:
+        # It was free when the run was requested; a rollout may be working on it now.
+        hosts = (run.params or {}).get("_target_host_ids") or []
+        if hosts and await mutating_host_ops(session, hosts[0], exclude=run_id):
+            raise HTTPException(status_code=409, detail="another package or reboot operation is active on this host")
+
     # Recorded before anything is dispatched, and fail-closed: an approval that
     # cannot be attributed is exactly the untraced change this gate prevents.
     try:
@@ -192,6 +202,7 @@ async def approve_run(
                             detail="approval could not be recorded in the audit log; the run was not started")
 
     run.status = "pending"
+    run.params = {**(run.params or {}), APPROVED_BY_PARAM: user_id}
     await session.commit()
 
     executors = getattr(request.app.state, "executors", {})
@@ -211,6 +222,7 @@ async def approve_run(
         params={**params, **template_code_params(tmpl)},
         triggered_by=run.triggered_by,
     )
+    _runner.LIVE_RUNS.add(run_id)       # before the first poll can see it
     asyncio.create_task(_runner.execute(
         run_id, executor, req, timeout_seconds=tmpl.timeout_seconds, template_name=tmpl.name,
         retry_count=tmpl.retry_count, retry_delay_seconds=tmpl.retry_delay_seconds,

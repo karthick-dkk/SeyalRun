@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     identity_service_url: str = "http://identity-service:8101"
     inventory_service_url: str = "http://inventory-service:8102"
     automation_service_url: str = "http://automation-service:8105"
+    zabbix_integration_service_url: str = "http://zabbix-integration-service:8106"
 
     # Trusted Ed25519 public keys for offline feed bundles. More than one so a
     # signing key can be rotated without a flag day. Format, comma- or
@@ -48,6 +49,13 @@ class Settings(BaseSettings):
     # Upper bounds for one imported scanner result file.
     posture_scan_max_bytes: int = 64 * 1024 * 1024
     posture_scan_max_records: int = 500000
+
+    # M4 rollouts. Two-person approval applies to every rollout unless this is
+    # "production", which limits it to rollouts touching a production host.
+    posture_patch_approval: str = "always"
+    posture_rollout_tick_seconds: int = 5
+    # A step that has not finished by then fails its host (and halts the wave).
+    posture_step_timeout_minutes: int = 120
 
     log_level: str = "INFO"
     log_path: str = "/var/log/seyalrun/posture-service.jsonl"

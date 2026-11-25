@@ -33,6 +33,18 @@ def _known_hosts():
     return None
 
 
+# What a command that ended without reporting an exit status is recorded as. It is
+# ssh(1)'s own "connection failed" code.
+NO_EXIT_STATUS = 255
+
+
+def exit_code(status: int | None) -> int:
+    """``None`` means the channel closed before the command reported how it ended:
+    a dropped connection, a rebooting host. ``status or 0`` used to turn that into
+    success, so a job cut off half way was recorded as finished."""
+    return NO_EXIT_STATUS if status is None else status
+
+
 async def run_command(
     host: str,
     port: int,
@@ -89,7 +101,7 @@ async def run_command(
 
         async with conn:
             result = await conn.run(command, input=stdin_data, check=False)
-            return result.exit_status or 0, result.stdout or "", result.stderr or ""
+            return exit_code(result.exit_status), result.stdout or "", result.stderr or ""
     finally:
         if tunnel:
             tunnel.close()

@@ -137,6 +137,18 @@ TOOLS = [
            "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100}},
           query=["host", "severity", "kev", "status", "limit"],
           rename={"host": "host_id"}, clamp={"limit": (1, 100, 50)}),
+    # Read-only on purpose: creating and approving a rollout stay with people.
+    _tool("list_patch_rollouts", "posture:read", "GET", "/api/v1/posture/patches",
+          "List patch rollouts: status, why one is waiting or halted, waves, host counts, "
+          "who requested and approved it.",
+          {"status": {"type": "string", "enum": ["pending_approval", "rejected", "approved", "running", "paused",
+                                                 "halted", "completed", "cancelled"]},
+           "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100}},
+          query=["status", "limit"], clamp={"limit": (1, 100, 20)}),
+    _tool("get_patch_rollout", "posture:read", "GET", "/api/v1/posture/patches/{rollout_id}",
+          "One patch rollout: per-host status, step, package changes, pre/post checks, "
+          "errors, and the event history.",
+          {"rollout_id": {"type": "string"}}, ["rollout_id"]),
 ]
 _TOOLS_BY_NAME = {t["name"]: t for t in TOOLS}
 

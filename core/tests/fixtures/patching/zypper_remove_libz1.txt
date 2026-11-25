@@ -1,0 +1,14 @@
+Reading installed packages...
+Resolving package dependencies...
+
+The following 43 packages are going to be REMOVED:
+  aaa_base ca-certificates ca-certificates-mozilla cracklib curl diffutils gawk gpg2 grep info krb5 libaugeas0 libcrack2 libcurl4 libdw1 libelf1 libgpgme11 libldap-2_4-2 libmagic1 libnsl2 libopenssl3 libsolv-tools-base libssh4 libsubid5 libtasn1 libtasn1-6 libtirpc3 libxml2-2 libz1 libzck1 libzio1 libzypp openSUSE-build-key openssl openssl-3 p11-kit p11-kit-tools pam rpm-config-SUSE rpm-ndb shadow util-linux zypper
+
+43 packages to remove.
+
+Package install size change:
+              |         0 B    required by packages that will be installed
+   -77.2 MiB  |  -   77.2 MiB  released by packages that will be removed
+
+Backend:  classic_rpmtrans --dry-run
+Continue? [y/n/v/...? shows all options] (y): y

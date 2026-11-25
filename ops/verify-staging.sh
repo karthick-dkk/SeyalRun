@@ -334,7 +334,8 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
     # Read endpoints across the remaining services (absorbed from the retired validate-api.sh).
     for ep in zones authorizations "audit/logs?limit=1" ssh/sessions recordings \
               posture/summary posture/hosts posture/feeds \
-              posture/findings posture/findings/summary posture/unmatched posture/scanners; do
+              posture/findings posture/findings/summary posture/unmatched posture/scanners \
+              posture/patches posture/patch-baselines posture/patch-windows posture/patch-repos posture/package-ops; do
       code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "${EDGE_HTTPS}/api/v1/${ep}" "${AUTH[@]}")
       [[ "$code" == 200 ]] && ok "GET /api/v1/${ep} -> 200" || bad "GET /api/v1/${ep} -> ${code} (want 200)"
     done

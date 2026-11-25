@@ -59,6 +59,7 @@ class ZAJobTemplate(Base):
     # Nullable: templates created before this column existed, or via a path with no
     # caller identity (e.g. seeded defaults), have no creator on record.
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    editor_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)    # append-only
     # Null = use the global JOB_EXEC_TIMEOUT_SECONDS ceiling. A per-template value can
     # only tighten the timeout (see runner.py), never exceed the platform-wide ceiling.
     timeout_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)

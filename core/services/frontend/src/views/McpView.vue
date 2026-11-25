@@ -166,7 +166,7 @@ const clientConfig = computed(() => JSON.stringify({
 // Every MCP tool call is audited as action "mcp.tool_call".
 const AUDIT_LINK = { path: '/settings/audit', query: { action: 'mcp.' } }
 
-// The 15 tools by required scope, mirroring core/services/mcp-server/app/rpc.py
+// The 17 tools by required scope, mirroring core/services/mcp-server/app/rpc.py
 // (core/tests/test_mcp_settings_tools.py fails if the two drift apart).
 const TOOLS = [
   { scope: 'always', tools: ['whoami'], kind: 'Read' },
@@ -179,7 +179,7 @@ const TOOLS = [
   { scope: 'sessions:read', tools: ['list_sessions'], kind: 'Read' },
   { scope: 'notifications:read', tools: ['list_notifications'], kind: 'Read' },
   { scope: 'notifications:ack', tools: ['ack_notification'], kind: 'Change' },
-  { scope: 'posture:read', tools: ['get_posture_summary', 'list_findings'], kind: 'Read' },
+  { scope: 'posture:read', tools: ['get_posture_summary', 'list_findings', 'list_patch_rollouts', 'get_patch_rollout'], kind: 'Read' },
 ]
 const toolCount = TOOLS.reduce((n, r) => n + r.tools.length, 0)
 

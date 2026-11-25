@@ -172,6 +172,16 @@ const router = createRouter({
       component: () => import('@/views/PostureView.vue'),
     },
     {
+      path: '/patching',
+      name: 'patching',
+      component: () => import('@/views/PatchingView.vue'),
+    },
+    {
+      path: '/patching/:id',
+      name: 'patch-rollout',
+      component: () => import('@/views/PatchRolloutView.vue'),
+    },
+    {
       path: '/zbx/run',
       name: 'zbx-run',
       component: () => import('@/views/ZbxRunView.vue'),
@@ -193,6 +203,7 @@ function areaFor(to: any): string | null {
   if (p.startsWith('/approvals')) return 'jobs'
   if (p.startsWith('/mcp')) return 'mcp'
   if (p.startsWith('/posture')) return 'posture'
+  if (p.startsWith('/patching')) return 'posture'   // same visibility as Posture
   if (p.startsWith('/zbx')) return 'jobs'   // 'Run from Zabbix' console page is gated with jobs
   if (p.startsWith('/admin/')) {
     const section = (to.params?.section as string) || p.split('/')[2] || ''

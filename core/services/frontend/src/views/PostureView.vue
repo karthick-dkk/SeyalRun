@@ -202,6 +202,7 @@
               <tbody><tr v-for="p in (detail.packages_installed_list || [])" :key="p.name + p.arch"><td class="mono">{{ p.name }}</td><td class="mono muted">{{ p.version }}</td><td class="muted">{{ p.arch }}</td></tr></tbody>
             </table><div v-if="!(detail.packages_installed_list || []).length" class="empty-state">No package list collected.</div></div>
           </div>
+          <HostPackageOps :host-id="detail.host_id" :hostname="detail.hostname" />
         </div>
         <div class="modal-footer">
           <button v-if="auth.isAdmin" class="btn" type="button" :disabled="collecting[detail.host_id]" @click="collectOne(detail)">{{ collecting[detail.host_id] ? 'Collecting…' : 'Collect now' }}</button>
@@ -249,6 +250,7 @@
               <button class="btn p" type="button" :disabled="!reason.trim() || settingStatus" @click="submitStatus">{{ settingStatus ? 'Saving…' : 'Confirm' }}</button>
             </template>
             <template v-else>
+              <button v-if="fDetail.status === 'open' && fDetail.package" class="btn p" type="button" @click="router.push({ path: '/patching', query: { finding: fDetail.id, label: `${fDetail.cve_id} on ${fDetail.hostname || fDetail.host_id}` } })">Patch</button>
               <button v-if="fDetail.status === 'open'" class="btn" type="button" @click="startStatus('accepted')">Accept risk</button>
               <button v-else-if="fDetail.status === 'accepted'" class="btn" type="button" @click="startStatus('open')">Reopen</button>
             </template>
@@ -296,6 +298,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppShell from '@/components/layout/AppShell.vue'
+import HostPackageOps from '@/components/patching/HostPackageOps.vue'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 

@@ -105,7 +105,19 @@ async def _dispatch_group_alert(user_id: str, severity: str, title: str) -> None
         logger.exception("group alert dispatch failed (non-fatal, in-app notification already succeeded)")
 
 
-async def execute(
+# Runs with a task behind them in THIS process, whatever path dispatched them.
+LIVE_RUNS: set[str] = set()
+
+
+async def execute(run_id: str, executor, request, settings=None, **kw) -> None:
+    LIVE_RUNS.add(run_id)
+    try:
+        await _execute(run_id, executor, request, settings, **kw)
+    finally:
+        LIVE_RUNS.discard(run_id)
+
+
+async def _execute(
     run_id: str, executor, request, settings=None, timeout_seconds: int | None = None,
     template_name: str = "", retry_count: int = 0, retry_delay_seconds: int = 30,
 ) -> None:
@@ -274,5 +286,9 @@ async def execute(
     # per host, so a fleet collection would otherwise post one per host). Failures
     # always notify.
     if final_status == "success" and getattr(executor, "notify_on_success", True) is False:
+        return
+    # Rollout steps: posture-service raises one notification for the rollout, and
+    # "host unreachable while rebooting" is not news.
+    if final_status != "success" and getattr(executor, "notify_on_failure", True) is False:
         return
     await _notify_completion(run_id, template_name, request.triggered_by, final_status)

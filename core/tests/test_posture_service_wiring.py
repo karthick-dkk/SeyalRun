@@ -64,7 +64,7 @@ def test_every_api_route_has_a_named_audit_action():
     table = re.findall(r'\("(GET|POST|PUT|PATCH|DELETE)", re\.compile\(r"([^"]+)"\), "([^"]+)"', main)
     assert len(table) >= 8
     routes = _api_routes()
-    assert len(routes) == 17, routes  # M1: 8, M2: +9 findings routes
+    assert len(routes) == 41, routes  # M1: 8, M2: +9 findings, M3/M4: +24 patching
     for method, path in routes:
         concrete = re.sub(r"\{[^}]+\}", "abc-123", path)
         hits = [a for m, rx, a in table if m == method and re.match(rx, concrete)]
@@ -113,7 +113,11 @@ def test_facts_executor_runs_only_the_fixed_script():
 def test_production_gate_still_applies_to_facts_runs():
     internal = (CORE / "services/automation-service/app/api/internal.py").read_text()
     block = internal.split("async def create_posture_facts_runs", 1)[1].split("@router", 1)[0]
-    assert "any_production_hosts" in block and "pending_approval" in block
+    assert "_production_gated(" in block and "pending_approval" in block
+    # One gate for facts, package, reboot and hook runs. Without a rollout approval it gates.
+    gate = internal.split("async def _production_gated", 1)[1].split("@router", 1)[0]
+    assert "any_production_hosts" in gate
+    assert re.search(r"if approval is None:\n\s+return True", gate)
 
 
 @pytest.mark.parametrize("compose", ["docker-compose.yml", "docker-compose.prod.yml"])
@@ -137,6 +141,7 @@ def test_dev_and_prod_posture_blocks_match_except_image_source():
 def test_internal_tls_overlay_and_cert_list_include_posture():
     tls = yaml.safe_load((REPO / "docker-compose.internal-tls.yml").read_text())["services"]
     assert tls["posture-service"]["environment"]["AUTOMATION_SERVICE_URL"].startswith("https://")
+    assert tls["posture-service"]["environment"]["ZABBIX_INTEGRATION_SERVICE_URL"].startswith("https://")
     assert tls["api-gateway"]["environment"]["POSTURE_SERVICE_URL"] == "https://posture-service:8108"
     assert "posture-service" in (REPO / "ops/gen-internal-tls.sh").read_text()
 
@@ -166,5 +171,5 @@ def test_no_network_fetch_anywhere_in_posture():
     """Air-gapped: posture talks only to its sibling services, never out."""
     for f in (SVC / "app").rglob("*.py"):
         src = f.read_text()
-        assert not re.search(r"https?://(?!(identity|inventory|automation|posture)-service)", src.split('"""', 2)[-1]), f
+        assert not re.search(r"https?://(?!(identity|inventory|automation|posture|zabbix-integration)-service)", src.split('"""', 2)[-1]), f
         assert "urllib.request" not in src, f

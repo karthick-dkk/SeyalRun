@@ -155,6 +155,7 @@ services:
       IDENTITY_SERVICE_URL: https://identity-service:8101
       INVENTORY_SERVICE_URL: https://inventory-service:8102
       AUTOMATION_SERVICE_URL: https://automation-service:8105
+      ZABBIX_INTEGRATION_SERVICE_URL: https://zabbix-integration-service:8106
     volumes:
       - ${INTERNAL_TLS_DIR}/posture-service.pem:/etc/seyalrun/tls/server.pem:ro
       - ${INTERNAL_TLS_DIR}/posture-service-key.pem:/etc/seyalrun/tls/server-key.pem:ro
