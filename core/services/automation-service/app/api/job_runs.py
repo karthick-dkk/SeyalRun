@@ -15,6 +15,7 @@ from app import audit
 from app._attribution import ACCOUNTABLE_PARAM, actor_user_id, is_requester
 from app._host_ops import APPROVED_BY_PARAM, HOOK_TEMPLATE_PARAM, NO_RERUN_ACTIONS
 from app._posture import HOST_OP_TEMPLATES, mutating_host_ops
+from app._production_gate import any_production_hosts
 from app._params import template_code_params
 from app.database import get_session, SessionLocal
 from app.deps import require_service_token, get_user_id, get_user_name, get_user_role, get_user_real_role
@@ -91,6 +92,9 @@ async def cancel_run(
     await redis.publish(f"job:{run_id}:log", json.dumps({"type": "done", "status": "cancelled", "exit_code": None}))
 
 
+_FINISHED = ("success", "failed", "error", "timeout", "cancelled")
+
+
 @router.post("/job-runs/{run_id}/rerun", status_code=status.HTTP_202_ACCEPTED)
 async def rerun(
     run_id: str,
@@ -111,7 +115,15 @@ async def rerun(
         raise HTTPException(status_code=400, detail="patch and reboot runs cannot be re-run; start them from Patching")
 
     params = dict(orig.params or {})
+    if params.get(HOOK_TEMPLATE_PARAM):
+        raise HTTPException(status_code=400, detail="drain and undrain hooks belong to a rollout; use Retry or Release there")
+    if orig.status not in _FINISHED:
+        raise HTTPException(status_code=400, detail=f"a run that is {orig.status.replace('_', ' ')} cannot be re-run")
+    params.pop(APPROVED_BY_PARAM, None)
     targets = params.get("_target_host_ids") or list(tmpl.target_host_ids or [])
+    # A re-run is a new run: an approval covered the run it was given for, and a run can
+    # have ended (cancelled) without ever being approved.
+    gated = tmpl.requires_approval or await any_production_hosts(targets)
 
     new_id = str(uuid.uuid4())
     # _run_id must point at THIS new run, not the original — it's how a chain
@@ -122,10 +134,12 @@ async def rerun(
         params["_run_id"] = new_id
     new_run = ZAJobRun(
         id=new_id, job_template_id=tmpl.id, triggered_by=f"user:{user_id}",
-        status="pending", params=params, output_lines=[],
+        status="pending_approval" if gated else "pending", params=params, output_lines=[],
     )
     session.add(new_run)
     await session.commit()
+    if gated:
+        return {"run_id": new_id, "status": "pending_approval"}
 
     executors = getattr(request.app.state, "executors", {})
     executor = executors.get(tmpl.action_type)
@@ -150,7 +164,7 @@ async def rerun(
         new_id, executor, req, timeout_seconds=tmpl.timeout_seconds, template_name=tmpl.name,
         retry_count=tmpl.retry_count, retry_delay_seconds=tmpl.retry_delay_seconds,
     ))
-    return {"run_id": new_id}
+    return {"run_id": new_id, "status": "pending"}
 
 
 @router.post("/job-runs/{run_id}/approve", status_code=status.HTTP_202_ACCEPTED)

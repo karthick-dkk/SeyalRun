@@ -301,3 +301,46 @@ def test_hook_edited_while_it_waits_cannot_be_approved(svc, monkeypatch):
         assert (await get(svc, r["run_id"])).status == "pending_approval"
         await call("POST", f"/job-runs/{r['run_id']}/reject", uid="bob", code=200, reason="changed")
     run_case(svc, monkeypatch, body)
+
+
+def test_rerun_never_skips_an_approval(svc, monkeypatch):
+    async def body(call, w):
+        t = await template(call, script_content="true", target_host_ids=[H2])
+        async def ended(status, **params):
+            rid = str(uuid.uuid4())
+            async with svc.db.SessionLocal() as s:
+                s.add(svc.models.ZAJobRun(id=rid, job_template_id=t["id"], triggered_by="user:alice", status=status,
+                                          params={"_target_host_ids": [H2], **params}, output_lines=[]))
+                await s.commit()
+            return rid
+        for status in ("pending_approval", "rejected", "pending", "running"):
+            await call("POST", f"/job-runs/{await ended(status)}/rerun", code=400)
+        # cancelled before anyone approved it, and one that was approved once: both wait again
+        for rid in (await ended("cancelled"), await ended("success", _approved_by="bob")):
+            r = await call("POST", f"/job-runs/{rid}/rerun", uid="alice", code=202)
+            run = await get(svc, r["run_id"])
+            assert run.status == r["status"] == "pending_approval" and "_approved_by" not in run.params
+            await call("POST", f"/job-runs/{r['run_id']}/approve", uid="alice", code=403)
+        await asyncio.sleep(0.02)
+        assert not w.executed
+        await call("POST", f"/job-runs/{r['run_id']}/approve", uid="bob", code=202)
+        w.production = set()                    # not gated: runs at once, as before
+        r = await call("POST", f"/job-runs/{await ended('failed')}/rerun", code=202)
+        await asyncio.sleep(0.02)
+        assert r["status"] == "pending" and r["run_id"] in w.executed
+        await call("PUT", f"/job-templates/{t['id']}", code=200, requires_approval=True)
+        assert (await call("POST", f"/job-runs/{await ended('failed')}/rerun", code=202))["status"] == "pending_approval"
+    run_case(svc, monkeypatch, body)
+
+
+def test_hook_run_cannot_be_rerun(svc, monkeypatch):
+    async def body(call, w):
+        t = await template(call, script_content="true")
+        got = await call("GET", f"/internal/posture/hook-templates/{t['id']}")
+        r = await call("POST", "/internal/posture/hook-runs", code=202, job_template_id=t["id"], expect_updated_at=got["updated_at"],
+                       host_id=H1, requested_by="erin")
+        async with svc.db.SessionLocal() as s:
+            (await s.get(svc.models.ZAJobRun, r["run_id"])).status = "success"
+            await s.commit()
+        await call("POST", f"/job-runs/{r['run_id']}/rerun", code=400)
+    run_case(svc, monkeypatch, body)
