@@ -305,3 +305,151 @@ class PostureUnmatchedItem(Base):
     cvss: Mapped[float | None] = mapped_column(Float, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     references: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+
+# ── M3/M4: packages and patch rollouts ───────────────────────────────────────
+
+class PatchRepo(Base):
+    """An internal mirror SeyalRun writes to the hosts of some groups. Always signed."""
+
+    __tablename__ = "posture_patch_repos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    slug: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    family: Mapped[str] = mapped_column(String(8), nullable=False)          # deb | rpm | zypp
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    suite: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    components: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    gpg_key: Mapped[str] = mapped_column(Text, nullable=False)
+    group_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    editor_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PackageOp(Base):
+    """One package operation an admin asked for on one host, outside a rollout."""
+
+    __tablename__ = "posture_package_ops"
+    __table_args__ = (Index("ix_posture_pkgops_host", "host_id", "created_at"),
+                      Index("ix_posture_pkgops_status", "status"))
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    host_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    op: Mapped[str] = mapped_column(String(20), nullable=False)
+    args: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # queued | running | awaiting_approval | ok | failed
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
+    job_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    result: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    requested_by_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PatchWindow(Base):
+    __tablename__ = "posture_patch_windows"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    days: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # 0 = Monday
+    start: Mapped[str] = mapped_column(String(5), nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    editor_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PatchBaseline(Base):
+    """Reusable rollout settings. A rollout freezes a copy; editing a baseline never
+    changes a rollout that already exists."""
+
+    __tablename__ = "posture_patch_baselines"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    group_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    editor_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PatchRollout(Base):
+    __tablename__ = "posture_rollouts"
+    __table_args__ = (Index("ix_posture_rollouts_status", "status"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    baseline_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # pending_approval | rejected | approved | running | paused | halted | completed | cancelled
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending_approval")
+    status_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Frozen at creation; plan_hash is what an approver signs off on.
+    plan: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    current_wave: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    soak_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    waiting: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    accountable_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    approved_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    approved_by_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    feed_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RolloutHost(Base):
+    __tablename__ = "posture_rollout_hosts"
+    __table_args__ = (
+        UniqueConstraint("rollout_id", "host_id", name="uq_posture_rollout_host"),
+        # A host is in at most one live rollout: set while live, NULL after (NULLs
+        # do not collide on PostgreSQL or MySQL).
+        UniqueConstraint("active_host_id", name="uq_posture_rollout_active_host"),
+        Index("ix_posture_rollout_hosts_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    rollout_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    host_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    active_host_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    wave: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # pending | running | done | failed | skipped | cancelled | rolled_back
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    step: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    step_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    drained: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    maintenance_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    changed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # {step: {"run_id", "status", "tries", "at"}}
+    runs: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # {"snapshot_before", "snapshot_after", "problems_before", "changes", "held", "reboot"}
+    data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    checks: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RolloutEvent(Base):
+    __tablename__ = "posture_rollout_events"
+    __table_args__ = (Index("ix_posture_rollout_events", "rollout_id", "id"),)
+
+    id: Mapped[int] = mapped_column(_BigId, primary_key=True, autoincrement=True)
+    rollout_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    host_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    event: Mapped[str] = mapped_column(String(64), nullable=False)
+    by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")

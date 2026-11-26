@@ -36,6 +36,7 @@ def _local_now(sched, now):
         return now
 from sqlalchemy import and_, or_, select
 
+from ._host_ops import NO_RERUN_ACTIONS
 from ._attribution import ACCOUNTABLE_PARAM, accountable_ids
 from ._params import template_code_params
 from ._production_gate import any_production_hosts
@@ -189,7 +190,7 @@ async def _tick(executors: dict, settings) -> None:
                 logger.info("scheduled run held for approval (production host)", extra={"run_id": run_id, "schedule": sched.name})
                 continue
 
-            executor = executors.get(tmpl.action_type)
+            executor = None if tmpl.action_type in NO_RERUN_ACTIONS else executors.get(tmpl.action_type)
             if executor is None:
                 logger.warning("no executor for action_type=%s (run_id=%s)", tmpl.action_type, run_id)
                 continue

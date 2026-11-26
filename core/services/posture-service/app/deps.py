@@ -76,3 +76,11 @@ def require_admin(caller: Caller = Depends(get_caller)) -> Caller:
     if not caller.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin role required")
     return caller
+
+
+def require_fleet_admin(caller: Caller = Depends(require_admin)) -> Caller:
+    """For what affects more than one host. A kiosk login is bound to a single host,
+    also when the person behind it is an admin."""
+    if caller.kiosk_host_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="a kiosk session is limited to its own host")
+    return caller

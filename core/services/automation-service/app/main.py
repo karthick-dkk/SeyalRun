@@ -64,15 +64,26 @@ async def lifespan(app: FastAPI):
     app.state.executors = discover_plugins("app.plugins.executors", ActionExecutor)
     logger.info("executors loaded", extra={"executors": list(app.state.executors.keys())})
 
+    # First and on its own: deploys start this service before running its migrations,
+    # so the seeding below may fail on a new column, and this must not fail with it.
+    try:
+        from .database import SessionLocal
+        from ._posture import reconcile_interrupted
+        async with SessionLocal() as s:
+            await reconcile_interrupted(s)
+    except Exception:
+        logger.exception("interrupted posture runs could not be reconciled")
     try:
         await _seed_default_templates()
     except Exception:
         logger.exception("default template seed failed")
     try:
         from .database import SessionLocal
-        from ._posture import ensure_posture_template
+        from ._posture import HOST_OP_TEMPLATES, ensure_host_op_template, ensure_posture_template
         async with SessionLocal() as s:
             await ensure_posture_template(s)
+            for action in HOST_OP_TEMPLATES:
+                await ensure_host_op_template(s, action)
     except Exception:
         logger.exception("posture template seed failed")
 

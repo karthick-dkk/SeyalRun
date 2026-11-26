@@ -16,6 +16,7 @@ from .database import engine
 from .api.webhook import router as webhook_router
 from .api.trigger_bindings import router as bindings_router
 from .api.monitor import router as monitor_router
+from .api.zabbix_internal import router as zabbix_internal_router
 
 _settings = get_settings()
 configure_logging("zabbix-integration-service", _settings.log_level, _settings.log_path)
@@ -36,6 +37,7 @@ app.middleware("http")(_metrics.middleware)
 app.include_router(webhook_router, prefix="/api/v1")
 app.include_router(bindings_router, prefix="/api/v1")
 app.include_router(monitor_router, prefix="/api/v1")
+app.include_router(zabbix_internal_router, prefix="/api/v1")
 
 
 @app.get("/health")

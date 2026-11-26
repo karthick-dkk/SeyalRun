@@ -56,7 +56,7 @@ token is denied everything.
 
 ## Tools
 
-`tools/list` returns 15 tools (12 when an admin has turned write tools off); each
+`tools/list` returns 17 tools (14 when an admin has turned write tools off); each
 declares the scope it requires.
 
 | Tool | Scope | Does |
@@ -76,6 +76,8 @@ declares the scope it requires.
 | `ack_notification` | `notifications:ack` | Acknowledge a notification |
 | `get_posture_summary` | `posture:read` | Posture summary + open findings by severity / KEV |
 | `list_findings` | `posture:read` | Vulnerability findings; filter by host, severity, kev, status; limit ≤ 100 |
+| `list_patch_rollouts` | `posture:read` | Patch rollouts: status, waves, host counts, who approved |
+| `get_patch_rollout` | `posture:read` | One rollout: per-host steps, checks, package changes, events |
 
 ## Resources
 

@@ -1,0 +1,19 @@
+Dependencies resolved.
+================================================================================
+ Package             Architecture   Version                Repository      Size
+================================================================================
+Removing:
+ pam                 aarch64        1.5.1-15.el9           @System        4.4 M
+Removing dependent packages:
+ libpwquality        aarch64        1.4.4-8.el9            @System        598 k
+ libuser             aarch64        0.63-13.el9            @System        2.5 M
+ passwd              aarch64        0.80-12.el9            @System        467 k
+ usermode            aarch64        1.114-4.el9            @System        911 k
+ util-linux          aarch64        2.37.4-15.el9          @System         13 M
+
+Transaction Summary
+================================================================================
+Remove  6 Packages
+
+Freed space: 22 M
+Operation aborted.

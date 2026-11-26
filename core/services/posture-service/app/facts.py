@@ -100,12 +100,17 @@ def _os_release(lines: list[str]) -> dict[str, str]:
     return out
 
 
+SUSE_IDS = {"suse", "opensuse", "sles", "sled", "opensuse-leap", "opensuse-tumbleweed", "sle_hpc", "sles_sap"}
+
+
 def distro_family(os_id: str, id_like: str, legacy: str = "") -> str:
     ids = {os_id.lower()} | set(id_like.lower().split())
     if ids & DEBIAN_IDS or "debian" in ids:
         return "debian"
     if ids & RHEL_IDS or {"rhel", "fedora", "centos"} & ids:
         return "rhel"
+    if ids & SUSE_IDS:
+        return "suse"
     if legacy and re.search(r"red hat|centos|rocky|alma|oracle", legacy, re.IGNORECASE):
         return "rhel"
     return ""
@@ -210,6 +215,12 @@ def parse_facts(text: str) -> dict:
             pending.append({"name": name, "arch": arch,
                             "current": by_name_arch.get((name, arch)) or by_name.get(name, ""),
                             "available": ver, "security": name in security_names, "source": repo})
+
+    for r in rec.get("W", []):      # v | repository | name | current | available | arch
+        cols = [c.strip() for c in "\t".join(r).split("|")]
+        if len(cols) >= 6 and cols[2] and cols[4]:
+            pending.append({"name": cols[2], "arch": cols[5], "current": cols[3], "available": cols[4],
+                            "security": False, "source": cols[1]})
 
     reboot: bool | None = None
     method = ""

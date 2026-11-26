@@ -32,6 +32,15 @@ see, not on a proxy for it:
          accepted. The CVE used is a fixed fake id, so repeated runs update one
          finding instead of piling up.
 
+  * 3.0 M3/M4 patching: lists answer and are audited; a mirror without a signing key,
+         a misspelt safety setting and a rollout with no window choice are refused
+         (400); a posture:read PAT reads rollouts but cannot create one. Optional:
+           POSTURE_E2E_PATCH_HOST_ID=<id> POSTURE_E2E_PATCH_PACKAGE=<name>  one host
+             that may really be patched: a rollout of that package (reboot policy
+             "never") is refused self-approval (403) and a wrong plan hash (409),
+             approved by the second admin, runs to completed, and its evidence names
+             both people. Without them nothing is changed on any host.
+
 Everything it creates (second admin, project, template, PAT) is removed at the
 end, so repeated runs do not pile up on staging. Standard library only.
 
@@ -120,6 +129,7 @@ def main(A):
     s, d = call("POST", "/api/v1/auth/change-password", B, {"current_password": pw, "new_password": pw + "x!"})
     if s == 200:
         B = (d or {}).get("access_token") or login(uname, pw + "x!")
+    PAT["admin2"] = B  # reused by patching_checks: the second person who approves
 
     s, proj = call("POST", "/api/v1/projects", A, {"name": "e2e-" + secrets.token_hex(3), "source_type": "local"})
     if not check("create project", s in (200, 201), f"{s} {proj}"):
@@ -380,6 +390,62 @@ def findings_checks(A, pat_token=None):
     check("native run accepted (202)", s == 202 and "queued" in (d or {}), f"{s} {d}")
 
 
+def patching_checks(A, pat_token=None):
+    """SeyalRun 3.0 M3/M4 — patching through the real gateway."""
+    base = "/api/v1/posture"
+    for ep in ("patches", "patch-baselines", "patch-windows", "patch-repos", "package-ops"):
+        s, d = call("GET", f"{base}/{ep}", A)
+        if not check(f"patching GET {ep} (200)", s == 200, f"{s} {d}"):
+            return
+    s, d = call("POST", f"{base}/patch-repos", A, {"slug": "e2e-unsigned", "family": "deb", "base_url": "http://mirror.invalid/d",
+                                                  "suite": "x", "components": "main", "gpg_key": ""})
+    check("a mirror without a signing key is refused (400)", s == 400, f"{s} {d}")
+    s, d = call("POST", f"{base}/patch-baselines", A, {"name": "e2e-bad", "config": {"max_failuers": 1}})
+    check("a misspelt safety setting is refused (400)", s == 400, f"{s} {d}")
+    s, d = call("POST", f"{base}/patches", A, {"name": "e2e", "host_ids": ["nope"]})
+    check("a rollout without a window choice is refused (400)", s == 400 and "window" in str(d), f"{s} {d}")
+    s, w = call("POST", f"{base}/patch-windows", A, {"name": f"e2e-{secrets.token_hex(4)}", "timezone": "Asia/Kolkata", "days": [5, 6],
+                                                    "start": "22:00", "duration_minutes": 240})
+    if check("window created, next opening computed (201)", s == 201 and (w.get("open_now") or w.get("next_open")), f"{s} {w}"):
+        s, _ = call("DELETE", f"{base}/patch-windows/{w['id']}", A)
+        check("window deleted (204)", s == 204, s)
+    time.sleep(2)
+    check("patching changes are audited (posture.patch_window.create)", bool(audit_any(A, "posture.patch_window.create")))
+    if pat_token:
+        s, _ = call("GET", f"{base}/patches", pat_token)
+        check("posture:read PAT reads rollouts (200)", s == 200, s)
+        s, _ = call("POST", f"{base}/patches", pat_token, {"name": "x", "host_ids": ["x"], "ignore_window": True})
+        check("posture:read PAT cannot create a rollout (403)", s == 403, s)
+
+    host, pkg = os.environ.get("POSTURE_E2E_PATCH_HOST_ID"), os.environ.get("POSTURE_E2E_PATCH_PACKAGE")
+    if not (host and pkg and PAT.get("admin2")):
+        print("NOTE POSTURE_E2E_PATCH_HOST_ID / _PACKAGE not set — skipping the live rollout (no host is changed)")
+        return
+    s, r = call("POST", f"{base}/patches", A, {"name": "e2e live rollout", "host_ids": [host], "ignore_window": True,
+                                              "config": {"scope": "packages", "include": [pkg], "reboot": "never", "soak_minutes": 0}})
+    if not check("live rollout created, waiting for approval (201)", s == 201 and r.get("status") == "pending_approval", f"{s} {r}"):
+        return
+    rid, B = r["id"], PAT["admin2"]
+    s, _ = call("POST", f"{base}/patches/{rid}/approve", A, {"plan_hash": r["plan_hash"]})
+    check("the requester cannot approve the rollout (403)", s == 403, s)
+    s, _ = call("POST", f"{base}/patches/{rid}/approve", B, {"plan_hash": "0" * 64})
+    check("approval of a plan that was not reviewed is refused (409)", s == 409, s)
+    s, d = call("POST", f"{base}/patches/{rid}/approve", B, {"plan_hash": r["plan_hash"]})
+    check("a second admin approves (200)", s == 200, f"{s} {d}")
+    for _ in range(180):
+        _, d = call("GET", f"{base}/patches/{rid}", A)
+        if d.get("status") in ("completed", "halted", "cancelled"):
+            break
+        time.sleep(5)
+    if not check("live rollout completed", d.get("status") == "completed", f"{d.get('status')} {d.get('status_reason')}"):
+        call("POST", f"{base}/patches/{rid}/cancel", A, {"reason": "e2e clean-up"})
+    row = (d.get("host_rows") or [{}])[0]
+    check("the planned package changed on the host", any(c.get("name") == pkg and c.get("new") for c in row.get("changes") or []), row)
+    s, ev = call("GET", f"{base}/patches/{rid}/evidence", A)
+    check("evidence names requester and approver", s == 200 and ev.get("requested_by") and ev.get("approved_by")
+          and ev["requested_by"] != ev["approved_by"], ev if s != 200 else "")
+
+
 if __name__ == "__main__":
     try:
         A = login("Admin", ADMIN_PW)
@@ -394,6 +460,10 @@ if __name__ == "__main__":
         posture_checks(A)
     except Exception as exc:
         check("posture e2e completed without an exception", False, repr(exc))
+    try:
+        patching_checks(A, PAT.get("token"))
+    except Exception as exc:
+        check("patching e2e completed without an exception", False, repr(exc))
     try:
         findings_checks(A, PAT.get("token"))
     except Exception as exc:

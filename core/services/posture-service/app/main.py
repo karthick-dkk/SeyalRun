@@ -22,10 +22,11 @@ from libs.securelog import configure_logging
 from libs.servicetoken import ServiceTokenError, verify
 from sqlalchemy import text
 
-from . import audit, clients, collector, feeds, scanning
+from . import audit, clients, collector, feeds, rollout_engine, scanning
 from .api.feeds import router as feeds_router
 from .api.findings import router as findings_router
 from .api.hosts import router as hosts_router
+from .api.patching import router as patching_router
 from .config import get_settings
 from .database import engine
 from .deps import require_service_token
@@ -55,13 +56,14 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("could not reconcile interrupted feed imports")
     scanning.registry()  # discover scanner plugins at startup, not on first request
-    poller = asyncio.create_task(collector.poll_loop())
+    tasks = [asyncio.create_task(collector.poll_loop()), asyncio.create_task(rollout_engine.loop())]
     yield
-    poller.cancel()
-    try:
-        await poller
-    except asyncio.CancelledError:
-        pass
+    for task in tasks:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await clients.close()
     await engine.dispose()
 
@@ -92,6 +94,36 @@ _AUDIT_ROUTES: list[tuple[str, re.Pattern, str, str]] = [
     ("GET", re.compile(r"^/api/v1/posture/scanners/?$"), "posture.scanners.list", "scanner"),
     ("POST", re.compile(r"^/api/v1/posture/scanners/native/run/?$"), "posture.native.run", "scanner"),
     ("POST", re.compile(r"^/api/v1/posture/scans/import/?$"), "posture.scan.import", "scan"),
+    # M3/M4 patching.
+    ("POST", re.compile(r"^/api/v1/posture/hosts/([^/]+)/packages/?$"), "posture.package.op", "host"),
+    ("GET", re.compile(r"^/api/v1/posture/package-ops/?$"), "posture.package_ops.list", "package_op"),
+    ("GET", re.compile(r"^/api/v1/posture/patch-repos/?$"), "posture.patch_repo.list", "patch_repo"),
+    ("POST", re.compile(r"^/api/v1/posture/patch-repos/?$"), "posture.patch_repo.create", "patch_repo"),
+    ("PUT", re.compile(r"^/api/v1/posture/patch-repos/([^/]+)/?$"), "posture.patch_repo.update", "patch_repo"),
+    ("DELETE", re.compile(r"^/api/v1/posture/patch-repos/([^/]+)/?$"), "posture.patch_repo.delete", "patch_repo"),
+    ("GET", re.compile(r"^/api/v1/posture/patch-windows/?$"), "posture.patch_window.list", "patch_window"),
+    ("POST", re.compile(r"^/api/v1/posture/patch-windows/?$"), "posture.patch_window.create", "patch_window"),
+    ("PUT", re.compile(r"^/api/v1/posture/patch-windows/([^/]+)/?$"), "posture.patch_window.update", "patch_window"),
+    ("DELETE", re.compile(r"^/api/v1/posture/patch-windows/([^/]+)/?$"), "posture.patch_window.delete", "patch_window"),
+    ("GET", re.compile(r"^/api/v1/posture/patch-baselines/?$"), "posture.patch_baseline.list", "patch_baseline"),
+    ("POST", re.compile(r"^/api/v1/posture/patch-baselines/?$"), "posture.patch_baseline.create", "patch_baseline"),
+    ("PUT", re.compile(r"^/api/v1/posture/patch-baselines/([^/]+)/?$"), "posture.patch_baseline.update", "patch_baseline"),
+    ("DELETE", re.compile(r"^/api/v1/posture/patch-baselines/([^/]+)/?$"), "posture.patch_baseline.delete", "patch_baseline"),
+    ("GET", re.compile(r"^/api/v1/posture/patches/?$"), "posture.patch.list", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/?$"), "posture.patch.create", "patch_rollout"),
+    ("GET", re.compile(r"^/api/v1/posture/patches/([^/]+)/?$"), "posture.patch.view", "patch_rollout"),
+    ("GET", re.compile(r"^/api/v1/posture/patches/([^/]+)/evidence/?$"), "posture.patch.evidence", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/approve/?$"), "posture.patch.approve", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/reject/?$"), "posture.patch.reject", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/pause/?$"), "posture.patch.pause", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/resume/?$"), "posture.patch.resume", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/cancel/?$"), "posture.patch.cancel", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/hosts/[^/]+/retry/?$"), "posture.patch.host_retry", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/hosts/[^/]+/skip/?$"), "posture.patch.host_skip", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/hosts/[^/]+/rollback/?$"), "posture.patch.host_rollback", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/hosts/[^/]+/release/?$"), "posture.patch.host_release", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/hosts/[^/]+/force_release/?$"), "posture.patch.host_force_release", "patch_rollout"),
+    ("POST", re.compile(r"^/api/v1/posture/patches/([^/]+)/hosts/[^/]+/[^/]+/?$"), "posture.patch.host_action", "patch_rollout"),
 ]
 
 
@@ -143,6 +175,7 @@ async def audit_every_call(request: Request, call_next):
 app.include_router(hosts_router, prefix="/api/v1")
 app.include_router(feeds_router, prefix="/api/v1")
 app.include_router(findings_router, prefix="/api/v1")
+app.include_router(patching_router, prefix="/api/v1")
 
 
 @app.get("/api/v1/internal/plugins", dependencies=[Depends(require_service_token)])

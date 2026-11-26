@@ -163,6 +163,7 @@ const P = {
   assets: ['M21 7.5l-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9'],
   sessions: ['M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z', 'M7 9l3 3-3 3M13 15h4'],
   posture: ['M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z', 'M8 13l2.5 2.5L16 10'],
+  patching: ['M12 3v12m0 0l-4-4m4 4l4-4M5 19h14'],
   playbooks: ['M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5z', 'M4 19.5A1.5 1.5 0 0 0 5.5 21H20v-3'],
   mcp: ['M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z'],
   users: ['M9 4.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7z', 'M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6'],
@@ -186,6 +187,7 @@ const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => {
       auth.can('assets') && { key: 'assets', label: 'Assets', to: '/assets', paths: P.assets, match: ['/assets'] },
       auth.can('sessions') && { key: 'sessions', label: 'Sessions', to: '/sessions', paths: P.sessions, match: ['/sessions'] },
       auth.can('posture') && { key: 'posture', label: 'Posture', to: '/posture', paths: P.posture, match: ['/posture'] },
+      auth.can('posture') && { key: 'patching', label: 'Patching', to: '/patching', paths: P.patching, match: ['/patching'] },
     ]),
     g('Automation', [
       auth.can('automation') && { key: 'playbooks', label: 'Playbooks', to: '/automation', paths: P.playbooks, match: ['/automation', '/jobs'] },
@@ -219,6 +221,7 @@ const crumb = computed<[string, string]>(() => {
   if (p.startsWith('/assets')) return ['Access', 'Assets']
   if (p.startsWith('/sessions')) return ['Access', 'Sessions']
   if (p.startsWith('/posture')) return ['Access', 'Posture']
+  if (p.startsWith('/patching')) return ['Access', 'Patching']
   if (p.startsWith('/terminal')) return ['Access', 'Terminal']
   if (p.startsWith('/jobs/')) return ['Playbooks', 'Run']
   if (p.startsWith('/automation')) return ['Automation', 'Playbooks']

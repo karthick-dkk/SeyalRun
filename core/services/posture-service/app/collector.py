@@ -38,12 +38,12 @@ def _aware(dt: datetime | None) -> datetime | None:
     return dt
 
 
-async def request_collection(hosts: list[dict], user_id: str) -> list[dict]:
+async def request_collection(hosts: list[dict], user_id: str, approval: dict | None = None) -> list[dict]:
     """hosts: inventory host dicts (already visibility- and OS-filtered).
     Returns automation's [{host_id, run_id, status, reused}]."""
     if not hosts:
         return []
-    runs = await clients.request_facts_runs([h["id"] for h in hosts], user_id)
+    runs = await clients.request_facts_runs([h["id"] for h in hosts], user_id, approval)
     by_id = {h["id"]: h for h in hosts}
     now = _now()
     async with SessionLocal() as session:

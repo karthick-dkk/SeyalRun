@@ -11,6 +11,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app._attribution import with_editor
+from app._host_ops import NO_RERUN_ACTIONS
 from app._concurrency import live_run_id
 from app._params import ParamNotAllowedError, filter_caller_params, template_code_params
 from app._production_gate import any_production_hosts as _any_production_hosts
@@ -102,6 +104,16 @@ def _to_raw_github_url(url: str) -> str:
                      "or a raw.githubusercontent.com link")
 
 
+def _check_template(action_type: str, default_params: dict | None) -> None:
+    """Package and reboot operations exist only as built-in templates, and "_" params
+    are set by this service: a template may define neither."""
+    if action_type in NO_RERUN_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"{action_type} is built in and cannot be used in a template")
+    bad = sorted(k for k in (default_params or {}) if str(k).startswith("_"))
+    if bad:
+        raise HTTPException(status_code=400, detail="reserved parameter name(s): " + ", ".join(bad)[:200])
+
+
 class RunPayload(BaseModel):
     params: dict = {}
     target_host_ids: list[str] | None = None
@@ -140,7 +152,8 @@ async def create_template(
 ):
     if role not in ("superadmin", "admin", "automation"):
         raise HTTPException(status_code=403, detail="automation write access required")
-    tmpl = ZAJobTemplate(**payload.model_dump(), created_by=user_id)
+    _check_template(payload.action_type, payload.default_params)
+    tmpl = ZAJobTemplate(**payload.model_dump(), created_by=user_id, editor_ids=[user_id])
     session.add(tmpl)
     await session.commit()
     await session.refresh(tmpl)
@@ -201,6 +214,7 @@ async def update_template(
     template_id: str,
     payload: TemplateUpdate,
     role: str = Depends(get_user_role),
+    user_id: str = Depends(get_user_id),
     session: AsyncSession = Depends(get_session),
 ):
     if role not in ("superadmin", "admin", "automation"):
@@ -208,8 +222,15 @@ async def update_template(
     tmpl = await session.get(ZAJobTemplate, template_id)
     if tmpl is None:
         raise HTTPException(status_code=404)
-    for k, v in payload.model_dump(exclude_none=True).items():
+    changes = payload.model_dump(exclude_none=True)
+    if tmpl.action_type in NO_RERUN_ACTIONS:
+        changes.pop("action_type", None)        # the built-in template stays what it is
+        _check_template("", payload.default_params)
+    else:
+        _check_template(payload.action_type or tmpl.action_type, payload.default_params)
+    for k, v in changes.items():
         setattr(tmpl, k, v)
+    tmpl.editor_ids = with_editor(tmpl.editor_ids, user_id)
     tmpl.updated_at = datetime.now(timezone.utc)
     await session.commit()
     await session.refresh(tmpl)
@@ -244,6 +265,8 @@ async def run_template(
         raise HTTPException(status_code=404)
     if not tmpl.enabled:
         raise HTTPException(status_code=400, detail="template is disabled")
+    if tmpl.action_type in NO_RERUN_ACTIONS:
+        raise HTTPException(status_code=400, detail="this template is run by Posture → Patching only")
 
     target_host_ids = payload.target_host_ids or list(tmpl.target_host_ids or [])
     # Allowlist caller-supplied survey params; script_content/playbook_path come from

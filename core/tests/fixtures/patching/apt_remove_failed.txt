@@ -1,0 +1,16 @@
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Some packages could not be installed. This may mean that you have
+requested an impossible situation or if you are using the unstable
+distribution that some required packages have not yet been created
+or been moved out of Incoming.
+The following information may help to resolve the situation:
+
+The following packages have unmet dependencies:
+ apt : Depends: adduser but it is not going to be installed
+       Recommends: ca-certificates but it is not installable
+ login : PreDepends: libpam-runtime but it is not going to be installed
+         PreDepends: libpam-modules but it is not going to be installed
+E: Error, pkgProblemResolver::Resolve generated breaks, this may be caused by held packages.
+rc=100

@@ -10,6 +10,7 @@
 #   V version | H hostname | K kernel | A arch | R os-release line | L legacy release
 #   M package manager | I installed pkg | P apt upgradable line | S apt-get sim line
 #   C dnf/yum check-update line | Q security advisory line | N installed kernel
+#   W zypper list-updates row
 #   B reboot flag + method | E warning | Z end-of-payload sentinel
 #
 # The records are gzip-compressed and base64-wrapped between the BEGIN/END
@@ -71,7 +72,21 @@ collect() {
     rpm -q --qf 'N\t%{NAME}\t%{VERSION}-%{RELEASE}.%{ARCH}\t%{INSTALLTIME}\n' kernel kernel-core 2>/dev/null | grep '^N'
     _pm=""
     if command -v dnf >/dev/null 2>&1; then _pm=dnf; elif command -v yum >/dev/null 2>&1; then _pm=yum; fi
-    if [ -n "$_pm" ]; then
+    if command -v zypper >/dev/null 2>&1; then
+      # --no-refresh: whatever metadata the host last fetched, as for apt.
+      _out="$(_t 180 zypper --non-interactive --no-refresh list-updates 2>/dev/null </dev/null)"; _rc=$?
+      if [ "$_rc" -eq 0 ]; then
+        printf '%s\n' "$_out" | grep '^v ' | _prefix W
+        printf 'E\tzypper does not say which package updates are security updates\n'
+      else
+        printf 'E\tzypper list-updates failed (exit %s): pending updates unknown\n' "$_rc"
+      fi
+      _t 60 zypper --non-interactive needs-rebooting >/dev/null 2>&1 </dev/null; _rc=$?
+      case "$_rc" in
+        0) printf 'B\t0\tzypper\n' ;;
+        102) printf 'B\t1\tzypper\n' ;;
+      esac
+    elif [ -n "$_pm" ]; then
       # check-update exits 100 when updates exist, 0 when none, 1 on error.
       _out="$(_t 180 "$_pm" -q check-update 2>/dev/null)"; _rc=$?
       if [ "$_rc" -eq 0 ] || [ "$_rc" -eq 100 ]; then

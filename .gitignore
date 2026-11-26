@@ -34,5 +34,6 @@ web-search-mcp/
 !README.md
 !docs/compliance/*.md
 !docs/ARCHITECTURE.md
+!docs/PATCHING.md
 !modules/jumpserver-legacy/MIGRATION.md
 docs/designs/

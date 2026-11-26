@@ -12,7 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit
-from app._attribution import ACCOUNTABLE_PARAM, actor_user_id, is_requester
+from app._attribution import ACCOUNTABLE_PARAM, accountable_ids, actor_user_id, is_requester
+from app._host_ops import APPROVED_BY_PARAM, HOOK_TEMPLATE_PARAM, NO_RERUN_ACTIONS
+from app._posture import HOST_OP_TEMPLATES, mutating_host_ops
+from app._production_gate import any_production_hosts
+from app._template_version import TEMPLATE_VERSION_PARAM, template_version
 from app._params import template_code_params
 from app.database import get_session, SessionLocal
 from app.deps import require_service_token, get_user_id, get_user_name, get_user_role, get_user_real_role
@@ -71,6 +75,9 @@ async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
     return _out(run, tmpl)
 
 
+_FINISHED = ("success", "failed", "error", "timeout", "cancelled")
+
+
 @router.delete("/job-runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_run(
     run_id: str,
@@ -80,7 +87,7 @@ async def cancel_run(
     run = await session.get(ZAJobRun, run_id)
     if run is None:
         raise HTTPException(status_code=404)
-    if run.status in ("success", "failed", "error", "cancelled"):
+    if run.status in (*_FINISHED, "rejected"):      # a rejection stays on record as one
         raise HTTPException(status_code=400, detail="run already finished")
     run.status = "cancelled"
     run.ended_at = datetime.now(timezone.utc)
@@ -105,9 +112,24 @@ async def rerun(
         raise HTTPException(status_code=400, detail="job template no longer exists")
     if not tmpl.enabled:
         raise HTTPException(status_code=400, detail="template is disabled")
+    if tmpl.action_type in NO_RERUN_ACTIONS:
+        raise HTTPException(status_code=400, detail="patch and reboot runs cannot be re-run; start them from Patching")
 
     params = dict(orig.params or {})
+    if params.get(HOOK_TEMPLATE_PARAM):
+        raise HTTPException(status_code=400, detail="drain and undrain hooks belong to a rollout; use Retry or Release there")
+    if orig.status not in _FINISHED:
+        raise HTTPException(status_code=400, detail=f"a run that is {orig.status.replace('_', ' ')} cannot be re-run")
+    params.pop(APPROVED_BY_PARAM, None)
+    # Whoever chose the replayed parameters may not approve them by having somebody else press Re-run.
+    params[ACCOUNTABLE_PARAM] = accountable_ids(
+        *(params.get(ACCOUNTABLE_PARAM) or []), actor_user_id(orig.triggered_by), user_id)
+    if tmpl.action_type == "chain":     # like the script: from the template, not replayed
+        params["_chain_steps"] = tmpl.chain_steps
     targets = params.get("_target_host_ids") or list(tmpl.target_host_ids or [])
+    # A re-run is a new run: an approval covered the run it was given for, and a run can
+    # have ended (cancelled) without ever being approved.
+    gated = tmpl.requires_approval or await any_production_hosts(targets)
 
     new_id = str(uuid.uuid4())
     # _run_id must point at THIS new run, not the original — it's how a chain
@@ -118,10 +140,12 @@ async def rerun(
         params["_run_id"] = new_id
     new_run = ZAJobRun(
         id=new_id, job_template_id=tmpl.id, triggered_by=f"user:{user_id}",
-        status="pending", params=params, output_lines=[],
+        status="pending_approval" if gated else "pending", params=params, output_lines=[],
     )
     session.add(new_run)
     await session.commit()
+    if gated:
+        return {"run_id": new_id, "status": "pending_approval"}
 
     executors = getattr(request.app.state, "executors", {})
     executor = executors.get(tmpl.action_type)
@@ -146,7 +170,7 @@ async def rerun(
         new_id, executor, req, timeout_seconds=tmpl.timeout_seconds, template_name=tmpl.name,
         retry_count=tmpl.retry_count, retry_delay_seconds=tmpl.retry_delay_seconds,
     ))
-    return {"run_id": new_id}
+    return {"run_id": new_id, "status": "pending"}
 
 
 @router.post("/job-runs/{run_id}/approve", status_code=status.HTTP_202_ACCEPTED)
@@ -176,6 +200,24 @@ async def approve_run(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="the requester, or whoever configured the schedule/trigger that started it, cannot approve this run")
 
+    # The script is read from the template now. A hook edited while it waited is not the
+    # one that was planned, and its new editor is not on the run's list of barred people.
+    planned = (run.params or {}).get(HOOK_TEMPLATE_PARAM)
+    if planned and planned != (tmpl.updated_at.isoformat() if tmpl.updated_at else ""):
+        raise HTTPException(status_code=409, detail="the hook template changed after this run was requested; reject it")
+
+    requested = (run.params or {}).get(TEMPLATE_VERSION_PARAM)
+    if requested is None:       # waiting since before versions were recorded
+        raise HTTPException(status_code=409, detail="this run was requested before an upgrade; reject it and request it again")
+    if requested != await session.run_sync(lambda s: template_version(s.connection(), tmpl.id)):
+        raise HTTPException(status_code=409, detail="the template changed after this run was requested; reject it and request it again")
+
+    if tmpl.action_type in HOST_OP_TEMPLATES:
+        # It was free when the run was requested; a rollout may be working on it now.
+        hosts = (run.params or {}).get("_target_host_ids") or []
+        if hosts and await mutating_host_ops(session, hosts[0], exclude=run_id):
+            raise HTTPException(status_code=409, detail="another package or reboot operation is active on this host")
+
     # Recorded before anything is dispatched, and fail-closed: an approval that
     # cannot be attributed is exactly the untraced change this gate prevents.
     try:
@@ -192,6 +234,7 @@ async def approve_run(
                             detail="approval could not be recorded in the audit log; the run was not started")
 
     run.status = "pending"
+    run.params = {**(run.params or {}), APPROVED_BY_PARAM: user_id}
     await session.commit()
 
     executors = getattr(request.app.state, "executors", {})
@@ -211,6 +254,7 @@ async def approve_run(
         params={**params, **template_code_params(tmpl)},
         triggered_by=run.triggered_by,
     )
+    _runner.LIVE_RUNS.add(run_id)       # before the first poll can see it
     asyncio.create_task(_runner.execute(
         run_id, executor, req, timeout_seconds=tmpl.timeout_seconds, template_name=tmpl.name,
         retry_count=tmpl.retry_count, retry_delay_seconds=tmpl.retry_delay_seconds,

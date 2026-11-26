@@ -166,6 +166,7 @@ async def get_host_internal(host_id: str, session: AsyncSession = Depends(get_se
         "enabled": host.enabled,
         "zone_id": host.zone_id,
         "is_production": host.is_production,
+        "zabbix_hostid": host.zabbix_hostid,
     }
 
 
