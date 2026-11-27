@@ -13,6 +13,8 @@ from libs.adminapproval import NOT_REQUIRED, approval_required, is_admin_role
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..accessrequest import USER_REQUEST, guard_decision, start_window
+from ..approvalmail import build_approval_email
 from ..audit import log_action
 from ..config import get_settings
 from ..database import get_session
@@ -106,29 +108,17 @@ async def _send_approval_request_emails(session: AsyncSession, authz: ZAAuthoriz
         # touches `session`, so this is safe. Serially, N recipients meant N full
         # SMTP TCP+TLS+AUTH handshakes back-to-back inside this request handler.
         mail_cfg = await get_mail_settings(session)
+        requester = await session.get(ZAUser, authz.requested_by) if authz.requested_by else None
+        requester_name = requester.username if requester else ""
 
         async def _send_one(user) -> None:
-            links = links_by_user[user.id]
-            lines = [
-                "A new access authorization is pending your approval:",
-                "",
-                f"  Name: {authz.name}",
-                f"  Hosts: {', '.join(authz.host_ids or []) or '(none)'}",
-                f"  Actions: {', '.join(authz.actions or []) or '(none)'}",
-                f"  Expires if approved: {authz.date_expired.isoformat() if authz.date_expired else 'n/a'}",
-                "",
-            ]
-            if links.get("approve") and links.get("reject"):
-                lines += [f"Approve: {links['approve']}", f"Reject: {links['reject']}", ""]
-            else:
-                lines += [
-                    "Set 'App Public URL' in Platform Settings to enable one-click approval "
-                    "links by email. In the meantime, review this request in the SeyalRun "
-                    "console under Authorizations.", "",
-                ]
-            lines.append(f"This link expires in {_EMAIL_TOKEN_LIFETIME_DAYS} days and can only be used once.")
+            # app/approvalmail.py: system lines are single-line and come first;
+            # requester-supplied text (an access request's reason) only ever
+            # appears after the links, in a labelled "> "-quoted block.
+            subject, body = build_approval_email(
+                authz, links_by_user[user.id], requester_name, _EMAIL_TOKEN_LIFETIME_DAYS)
             try:
-                await send_mail_with_settings(mail_cfg, user.email, f"Approval needed: {authz.name}", "\n".join(lines))
+                await send_mail_with_settings(mail_cfg, user.email, subject, body)
             except MailError as exc:
                 logger.warning("approval email send failed", extra={"authz_id": authz.id, "to": user.email, "error": str(exc)})
 
@@ -193,6 +183,10 @@ async def _validate_email_token(
     # blocked even if roles changed between send and click.
     if approver.id == authz.requested_by:
         return None, None, None, _html_page("Not allowed", "The requester cannot approve their own authorization.")
+    try:
+        guard_decision(authz, approver.id)
+    except HTTPException:
+        return None, None, None, _html_page("Not allowed", "The requester cannot decide their own access request.")
 
     return tok, authz, approver, None
 
@@ -261,19 +255,21 @@ async def authorization_email_action_confirm(token: str, session: AsyncSession =
     for other in others.scalars().all():
         other.used_at = tok.used_at
 
+    now = datetime.now(timezone.utc)
     if tok.action == "approve":
+        start_window(authz, now)
         authz.status, authz.enabled = "active", True
     else:
         authz.status, authz.enabled = "rejected", False
     authz.approved_by = approver.id
-    authz.approved_at = datetime.now(timezone.utc)
+    authz.approved_at = now
     await session.commit()
 
     await log_action(
         session, user_id=approver.id, username=approver.username,
         action=f"authorization.{tok.action}_via_email",
         resource_type="authorization", resource_id=authz.id,
-        details={"requested_by": authz.requested_by}, result="success",
+        details={"requested_by": authz.requested_by, "request_kind": authz.request_kind}, result="success",
     )
 
     verb = "approved" if tok.action == "approve" else "rejected"
@@ -413,6 +409,14 @@ async def update_authorization(
     authz = result.scalar_one_or_none()
     if authz is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="authorization not found")
+    # A user's access request is decided, not edited: an edit would re-attribute
+    # it to the editing admin (requested_by) and could widen it past what the user
+    # asked for and an approver reviewed. Reject it, or write a separate rule.
+    if authz.request_kind == USER_REQUEST:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="access requests cannot be edited — approve or reject it, or create a separate rule",
+        )
 
     # Any edit re-opens approval — otherwise a trivially-approved grant could be
     # silently widened afterward with no second reviewer ever seeing the real change.
@@ -451,18 +455,23 @@ async def approve_authorization(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"authorization is {authz.status}, not pending approval")
     if actor_id == authz.requested_by:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="the requester cannot approve their own authorization")
+    # A user's access request: separately and unconditionally decided by someone
+    # other than the requester/beneficiary (app/accessrequest.py).
+    guard_decision(authz, actor_id)
 
+    now = datetime.now(timezone.utc)
+    start_window(authz, now)
     authz.status = "active"
     authz.enabled = True
     authz.approved_by = actor_id
-    authz.approved_at = datetime.now(timezone.utc)
+    authz.approved_at = now
     await session.commit()
     await session.refresh(authz)
 
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="authorization.approve",
         resource_type="authorization", resource_id=authz.id,
-        details={"requested_by": authz.requested_by}, result="success",
+        details={"requested_by": authz.requested_by, "request_kind": authz.request_kind}, result="success",
     )
     return authz
 
@@ -488,6 +497,7 @@ async def reject_authorization(
     # different admin must be the one to decide, either way.
     if actor_id == authz.requested_by:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="the requester cannot reject their own authorization")
+    guard_decision(authz, actor_id)
 
     authz.status = "rejected"
     authz.enabled = False
@@ -499,7 +509,7 @@ async def reject_authorization(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="authorization.reject",
         resource_type="authorization", resource_id=authz.id,
-        details={"requested_by": authz.requested_by}, result="success",
+        details={"requested_by": authz.requested_by, "request_kind": authz.request_kind}, result="success",
     )
     return authz
 

@@ -197,6 +197,42 @@ class ZAAuthorization(Base):
     requested_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Self-service access requests (api/access_requests.py). request_kind is
+    # "user_request" for a rule a user asked for from the Hosts page, NULL for a
+    # rule an admin wrote. Such a rule always starts pending_approval and can only
+    # be activated by someone other than the requester — independently of any
+    # admin-approval policy switch, which governs admins' own rules only.
+    # request_duration_minutes is the length the user asked for; the window is
+    # re-anchored to the moment of approval so time spent waiting is not lost.
+    request_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    request_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class ZAHostGroupViewer(Base):
+    """Host tree view membership: a user or user group may SEE every host under a
+    host group (the group and its descendants, inventory DB) — nothing more.
+
+    Deliberately NOT a za_authorizations row. Every login-type consumer (terminal
+    session create and resolve, SFTP, credential reveal) reads only
+    za_authorizations, and authz/host-ids returns these hosts only when the caller
+    opts in with include_view=true (and never with strict=true). A view grant
+    therefore cannot be mistaken for an access grant by a consumer that forgets to
+    check actions — the "empty actions means unrestricted" convention in the
+    terminal path is exactly how that mistake would happen.
+
+    Exactly one of user_id / user_group_id is set (enforced in the API). Active
+    immediately: an admin set it, and it grants no access to approve.
+    """
+
+    __tablename__ = "za_host_group_viewers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uid)
+    host_group_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("za_users.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_group_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("za_user_groups.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ZAAuthorizationApprovalToken(Base):

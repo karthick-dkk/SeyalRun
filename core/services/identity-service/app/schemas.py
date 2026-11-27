@@ -211,6 +211,11 @@ class AuthorizationOut(AuthorizationCreate):
     requested_by: str | None = None
     approved_by: str | None = None
     approved_at: datetime | None = None
+    # Self-service access requests (api/access_requests.py) — what the approver
+    # needs to judge one: why, and for how long.
+    request_kind: str | None = None
+    reason: str | None = None
+    request_duration_minutes: int | None = None
 
 
 class CommandGroupCreate(BaseModel):

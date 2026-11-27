@@ -52,7 +52,17 @@
               <span class="av">{{ ini(userName(a.requested_by)) }}</span>
               <div class="al-b">
                 <div class="al-h"><b>{{ a.name }}</b><span class="muted" style="font-size:12.5px">{{ ago(a.created_at) }}</span></div>
-                <span class="muted" style="font-size:13px">{{ userName(a.requested_by) }} · {{ (a.actions || []).join(', ') }}</span>
+                <template v-if="a.request_kind === 'user_request'">
+                  <!-- A user's own access request: everything the approver needs to judge it. -->
+                  <dl class="req">
+                    <dt>Requester</dt><dd>{{ userName(a.requested_by) }}</dd>
+                    <dt>Host</dt><dd>{{ hostName(a.host_id) }}</dd>
+                    <dt>Account</dt><dd>{{ credName(a.credential_id) }}</dd>
+                    <dt>Duration</dt><dd>{{ fmtDuration(a.request_duration_minutes) }} from approval · {{ (a.actions || []).join(', ') }}</dd>
+                    <dt>Reason</dt><dd class="req-reason">{{ a.reason || '—' }}</dd>
+                  </dl>
+                </template>
+                <span v-else class="muted" style="font-size:13px">{{ userName(a.requested_by) }} · {{ (a.actions || []).join(', ') }}</span>
                 <div class="acts" style="gap:6px">
                   <span class="b pend">Awaiting approval</span>
                   <router-link class="btn sm" to="/admin/authorizations">Open in Access rules</router-link>
@@ -84,6 +94,8 @@ const scope = ref<'me' | 'mine' | 'all'>('me')
 const runs = ref<any[]>([])
 const rules = ref<any[]>([])
 const users = ref<Record<string, string>>({})
+const hostNames = ref<Record<string, string>>({})
+const credNames = ref<Record<string, string>>({})
 const error = ref('')
 const busy = ref('')
 
@@ -101,6 +113,14 @@ const ruleList = computed(() => pick(rules.value, (a) => a.requested_by, (a) => 
 
 const userName = (id?: string | null) => (id && users.value[id]) || (isOwn(id) ? (auth.user?.username || 'you') : 'unknown')
 const ini = (n: string) => (n || '?').slice(0, 2).toUpperCase()
+const hostName = (id?: string | null) => (id && hostNames.value[id]) || id || '—'
+const credName = (id?: string | null) => (id && credNames.value[id]) || id || '—'
+function fmtDuration(m?: number | null) {
+  if (!m) return '—'
+  if (m % 1440 === 0) return `${m / 1440} day${m === 1440 ? '' : 's'}`
+  if (m % 60 === 0) return `${m / 60} hour${m === 60 ? '' : 's'}`
+  return `${m} min`
+}
 function ago(iso?: string | null) {
   if (!iso) return ''
   const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000)
@@ -117,6 +137,13 @@ async function load() {
   if (auth.isAdmin) {
     try { rules.value = ((await api.get('/authorizations')).data || []).filter((a: any) => a.status === 'pending_approval') } catch { rules.value = [] }
     try { users.value = Object.fromEntries(((await api.get('/users')).data || []).map((u: any) => [u.id, u.username])) } catch { /* names fall back */ }
+    if (rules.value.some((a: any) => a.request_kind === 'user_request')) {
+      try { hostNames.value = Object.fromEntries(((await api.get('/hosts')).data || []).map((h: any) => [h.id, h.name])) } catch { /* ids fall back */ }
+      try {
+        credNames.value = Object.fromEntries(((await api.get('/credentials')).data || [])
+          .map((c: any) => [c.id, c.name && c.name !== c.username ? `${c.username} (${c.name})` : c.username]))
+      } catch { /* ids fall back */ }
+    }
   }
   refreshApprovals(auth.isAdmin)
 }
@@ -141,4 +168,8 @@ onMounted(load)
 .al li:last-child { border-bottom: 0; }
 .al-b { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .al-h { display: flex; justify-content: space-between; gap: 8px; }
+.req { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 2px 0 4px; font-size: 13px; }
+.req dt { color: var(--text2); }
+.req dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.req-reason { white-space: pre-wrap; }
 </style>

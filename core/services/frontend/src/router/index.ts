@@ -224,6 +224,8 @@ function areaFor(to: any): string | null {
     // purpose. Without this override, areaFor() derives 'admin.trigger-bindings',
     // which nothing grants, so the guard bounces everyone to Dashboard.
     if (section === 'trigger-bindings') return 'admin.zabbix-integration'
+    // Host Tree manages viewers on the identity 'authorizations' segment — same gate.
+    if (section === 'host-tree') return 'admin.authorizations'
     return section ? `admin.${section}` : null
   }
   if (p.startsWith('/settings/')) {

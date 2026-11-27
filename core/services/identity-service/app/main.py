@@ -9,7 +9,7 @@ from libs.obsmetrics import ServiceMetrics
 from libs.securelog import configure_logging
 from libs.pluginbase import describe_plugins, discover_plugins, IdentityProvider
 
-from .api import access_review, audit, auth, authorizations, command_filters, integrations, internal, login_acls, mail_settings, my_access, settings as settings_api, tokens, users
+from .api import access_requests, access_review, audit, auth, authorizations, host_tree, command_filters, integrations, internal, login_acls, mail_settings, my_access, settings as settings_api, tokens, users
 from .config import get_settings
 from .deps import require_service_token
 from .database import engine
@@ -31,6 +31,8 @@ app = FastAPI(title="SeyalRun Identity Service", version="2.0.0", lifespan=lifes
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(my_access.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
+app.include_router(access_requests.router, prefix="/api/v1")
+app.include_router(host_tree.router, prefix="/api/v1")
 app.include_router(authorizations.router, prefix="/api/v1")
 app.include_router(command_filters.router, prefix="/api/v1")
 app.include_router(login_acls.router, prefix="/api/v1")

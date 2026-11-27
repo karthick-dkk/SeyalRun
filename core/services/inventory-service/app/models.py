@@ -54,6 +54,15 @@ class ZAHostGroup(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uid)
     name: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
+    # The host tree: a group may sit under another. A grant on a group covers the
+    # hosts of every group below it (see app/grouptree.py and
+    # /internal/host-group-members). SET NULL, not CASCADE: deleting a parent
+    # behind the API's back must never delete groups — it only detaches them,
+    # which narrows what a grant on that parent covers rather than widening it.
+    # The API itself refuses to delete a group that still has children.
+    parent_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("za_host_groups.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     members: Mapped[list["ZAHostGroupMember"]] = relationship("ZAHostGroupMember", back_populates="group", lazy="select")

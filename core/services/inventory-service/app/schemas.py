@@ -37,15 +37,37 @@ class GatewayOut(GatewayCreate):
 
 
 class HostGroupCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     description: str = ""
+    # Host tree: the group this one sits under (None = a root). Validated in the
+    # API against cycles and app.grouptree.MAX_DEPTH.
+    parent_id: str | None = None
 
 
-class HostGroupOut(HostGroupCreate):
+class HostGroupUpdate(BaseModel):
+    """Partial update. parent_id is only changed when it is present in the body,
+    so renaming a group cannot silently move it to the root; send
+    "parent_id": null explicitly to make it a root."""
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    parent_id: str | None = None
+
+
+class HostGroupOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    name: str
+    description: str = ""
+    parent_id: str | None = None
     id: str
     created_at: datetime
+
+
+class HostAccountOut(BaseModel):
+    """A login on a host as the access-request picker sees it — never a secret."""
+    id: str
+    name: str
+    username: str
 
 
 # Constrained rather than free strings. An unvalidated host_type let

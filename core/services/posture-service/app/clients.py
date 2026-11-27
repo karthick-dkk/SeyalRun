@@ -73,7 +73,9 @@ async def inventory_host(host_id: str) -> dict | None:
 async def visible_host_ids(caller: Caller) -> set[str] | None:
     """None = every host. Otherwise the ids this caller may see — the same
     resolution api-gateway's PAM host filter uses (identity-service authz,
-    host-group grants already expanded to host ids)."""
+    host-group grants already expanded to host ids, host-tree view membership
+    included). Visibility only: every posture action is admin-gated on the real
+    role (deps.require_admin), so a view-only grant can never start one."""
     if caller.kiosk_host_id:
         return {caller.kiosk_host_id}
     if caller.sees_all_hosts:
@@ -81,7 +83,8 @@ async def visible_host_ids(caller: Caller) -> set[str] | None:
     s = get_settings()
     try:
         r = await client().get(f"{s.identity_service_url}/api/v1/internal/authz/host-ids",
-                               params={"user_id": caller.user_id}, headers=_token("identity-service"))
+                               params={"user_id": caller.user_id, "include_view": "true"},
+                               headers=_token("identity-service"))
         r.raise_for_status()
         data = r.json()
     except httpx.HTTPError as exc:

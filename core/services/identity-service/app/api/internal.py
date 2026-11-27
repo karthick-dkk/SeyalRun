@@ -264,19 +264,27 @@ async def sweep_expired_authorizations(session: AsyncSession = Depends(get_sessi
 async def authz_host_ids(
     user_id: str = Query(...),
     strict: bool = Query(default=False),
+    include_view: bool = Query(default=False),
     session: AsyncSession = Depends(get_session),
 ):
     """strict=True skips the superadmin/admin bypass and always resolves real
     za_authorizations records — used by terminal-service so SSH session creation
     can never rely on role alone. Other callers (api-gateway nav gating,
-    recording-service visibility) keep the existing bypass by omitting it."""
+    recording-service visibility) keep the existing bypass by omitting it.
+
+    include_view=True additionally returns the hosts the caller may only SEE —
+    host-tree view membership (za_host_group_viewers), expanded through the tree.
+    Opt-in, so a caller that uses this list as an ACCESS gate (terminal-service)
+    can never pick view-only hosts up by default; and ignored when strict=True,
+    because strict is the login gate by definition. The view-only part is also
+    reported on its own (view_host_ids) so nothing has to guess which is which."""
     user_result = await session.execute(select(ZAUser).where(ZAUser.id == user_id))
     user = user_result.scalar_one_or_none()
     if user is None:
-        return {"host_ids": [], "host_group_ids": [], "is_admin": False}
+        return {"host_ids": [], "host_group_ids": [], "view_host_ids": [], "is_admin": False}
 
     if not strict and await _user_is_admin(session, user):
-        return {"host_ids": [], "host_group_ids": [], "is_admin": True}
+        return {"host_ids": [], "host_group_ids": [], "view_host_ids": [], "is_admin": True}
 
     group_result = await session.execute(select(ZAUserGroupMember.group_id).where(ZAUserGroupMember.user_id == user_id))
     group_ids = {g for (g,) in group_result.all()}
@@ -301,7 +309,29 @@ async def authz_host_ids(
     # not in this list, so an unexpanded group grant authorized nothing at all.
     host_ids.update(await _hosts_in_groups(host_group_ids))
 
-    return {"host_ids": list(host_ids), "host_group_ids": list(host_group_ids), "is_admin": False}
+    view_host_ids: set[str] = set()
+    if include_view and not strict:
+        view_groups = await _viewer_host_groups(session, user_id, group_ids)
+        view_host_ids = await _hosts_in_groups(view_groups) - host_ids
+
+    return {
+        "host_ids": list(host_ids | view_host_ids),
+        "host_group_ids": list(host_group_ids),
+        "view_host_ids": list(view_host_ids),
+        "is_admin": False,
+    }
+
+
+async def _viewer_host_groups(session: AsyncSession, user_id: str, group_ids: set[str]) -> set[str]:
+    """Host groups the caller is a tree VIEWER of, directly or via a user group.
+    Expansion to descendants happens in inventory (host-group-members)."""
+    from ..models import ZAHostGroupViewer
+
+    cond = ZAHostGroupViewer.user_id == user_id
+    if group_ids:
+        cond = cond | ZAHostGroupViewer.user_group_id.in_(sorted(group_ids))
+    rows = await session.execute(select(ZAHostGroupViewer.host_group_id).where(cond))
+    return {g for (g,) in rows.all()}
 
 
 @router.get("/command-filters")
