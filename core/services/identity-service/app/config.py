@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     service_jwt_secret: str = ""
     api_token_pepper: str = ""
 
+    # off | on — whether an access rule an admin creates or edits waits for a
+    # second admin (libs/adminapproval). Unknown means on.
+    seyalrun_admin_approval: str = "off"
+
     # Vault — shared with inventory-service; used to encrypt TOTP secrets (Feature 6).
     za_vault_password: str = ""
     za_vault_salt: str = ""

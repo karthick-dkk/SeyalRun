@@ -17,6 +17,7 @@ from . import audit
 from . import integration_state
 from .config import get_settings
 from . import _masking
+from ._approval import WAIVER_PARAM
 from ._attribution import actor_user_id
 from .database import SessionLocal
 from .models import ZAJobRun, ZANotification
@@ -117,6 +118,24 @@ async def execute(run_id: str, executor, request, settings=None, **kw) -> None:
         LIVE_RUNS.discard(run_id)
 
 
+def start_details(request, executor, template_name: str) -> dict:
+    """The job.start audit row's details."""
+    details = {
+        "action_type": request.action_type,
+        "executor": getattr(executor, "name", ""),
+        "template": template_name,
+        "target_host_ids": list(request.target_host_ids or []),
+        "credential_id": request.credential_id,
+        "triggered_by": request.triggered_by,
+    }
+    # SEYALRUN_ADMIN_APPROVAL=off let this run skip an approval: say so, and which.
+    waived = (getattr(request, "params", None) or {}).get(WAIVER_PARAM)
+    if isinstance(waived, dict):
+        details["approval"] = waived.get("approval")
+        details["approval_skipped"] = waived.get("skipped")
+    return details
+
+
 async def _execute(
     run_id: str, executor, request, settings=None, timeout_seconds: int | None = None,
     template_name: str = "", retry_count: int = 0, retry_delay_seconds: int = 30,
@@ -201,14 +220,7 @@ async def _execute(
         action="job.start",
         resource_type="job_run",
         resource_id=run_id,
-        details={
-            "action_type": request.action_type,
-            "executor": getattr(executor, "name", ""),
-            "template": template_name,
-            "target_host_ids": list(request.target_host_ids or []),
-            "credential_id": request.credential_id,
-            "triggered_by": request.triggered_by,
-        },
+        details=start_details(request, executor, template_name),
         result="started",
     )
 

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit
+from app._approval import PRODUCTION, TEMPLATE, WAIVER_PARAM, caller_waiver
 from app._attribution import ACCOUNTABLE_PARAM, accountable_ids, actor_user_id, is_requester
 from app._host_ops import APPROVED_BY_PARAM, HOOK_TEMPLATE_PARAM, NO_RERUN_ACTIONS
 from app._posture import HOST_OP_TEMPLATES, mutating_host_ops
@@ -121,6 +122,7 @@ async def rerun(
     if orig.status not in _FINISHED:
         raise HTTPException(status_code=400, detail=f"a run that is {orig.status.replace('_', ' ')} cannot be re-run")
     params.pop(APPROVED_BY_PARAM, None)
+    params.pop(WAIVER_PARAM, None)      # decided again below, for this run and this person
     # Whoever chose the replayed parameters may not approve them by having somebody else press Re-run.
     params[ACCOUNTABLE_PARAM] = accountable_ids(
         *(params.get(ACCOUNTABLE_PARAM) or []), actor_user_id(orig.triggered_by), user_id)
@@ -129,7 +131,14 @@ async def rerun(
     targets = params.get("_target_host_ids") or list(tmpl.target_host_ids or [])
     # A re-run is a new run: an approval covered the run it was given for, and a run can
     # have ended (cancelled) without ever being approved.
-    gated = tmpl.requires_approval or await any_production_hosts(targets)
+    production = await any_production_hosts(targets)
+    gated = tmpl.requires_approval or production
+    # SEYALRUN_ADMIN_APPROVAL=off: an admin re-running needs no second admin.
+    waived = caller_waiver(request, [*([TEMPLATE] if tmpl.requires_approval else []),
+                                     *([PRODUCTION] if production else [])])
+    if waived:
+        params[WAIVER_PARAM] = waived
+        gated = False
 
     new_id = str(uuid.uuid4())
     # _run_id must point at THIS new run, not the original — it's how a chain
@@ -234,7 +243,8 @@ async def approve_run(
                             detail="approval could not be recorded in the audit log; the run was not started")
 
     run.status = "pending"
-    run.params = {**(run.params or {}), APPROVED_BY_PARAM: user_id}
+    # Approved by a person, so never also "not required"; whatever claims so is dropped.
+    run.params = {**{k: v for k, v in (run.params or {}).items() if k != WAIVER_PARAM}, APPROVED_BY_PARAM: user_id}
     await session.commit()
 
     executors = getattr(request.app.state, "executors", {})

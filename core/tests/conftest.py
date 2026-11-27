@@ -12,6 +12,7 @@ without a database, redis, or the FastAPI apps.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -20,6 +21,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+# The suite was written with every approval step on. The product default is off
+# (libs/adminapproval); tests for "off" set it themselves (monkeypatch.setenv).
+# Forced rather than defaulted so a developer's own shell or .env cannot change
+# what the suite asserts.
+os.environ["SEYALRUN_ADMIN_APPROVAL"] = "on"
 
 
 def _load(relpath: str, name: str):
