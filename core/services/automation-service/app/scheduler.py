@@ -37,6 +37,7 @@ def _local_now(sched, now):
 from sqlalchemy import and_, or_, select
 
 from ._host_ops import NO_RERUN_ACTIONS
+from ._approval import PRODUCTION, WAIVER_PARAM, people_waiver
 from ._attribution import ACCOUNTABLE_PARAM, accountable_ids
 from ._params import template_code_params
 from ._production_gate import any_production_hosts
@@ -153,6 +154,13 @@ async def _tick(executors: dict, settings) -> None:
             # a cron schedule targeting a production host is not exempt just because
             # nobody is watching it fire. See app/_production_gate.py.
             force_approval = await any_production_hosts(target_host_ids)
+            # SEYALRUN_ADMIN_APPROVAL=off: a schedule that only admins set up and edited
+            # needs no second admin. One a non-admin touched (support may write
+            # schedules), or one with no recorded author, still waits.
+            waived = await people_waiver(params[ACCOUNTABLE_PARAM], [PRODUCTION] if force_approval else [])
+            if waived:
+                params[WAIVER_PARAM] = waived
+                force_approval = False
 
             # The overrun case this guard exists for: a schedule firing again while
             # its previous run is still going. Skipped, not queued — and the cron

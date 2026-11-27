@@ -9,10 +9,20 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from libs.adminapproval import waiver
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app._approval import (
+    PRODUCTION,
+    TEMPLATE,
+    WAIVER_PARAM,
+    admin_approval_required,
+    deciders,
+    people_waiver,
+    users_are_admins,
+)
 from app._attribution import ACCOUNTABLE_PARAM, accountable_ids
 from app._concurrency import LIVE_STATUSES
 from app._params import ParamNotAllowedError, filter_caller_params, template_code_params
@@ -83,6 +93,13 @@ async def create_run_internal(
     # Zabbix-triggered run targeting a production host is not exempt just
     # because a human didn't click "Run". See app/_production_gate.py.
     force_approval = await any_production_hosts(target_host_ids)
+    # SEYALRUN_ADMIN_APPROVAL=off: a trigger admins configured (and, for a manual
+    # trigger, an admin fired) needs no second admin. Anyone else's still does.
+    waived = await people_waiver(deciders(payload.triggered_by, payload.accountable_user_ids),
+                                 [PRODUCTION] if force_approval else [])
+    if waived:
+        params[WAIVER_PARAM] = waived
+        force_approval = False
     run = ZAJobRun(
         id=run_id,
         job_template_id=payload.job_template_id,
@@ -168,9 +185,17 @@ PostureFactsRunCreate.model_rebuild()
 
 
 async def _production_gated(host_id: str, requested_by: str, approval: HostOpApproval | None,
-                            *, action: str, run_id: str) -> bool:
-    """True when this run must wait for a per-run approval."""
+                            *, action: str, run_id: str, skipped: list[str] | None = None) -> bool:
+    """True when this run must wait for a per-run approval.
+
+    ``skipped`` is a list only when SEYALRUN_ADMIN_APPROVAL=off and the requester is
+    an admin (see _admin_waivable): a production host then needs no approval, and
+    the reason is appended so the caller can record what was skipped. A rollout
+    approval, when there is one, is still checked and recorded as before."""
     if not await any_production_hosts([host_id]):
+        return False
+    if approval is None and skipped is not None:
+        skipped.append(PRODUCTION)
         return False
     if approval is None:
         return True
@@ -187,6 +212,17 @@ async def _production_gated(host_id: str, requested_by: str, approval: HostOpApp
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="approval could not be recorded in the audit log; the run was not started") from exc
     return False
+
+
+async def _admin_waivable(requested_by: str) -> bool:
+    """posture-service asks only for admins (its writes are admin-only), but the
+    switch is applied to what identity-service says about the person now."""
+    return not admin_approval_required() and await users_are_admins([requested_by])
+
+
+def _waive(params: dict, skipped: list[str] | None) -> None:
+    if skipped:
+        params[WAIVER_PARAM] = waiver(skipped)
 
 
 @router.post("/internal/posture/facts-runs", status_code=status.HTTP_202_ACCEPTED)
@@ -207,6 +243,7 @@ async def create_posture_facts_runs(
     if executor is None:
         raise HTTPException(status_code=503, detail="posture_facts executor is not loaded")
     tmpl = await ensure_posture_template(session)
+    waivable = await _admin_waivable(payload.requested_by)
 
     live: dict[str, ZAJobRun] = {}
     res = await session.execute(
@@ -217,6 +254,10 @@ async def create_posture_facts_runs(
             if run.status == "pending_approval":
                 if payload.approval is not None and hid in payload.host_ids:
                     _supersede(run, f"superseded by {payload.approval.reference}")
+                    continue
+                if waivable and hid in payload.host_ids:
+                    # Read-only and no longer waiting for anyone: collect afresh.
+                    _supersede(run, "superseded: approval not required (SEYALRUN_ADMIN_APPROVAL=off)")
                     continue
             elif run.id not in LIVE_RUNS:
                 continue        # its task is gone; reusing it would wait for nothing
@@ -242,8 +283,10 @@ async def create_posture_facts_runs(
             "_run_id": run_id,
             ACCOUNTABLE_PARAM: accountable_ids(payload.requested_by),
         }
+        skipped: list[str] | None = [] if waivable else None
         gated = await _production_gated(host_id, payload.requested_by, payload.approval,
-                                        action=POSTURE_ACTION, run_id=run_id)
+                                        action=POSTURE_ACTION, run_id=run_id, skipped=skipped)
+        _waive(params, skipped)
         session.add(ZAJobRun(
             id=run_id, job_template_id=tmpl.id, triggered_by=triggered_by,
             status="pending_approval" if gated else "pending", params=params, output_lines=[],
@@ -333,8 +376,11 @@ async def create_host_op_run(payload: HostOpRunCreate, request: Request, session
                                   *(payload.approval.accountable_user_ids if payload.approval else []))
     host_op = {"op": payload.op, "args": payload.args}
     approver = await earlier_approver(session, tmpl.id, payload.host_id, payload.token, host_op)
+    # Decided here, not by posture-service, so it covers every action this endpoint runs.
+    skipped: list[str] | None = [] if approver is None and await _admin_waivable(payload.requested_by) else None
     gated = approver is None and await _production_gated(
-        payload.host_id, payload.requested_by, payload.approval, action=f"{payload.action}:{payload.op}", run_id=run_id)
+        payload.host_id, payload.requested_by, payload.approval, action=f"{payload.action}:{payload.op}", run_id=run_id,
+        skipped=skipped)
     params = {
         **tunable_params(tmpl), "_target_host_ids": [payload.host_id], "_credential_id": None,
         "_host_credentials": {}, "_run_id": run_id, OP_TOKEN_PARAM: payload.token,
@@ -342,6 +388,7 @@ async def create_host_op_run(payload: HostOpRunCreate, request: Request, session
     }
     if approver:
         params[APPROVED_BY_PARAM] = approver
+    _waive(params, skipped)
     triggered_by = f"user:{payload.requested_by}"
     session.add(ZAJobRun(id=run_id, job_template_id=tmpl.id, triggered_by=triggered_by,
                          status="pending_approval" if gated else "pending", params=params, output_lines=[]))
@@ -409,14 +456,23 @@ async def create_hook_run(payload: HookRunCreate, request: Request, session: Asy
     if executor is None:
         raise HTTPException(status_code=503, detail=f"{tmpl.action_type} executor is not loaded")
     run_id = str(uuid.uuid4())
+    skipped: list[str] | None = [] if await _admin_waivable(payload.requested_by) else None
     gated = await _production_gated(payload.host_id, payload.requested_by, payload.approval,
-                                    action=f"hook:{tmpl.action_type}", run_id=run_id)
+                                    action=f"hook:{tmpl.action_type}", run_id=run_id, skipped=skipped)
+    if tmpl.requires_approval and payload.approval is None:
+        # posture-service plans a hook that needs its own approval only while
+        # SEYALRUN_ADMIN_APPROVAL is off; if it is on again by now, the hook waits.
+        if skipped is None:
+            gated = True
+        else:
+            skipped.append(TEMPLATE)
     params = {**(tmpl.default_params or {}), **template_code_params(tmpl), "run_local": False,
               "_target_host_ids": [payload.host_id], "_credential_id": tmpl.credential_id, "_host_credentials": {},
               "_max_parallel": 1, "_run_id": run_id, HOOK_TEMPLATE_PARAM: payload.expect_updated_at,
               ACCOUNTABLE_PARAM: accountable_ids(
                   payload.requested_by, *payload.accountable_user_ids, tmpl.created_by, *(tmpl.editor_ids or []),
                   *(payload.approval.accountable_user_ids if payload.approval else []))}
+    _waive(params, skipped)
     triggered_by = f"user:{payload.requested_by}"
     session.add(ZAJobRun(id=run_id, job_template_id=tmpl.id, triggered_by=triggered_by,
                          status="pending_approval" if gated else "pending", params=params, output_lines=[]))

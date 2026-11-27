@@ -45,6 +45,7 @@ def svc():
         yield SimpleNamespace(**{n: importlib.import_module(f"app.{m}") for n, m in {
             "internal": "api.internal", "runs": "api.job_runs", "templates": "api.job_templates", "posture": "_posture",
             "runner": "runner", "models": "models", "db": "database", "audit": "audit", "chain": "plugins.executors.chain",
+            "approval": "_approval", "config": "config", "scheduler": "scheduler",
         }.items()})
     finally:
         for k in [k for k in sys.modules if k == "app" or k.startswith("app.")]:
@@ -458,3 +459,277 @@ def test_chain_refuses_a_step_that_requires_approval(svc, monkeypatch, when):
         assert not res.ok and "requires approval" in res.output, lines
         assert len(ran) == (0 if when == "before" else 1), lines
     run_case(svc, monkeypatch, body)
+
+
+# ── SEYALRUN_ADMIN_APPROVAL=off ──────────────────────────────────────────────
+# Admins (alice, bob, sam) need no second admin; anyone else (sue: support, ursula:
+# user, an unknown id, or anyone while identity-service cannot answer) still does.
+
+NOT_REQUIRED = "not required (SEYALRUN_ADMIN_APPROVAL=off)"
+ROLES = {"alice": ["admin"], "bob": ["admin"], "sam": ["support", "superadmin"], "sue": ["support"], "ursula": ["user"]}
+
+
+def switch(svc, monkeypatch, value, *, down=False):
+    """Set the service's own setting (as .env would) and fake identity-service's role lookup."""
+    import httpx
+
+    monkeypatch.setattr(svc.config.get_settings(), "seyalrun_admin_approval", value)
+    asked = []
+
+    async def fetch_roles(ids, transport=None):
+        asked.extend(ids)
+        if down:
+            raise httpx.ConnectError("identity-service down")
+        return {u: ROLES.get(u) for u in ids}
+    monkeypatch.setattr(svc.approval, "fetch_roles", fetch_roles)
+    return asked
+
+
+def waived(run, *skipped):
+    return run.params.get("_approval_waived") == {"approval": NOT_REQUIRED, "skipped": list(skipped)}
+
+
+def test_switch_off_admin_package_and_reboot_ops_on_production_run_at_once(svc, monkeypatch):
+    switch(svc, monkeypatch, "off")
+
+    async def body(call, w):
+        w.production = {H1, H2}
+        up = await call("POST", "/internal/posture/host-runs", code=202, **op(host=H2))
+        rb = await call("POST", "/internal/posture/host-runs", code=202, **{
+            **op(host=H1, token="op-reboot-0000", op="reboot"), "action": "host_reboot", "args": {}})
+        for r in (up, rb):
+            assert r["status"] == "pending"
+            assert waived(await get(svc, r["run_id"]), "production host")
+        await asyncio.sleep(0.02)
+        assert set(w.executed) == {up["run_id"], rb["run_id"]}
+        # A rollout a second admin approved is still recorded as that approval.
+        w.block.set()
+        await asyncio.sleep(0.02)
+        svc.runner.LIVE_RUNS.clear()
+        async with svc.db.SessionLocal() as s:
+            await svc.posture.reconcile_interrupted(s)
+        r = await call("POST", "/internal/posture/host-runs", code=202, **op(host=H2, token="op-rollout-000", approval=APPROVAL))
+        assert r["status"] == "pending" and "_approval_waived" not in (await get(svc, r["run_id"])).params
+        assert any(a["action"] == "job.approve" and a["user_id"] == "bob" for a in w.audit)
+    run_case(svc, monkeypatch, body)
+
+
+@pytest.mark.parametrize("who,value,down", [("sue", "off", False), ("ursula", "off", False), ("nobody", "off", False),
+                                            ("alice", "off", True), ("alice", "on", False), ("alice", "maybe", False),
+                                            ("alice", "", False)])
+def test_switch_host_ops_still_gated_unless_off_and_admin(svc, monkeypatch, who, value, down):
+    switch(svc, monkeypatch, value, down=down)
+
+    async def body(call, w):
+        r = await call("POST", "/internal/posture/host-runs", code=202, **{**op(host=H2), "requested_by": who})
+        assert r["status"] == "pending_approval"
+        assert "_approval_waived" not in (await get(svc, r["run_id"])).params
+        f = (await call("POST", "/internal/posture/facts-runs", code=202, host_ids=[H2], requested_by=who))["runs"][0]
+        assert f["status"] == "pending_approval"
+        await asyncio.sleep(0.02)
+        assert not w.executed
+    run_case(svc, monkeypatch, body)
+
+
+def test_switch_off_admin_facts_run_on_production_and_older_wait_is_superseded(svc, monkeypatch):
+    async def body(call, w):
+        old = (await call("POST", "/internal/posture/facts-runs", code=202, host_ids=[H2], requested_by="alice"))["runs"][0]
+        assert old["status"] == "pending_approval"
+        switch(svc, monkeypatch, "off")
+        new = (await call("POST", "/internal/posture/facts-runs", code=202, host_ids=[H1, H2], requested_by="alice"))["runs"]
+        assert [r["status"] for r in new] == ["pending", "pending"] and not any(r["reused"] for r in new)
+        assert (await get(svc, old["run_id"])).status == "cancelled"
+        assert waived(await get(svc, new[1]["run_id"]), "production host")
+        assert "_approval_waived" not in (await get(svc, new[0]["run_id"])).params, "nothing was skipped on H1"
+    run_case(svc, monkeypatch, body)
+
+
+@pytest.mark.parametrize("value", ["off", "on"])
+def test_switch_hook_runs(svc, monkeypatch, value):
+    switch(svc, monkeypatch, value)
+
+    async def body(call, w):
+        t = await template(call, script_content="true", requires_approval=True)
+        got = await call("GET", f"/internal/posture/hook-templates/{t['id']}")
+        hook = {"job_template_id": t["id"], "expect_updated_at": got["updated_at"], "requested_by": "alice"}
+        prod = await call("POST", "/internal/posture/hook-runs", code=202, host_id=H2, **hook)
+        plain = await call("POST", "/internal/posture/hook-runs", code=202, host_id=H1, **hook)
+        if value == "off":
+            assert prod["status"] == plain["status"] == "pending"
+            assert waived(await get(svc, prod["run_id"]), "production host", "template requires approval")
+            assert waived(await get(svc, plain["run_id"]), "template requires approval")
+        else:
+            # A hook that needs its own approval only reaches here from a rollout planned
+            # while the switch was off: with it on again, the hook waits.
+            assert prod["status"] == plain["status"] == "pending_approval"
+    run_case(svc, monkeypatch, body)
+
+
+def test_switch_off_manual_run_admin_bypasses_non_admin_waits(svc, monkeypatch):
+    switch(svc, monkeypatch, "off")
+
+    async def body(call, w):
+        t = await template(call, script_content="true", requires_approval=True)
+        r = await call("POST", f"/job-templates/{t['id']}/run", code=202, target_host_ids=[H2])
+        assert r.get("status") != "pending_approval"
+        assert waived(await get(svc, r["run_id"]), "template requires approval", "production host")
+        await asyncio.sleep(0.02)
+        assert r["run_id"] in w.executed
+        u = await template(call, name="u", script_content="true", requires_approval=True)
+        for who, role in (("sue", "support"), ("ursula", "user")):
+            r = await call("POST", f"/job-templates/{u['id']}/run", uid=who, role=role, code=202, target_host_ids=[H2])
+            assert r["status"] == "pending_approval"
+            # already pending: approved the usual way, by another admin
+            await call("POST", f"/job-runs/{r['run_id']}/approve", uid=who, role="admin", code=403)
+            await call("POST", f"/job-runs/{r['run_id']}/approve", uid="bob", code=202)
+            w.block.set()
+            await asyncio.sleep(0.02)
+            svc.runner.LIVE_RUNS.clear()
+            async with svc.db.SessionLocal() as s:
+                (await s.get(svc.models.ZAJobRun, r["run_id"])).status = "success"
+                await s.commit()
+        # the waiver is in the job.start audit row
+        details = svc.runner.start_details(SimpleNamespace(
+            action_type="bash_script", target_host_ids=[H2], credential_id=None, triggered_by="user:alice",
+            params=(await get(svc, w.executed[0])).params), SimpleNamespace(name="bash_script"), "t")
+        assert details["approval"] == NOT_REQUIRED and details["approval_skipped"] == ["template requires approval", "production host"]
+    run_case(svc, monkeypatch, body)
+
+
+@pytest.mark.parametrize("value,who,role,gated", [("off", "alice", "admin", False), ("off", "sam", "superadmin", False),
+                                                  ("off", "sue", "support", True), ("on", "alice", "admin", True),
+                                                  ("nonsense", "alice", "admin", True)])
+def test_switch_rerun(svc, monkeypatch, value, who, role, gated):
+    switch(svc, monkeypatch, value)
+
+    async def body(call, w):
+        t = await template(call, script_content="true", target_host_ids=[H2])
+        rid = str(uuid.uuid4())
+        async with svc.db.SessionLocal() as s:
+            s.add(svc.models.ZAJobRun(id=rid, job_template_id=t["id"], triggered_by="user:erin", status="failed",
+                                      params={"_target_host_ids": [H2]}, output_lines=[]))
+            await s.commit()
+        r = await call("POST", f"/job-runs/{rid}/rerun", uid=who, role=role, code=202)
+        assert r["status"] == ("pending_approval" if gated else "pending")
+        assert waived(await get(svc, r["run_id"]), "production host") is not gated
+    run_case(svc, monkeypatch, body)
+
+
+@pytest.mark.parametrize("triggered_by,accountable,gated", [
+    ("zabbix_event:1", ["alice", "bob"], False),          # a binding only admins wrote
+    ("zabbix_manual:9", ["sam"], False),
+    ("manual_trigger:b1:alice", ["bob"], False),          # an admin fired an admin's binding
+    ("manual_trigger:b1:sue", ["bob"], True),             # support fired it
+    ("zabbix_event:1", ["alice", "sue"], True),           # support edited the binding
+    ("zabbix_event:1", [], True),                         # nobody on record
+    ("system:rotation_due_sweep", [], True),
+    ("user:alice", [], False),                            # rotate-now by an admin
+])
+def test_switch_off_webhook_and_internal_runs(svc, monkeypatch, triggered_by, accountable, gated):
+    switch(svc, monkeypatch, "off")
+
+    async def body(call, w):
+        t = await template(call, script_content="true")
+        r = await call("POST", "/internal/job-runs", code=202, job_template_id=t["id"], triggered_by=triggered_by,
+                       target_host_ids=[H2], params={}, accountable_user_ids=accountable)
+        run = await get(svc, r["run_id"])
+        assert run.status == ("pending_approval" if gated else "pending")
+        assert waived(run, "production host") is not gated
+    run_case(svc, monkeypatch, body)
+
+
+@pytest.mark.parametrize("value,editors,gated", [("off", ["alice", "bob"], False), ("off", ["alice", "sue"], True),
+                                                 ("off", [], True), ("on", ["alice"], True), ("bogus", ["alice"], True)])
+def test_switch_scheduler(svc, monkeypatch, value, editors, gated):
+    switch(svc, monkeypatch, value)
+
+    async def body(call, w):
+        from datetime import datetime, timedelta, timezone
+
+        async def prod(ids):
+            return bool(set(ids) & w.production)
+        monkeypatch.setattr(svc.scheduler, "any_production_hosts", prod)
+        t = await template(call, script_content="true", target_host_ids=[H2])
+        async with svc.db.SessionLocal() as s:
+            s.add(svc.models.ZASchedule(id="s1", job_template_id=t["id"], name="s", cron_expression="* * * * *",
+                                        params_override={}, enabled=True, created_by=(editors or [None])[0],
+                                        editor_ids=editors or None,
+                                        next_run_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+            await s.commit()
+        await svc.scheduler._tick({"bash_script": SimpleNamespace(name="bash_script")}, svc.config.get_settings())
+        await asyncio.sleep(0.02)
+        async with svc.db.SessionLocal() as s:
+            from sqlalchemy import select
+            run = (await s.execute(select(svc.models.ZAJobRun).where(svc.models.ZAJobRun.triggered_by == "schedule:s1"))).scalar_one()
+        assert run.status == ("pending_approval" if gated else "pending")
+        assert waived(run, "production host") is not gated
+        assert (run.id in w.executed) is not gated
+    run_case(svc, monkeypatch, body)
+
+
+@pytest.mark.parametrize("who,value,ok", [("alice", "off", True), ("sue", "off", False), ("alice", "on", False)])
+def test_switch_chain_runs_steps_it_could_not_carry_approval_for(svc, monkeypatch, who, value, ok):
+    switch(svc, monkeypatch, value)
+
+    async def body(call, w):
+        import app._production_gate as gate
+        import libs.pluginbase as pb
+
+        async def prod(ids):
+            return bool(set(ids) & w.production)
+        monkeypatch.setattr(gate, "any_production_hosts", prod)
+        a = await template(call, name="a", script_content="true", target_host_ids=[H2])        # production
+        b = await template(call, name="b", script_content="true", requires_approval=True)
+        ran, lines = [], []
+
+        async def execute(run_id, executor, request, **kw):
+            ran.append((run_id, request.params.get("_approval_waived")))
+            async with svc.db.SessionLocal() as s:
+                (await s.get(svc.models.ZAJobRun, run_id)).status = "success"
+                await s.commit()
+        monkeypatch.setattr(svc.runner, "execute", execute)
+        monkeypatch.setattr(pb, "discover_plugins", lambda *x: {"bash_script": SimpleNamespace(name="bash_script")})
+
+        async def line(text, *x):
+            lines.append(text)
+        res = await svc.chain.ChainExecutor().execute(pb.RunRequest(
+            action_type="chain", target_host_ids=[], credential_id=None, triggered_by=f"user:{who}",
+            params={"_run_id": "p", "_chain_steps": [{"template_id": a["id"]}, {"template_id": b["id"]}]}), line)
+        if ok:
+            assert res.ok, lines
+            assert [w_["skipped"] for _, w_ in ran] == [["production host"], ["template requires approval"]]
+        else:
+            assert not res.ok and "production" in res.output and not ran, lines
+    run_case(svc, monkeypatch, body)
+
+
+def test_identity_role_lookup_is_fail_closed(svc, monkeypatch):
+    """The real fetch over HTTP: unknown users, refused lookups and errors never read as admin."""
+    import httpx
+
+    def handler(req):
+        uid = req.url.path.split("/")[-2]
+        assert req.headers.get("X-Service-Token")
+        if uid == "boom":
+            return httpx.Response(500)
+        return httpx.Response(200, json={"alice": {"roles": ["admin"], "known": True},
+                                         "sue": {"roles": ["support"], "known": True}}.get(uid, {"roles": [], "known": False}))
+
+    async def main_():
+        got = await svc.approval.fetch_roles(["alice", "sue", "ghost", "boom"], transport=httpx.MockTransport(handler))
+        assert got == {"alice": ["admin"], "sue": ["support"], "ghost": None, "boom": None}
+    asyncio.run(main_())
+
+    async def real(ids, transport=None):
+        return await orig(ids, transport=httpx.MockTransport(handler))
+    orig = svc.approval.fetch_roles
+    monkeypatch.setattr(svc.approval, "fetch_roles", real)
+
+    async def check():
+        assert await svc.approval.users_are_admins(["alice"])
+        assert not await svc.approval.users_are_admins(["alice", "sue"])
+        assert not await svc.approval.users_are_admins(["alice", "ghost"])
+        assert not await svc.approval.users_are_admins(["boom"])
+        assert not await svc.approval.users_are_admins([])
+        assert not await svc.approval.users_are_admins(["", None])
+    asyncio.run(check())

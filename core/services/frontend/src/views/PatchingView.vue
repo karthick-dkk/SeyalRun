@@ -45,7 +45,7 @@
                 <td><span v-for="(n, k) in x.counts" :key="k" class="tag" style="margin-right:4px">{{ label(String(k)) }} {{ n }}</span><span v-if="!Object.keys(x.counts || {}).length" class="muted">—</span></td>
                 <td style="white-space:normal;max-width:280px"><span v-if="x.waiting">{{ x.waiting }}</span><span v-else-if="x.status_reason" class="muted">{{ x.status_reason }}</span><span v-else class="muted">—</span></td>
                 <td>{{ x.created_by_name || '—' }}</td>
-                <td>{{ x.approved_by_name || '—' }}</td>
+                <td>{{ x.approved_by_name || '—' }}<span v-if="x.approval && x.approval.startsWith('not required')" class="muted" :title="x.approval"> (no second admin)</span></td>
                 <td class="muted">{{ x.created_at ? ago(x.created_at) : '—' }}</td>
               </tr>
             </tbody>

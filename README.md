@@ -268,6 +268,7 @@ Every variable is documented in [.env.example](.env.example). Highlights:
 | `FRONTEND_ORIGIN` | CORS allow-origin for api-gateway — must match the URL you browse to |
 | `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` | Initial superadmin (leave password blank to auto-generate) |
 | `SEYALRUN_VERSION` | Image tag to run, and the version shown in the UI sidebar. Pin it; `latest` moves with each stable release |
+| `SEYALRUN_ADMIN_APPROVAL` | `off` (default): an admin's own rollouts, runs, operations and access rules need no second admin (audited as "not required"); non-admins still wait for an admin. `on`: every approval step applies. Any other value counts as `on`. See [docs/PATCHING.md](docs/PATCHING.md#second-admin-approval-switch) |
 | `ZABBIX_MODULE_SECRET` | Optional — only if using [modules/zabbix/seyalrun/](modules/zabbix/README.md); HMAC-signs the module's SSO handshake |
 
 No secret has a default value — services fail fast at startup if a required

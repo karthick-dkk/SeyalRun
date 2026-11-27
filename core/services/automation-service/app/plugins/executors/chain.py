@@ -23,6 +23,8 @@ class ChainExecutor(ActionExecutor):
         pass  # chain_steps lives on the template row, not caller params
 
     async def execute(self, request: RunRequest, publish_line: Callable) -> RunResult:
+        from app._approval import PRODUCTION, TEMPLATE, WAIVER_PARAM, deciders, people_waiver
+        from app._attribution import ACCOUNTABLE_PARAM
         from app._params import template_code_params
         from app._production_gate import any_production_hosts
         from app.database import SessionLocal
@@ -54,7 +56,19 @@ class ChainExecutor(ActionExecutor):
             for tmpl in step_templates.values() if tmpl is not None
             for hid in (tmpl.target_host_ids or [])
         ]
-        if await any_production_hosts(all_step_host_ids):
+        # SEYALRUN_ADMIN_APPROVAL=off: when admins alone decided this chain run, its
+        # steps need no approval, so there is nothing the chain would have to carry.
+        decided_by = deciders(request.triggered_by, request.params.get(ACCOUNTABLE_PARAM))
+        waived: dict | None = None
+
+        async def waive(reason: str) -> bool:
+            nonlocal waived
+            if waived is None:
+                waived = await people_waiver(decided_by, [reason])
+            return waived is not None
+
+        production = await any_production_hosts(all_step_host_ids)
+        if production and not await waive(PRODUCTION):
             await publish_line(
                 "[error] this chain has a step targeting a production-tagged host — "
                 "chains cannot run against production; run that step individually "
@@ -64,7 +78,7 @@ class ChainExecutor(ActionExecutor):
 
         # Same reason: a step that needs its own approval cannot wait for it here.
         needs = [t.name for t in step_templates.values() if t is not None and t.requires_approval]
-        if needs:
+        if needs and not await waive(TEMPLATE):
             await publish_line(
                 f"[error] step template(s) {', '.join(repr(n) for n in needs)} require approval — "
                 "run them individually so they go through the approval flow"
@@ -98,7 +112,7 @@ class ChainExecutor(ActionExecutor):
                     break
                 continue
             # Edited since the check above.
-            if step_tmpl.requires_approval:
+            if step_tmpl.requires_approval and not await waive(TEMPLATE):
                 await publish_line(f"[error] step {i}: '{step_tmpl.name}' now requires approval — chain stopped")
                 return RunResult(ok=False, output="a chain step now requires approval — blocked", exit_code=1)
             # A chain step can never itself be a chain — no nested chains. Keeps
@@ -133,6 +147,11 @@ class ChainExecutor(ActionExecutor):
                 "_max_parallel": step_tmpl.max_parallel,
                 "_forks": step_tmpl.forks,
             }
+            if waived is not None:
+                skipped = [*([TEMPLATE] if step_tmpl.requires_approval else []),
+                           *([PRODUCTION] if production and await any_production_hosts(target_host_ids) else [])]
+                if skipped:
+                    stored_params[WAIVER_PARAM] = {**waived, "skipped": skipped}
 
             async with SessionLocal() as session:
                 child_run = ZAJobRun(

@@ -18,7 +18,10 @@ Hosts behind a jump gateway are not supported by these operations yet.
 ## Package operations on one host
 
 Posture → host → Package operation (admin). `plan` and `refresh` change no package. On a
-production host every other operation waits for another person's approval.
+production host every other operation waits for another person's approval, unless
+`SEYALRUN_ADMIN_APPROVAL=off` (the default): then an admin's operation runs at once and its
+`job.start` audit row says `approval: not required (SEYALRUN_ADMIN_APPROVAL=off)`. The same
+applies to facts collection and to drain/undrain hooks on production hosts.
 
 Safeguards: every name must be exactly one package (no patterns, no "provides"); the editors of
 the mirrors used may not approve the operation; package names are strictly validated; held packages are skipped and reported; an
@@ -46,6 +49,11 @@ the promoted distribution. SeyalRun does not drive Pulp.
 3. **Approve**: another admin, who neither created the rollout nor edited the baseline, window,
    mirror or hook template it uses. The approval is bound to the plan's hash.
    `POSTURE_PATCH_APPROVAL=production` limits this to rollouts that touch a production host.
+   With `SEYALRUN_ADMIN_APPROVAL=off` (the default) there is no second admin: the rollout is
+   approved as it is created, still bound to the plan's hash. "Approved by" then names the
+   creator, and the rollout, its events, the audit row and the evidence all carry
+   `approval: not required (SEYALRUN_ADMIN_APPROVAL=off)`, so it never reads as a second
+   person's sign-off. Rollouts already waiting keep waiting for the approve/reject buttons.
 4. **Run**: waves start only inside the maintenance window. When the window closes, hosts in
    progress finish and no new host starts.
 
@@ -87,19 +95,39 @@ A reader who may see only some hosts sees only those hosts in a rollout, its cou
 evidence.
 
 A hook that may already have run when a service restarted is not run again: the host fails and a
-person decides. Nobody who ever edited a hook template may approve a rollout that uses it.
+person decides. Nobody who ever edited a hook template may approve a rollout that uses it. A hook
+template that requires its own approval cannot be used, except with `SEYALRUN_ADMIN_APPROVAL=off`;
+if the switch is turned on again before such a hook runs, its run waits for approval.
 
 Rollback needs the old versions in the mirror and never downgrades a kernel. Drain and undrain
 hooks should be safe to repeat; a hook edited after planning is refused.
 
-Evidence (JSON, CSV): packages before and after, CVEs and their state, requester, approver, plan
+Evidence (JSON, CSV): packages before and after, CVEs and their state, requester, approver, how it
+was approved ("approved by a second admin" or "not required (SEYALRUN_ADMIN_APPROVAL=off)"), plan
 hash, feed version, job runs and every check.
+
+## Second-admin approval switch
+
+`SEYALRUN_ADMIN_APPROVAL` in `.env` (every service reads it from its own settings):
+
+- `off` (default): what an admin asks for does not wait for another admin. Rollouts, package and
+  reboot operations, facts runs and hooks on production hosts, job runs and re-runs, chains with
+  production or approval-requiring steps, schedules and Zabbix triggers that only admins set up
+  or fired, and access rules an admin creates or edits. A request from anyone else (support,
+  users, a schedule or binding a non-admin touched, a system sweep, or anyone while
+  identity-service cannot confirm the roles) still waits for an admin. Each skip is in the audit
+  row as `approval: not required (SEYALRUN_ADMIN_APPROVAL=off)`.
+- `on`: every approval step applies as before, including `POSTURE_PATCH_APPROVAL`.
+- Anything else is treated as `on` and logged once as a warning.
+
+Anything already waiting for approval is approved or rejected the usual way in both modes.
 
 ## Settings
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `POSTURE_PATCH_APPROVAL` | `always` | `always` or `production` |
+| `SEYALRUN_ADMIN_APPROVAL` | `off` | `off`: an admin's own rollout, operation or run needs no second admin. `on`: approvals apply. Unknown: `on` |
+| `POSTURE_PATCH_APPROVAL` | `always` | With `SEYALRUN_ADMIN_APPROVAL=on`: `always` or `production` |
 | `POSTURE_ROLLOUT_TICK_SECONDS` | `5` | How often rollouts advance |
 | `POSTURE_STEP_TIMEOUT_MINUTES` | `120` | A step longer than this fails its host |
 

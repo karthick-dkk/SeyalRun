@@ -20,6 +20,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
 import httpx
+from libs.adminapproval import NOT_REQUIRED
 from sqlalchemy import select
 
 from . import audit, clients, collector, rollout_core as core
@@ -78,8 +79,24 @@ def add_event(session, rollout_id: str, event: str, *, host_id: str | None = Non
     session.add(RolloutEvent(rollout_id=rollout_id, host_id=host_id, event=event, by=by[:200], detail=detail[:4000]))
 
 
+def approved_without_second_admin(r: PatchRollout) -> bool:
+    """Approved as it was created because SEYALRUN_ADMIN_APPROVAL was off. The
+    approve endpoint never lets the creator approve, so this is the only way
+    approved_by can equal created_by."""
+    return bool(r.approved_by) and r.approved_by == r.created_by
+
+
+def approval_note(r: PatchRollout) -> str:
+    """How the rollout was approved, for the API and the evidence export."""
+    if approved_without_second_admin(r):
+        return NOT_REQUIRED
+    return "approved by a second admin" if r.approved_by else ""
+
+
 def approval_of(r: PatchRollout) -> dict | None:
-    if not r.approved_by:
+    # Not a second person's approval, so never offered as one: automation-service
+    # decides a production host's run on its own SEYALRUN_ADMIN_APPROVAL setting.
+    if not r.approved_by or approved_without_second_admin(r):
         return None
     return {"reference": f"rollout:{r.id}", "approved_by": r.approved_by,
             "accountable_user_ids": list(r.accountable_ids or [])}

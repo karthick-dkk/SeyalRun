@@ -10,6 +10,7 @@ import ast
 import asyncio
 import importlib.util
 import json
+import os
 import sys
 import types
 import uuid
@@ -18,11 +19,25 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
+from libs import adminapproval
 
 AUTO = Path(__file__).resolve().parent.parent / "services/automation-service/app"
 _spec = importlib.util.spec_from_file_location("_attribution_rerun", AUTO / "_attribution.py")
 attr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(attr)
+
+
+def _approval_helpers() -> dict:
+    """The real caller_waiver() and constants from app/_approval.py, reading the switch
+    from the environment the way the service's Settings would."""
+    tree = ast.parse((AUTO / "_approval.py").read_text())
+    keep = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name in ("admin_approval_required", "caller_waiver"))
+            or (isinstance(n, ast.Assign) and n.targets[0].id in ("WAIVER_PARAM", "PRODUCTION", "TEMPLATE"))]
+    ns = {"approval_required": adminapproval.approval_required, "is_admin_role": adminapproval.is_admin_role,
+          "waiver": adminapproval.waiver,
+          "get_settings": lambda: NS(seyalrun_admin_approval=os.environ.get("SEYALRUN_ADMIN_APPROVAL"))}
+    exec(compile(ast.Module(keep, []), "_approval", "exec"), ns)
+    return {k: ns[k] for k in ("WAIVER_PARAM", "PRODUCTION", "TEMPLATE", "caller_waiver")}
 
 
 class HTTPError(Exception):
@@ -31,7 +46,7 @@ class HTTPError(Exception):
         self.status_code = status_code
 
 
-def world(monkeypatch, run, tmpl=None, production=()):
+def world(monkeypatch, run, tmpl=None, production=(), role=None):
     tree = ast.parse((AUTO / "api/job_runs.py").read_text())
     keep = []
     for n in tree.body:
@@ -81,9 +96,10 @@ def world(monkeypatch, run, tmpl=None, production=()):
          "accountable_ids": attr.accountable_ids, "actor_user_id": attr.actor_user_id,
          # 3.0: patch/reboot runs and rollout hooks are refused separately
          "NO_RERUN_ACTIONS": frozenset({"package_ops", "host_reboot"}), "HOOK_TEMPLATE_PARAM": "_hook_template_updated_at",
-         "APPROVED_BY_PARAM": "_approved_by"}
+         "APPROVED_BY_PARAM": "_approved_by", **_approval_helpers()}
     exec(compile(ast.Module(keep, []), "job_runs", "exec"), g)
-    request = NS(app=NS(state=NS(executors={"bash_script": object(), "chain": object()})))
+    request = NS(app=NS(state=NS(executors={"bash_script": object(), "chain": object()})),
+                 **({"headers": {"X-User-Real-Role": role}} if role else {}))
 
     async def rerun(uid="bob"):
         r = await g["rerun"]("r", request, uid, Session())
@@ -150,3 +166,41 @@ def test_a_rejection_cannot_be_turned_into_a_cancellation(monkeypatch, status, o
         with pytest.raises(HTTPError):
             w.cancel()
         assert w.run.status == status
+
+
+# ── SEYALRUN_ADMIN_APPROVAL=off ──────────────────────────────────────────────
+
+@pytest.mark.parametrize("why", ["production", "template"])
+def test_switch_off_admin_rerun_starts_and_records_why(monkeypatch, why):
+    monkeypatch.setenv("SEYALRUN_ADMIN_APPROVAL", "off")
+    w = world(monkeypatch, job("failed", _target_host_ids=["h"]), NS(requires_approval=why == "template"),
+              production=["h"] if why == "production" else [], role="admin")
+    r = w.rerun()
+    assert r["status"] == "pending" and w.started == [r["run_id"]]
+    waived = w.added[0].params["_approval_waived"]
+    assert waived["approval"] == adminapproval.NOT_REQUIRED
+    assert waived["skipped"] == ["production host" if why == "production" else "template requires approval"]
+
+
+@pytest.mark.parametrize("role", [None, "support", "user", "automation"])
+def test_switch_off_non_admin_rerun_still_waits(monkeypatch, role):
+    monkeypatch.setenv("SEYALRUN_ADMIN_APPROVAL", "off")
+    w = world(monkeypatch, job("failed", _target_host_ids=["h"]), production=["h"], role=role)
+    assert w.rerun()["status"] == "pending_approval" and not w.started
+    assert "_approval_waived" not in w.added[0].params
+
+
+@pytest.mark.parametrize("value", ["on", "ON", "yes", "", "0", "false"])
+def test_switch_on_or_unknown_admin_rerun_still_waits(monkeypatch, value):
+    monkeypatch.setenv("SEYALRUN_ADMIN_APPROVAL", value)
+    w = world(monkeypatch, job("failed", _target_host_ids=["h"]), production=["h"], role="admin")
+    assert w.rerun()["status"] == "pending_approval" and not w.started
+
+
+def test_replayed_waiver_is_never_trusted(monkeypatch):
+    """A run that skipped approval while the switch was off carries the marker; a
+    re-run when it is on again must not inherit it."""
+    w = world(monkeypatch, job("failed", _target_host_ids=["h"], _approval_waived={"approval": "x", "skipped": []}),
+              production=["h"], role="admin")
+    assert w.rerun()["status"] == "pending_approval"
+    assert "_approval_waived" not in w.added[0].params

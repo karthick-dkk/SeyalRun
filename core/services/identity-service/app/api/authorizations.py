@@ -9,10 +9,12 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import HTMLResponse
+from libs.adminapproval import NOT_REQUIRED, approval_required, is_admin_role
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..audit import log_action
+from ..config import get_settings
 from ..database import get_session
 from ..deps import require_admin, require_service_token
 from ..models import ZAAuthorization, ZAAuthorizationApprovalToken, ZAUser
@@ -283,10 +285,15 @@ def _merge(arr: list[str], scalar: str | None) -> list[str]:
     return out
 
 
+def _admin_approval_required() -> bool:
+    return approval_required(get_settings().seyalrun_admin_approval)
+
+
 def _apply_and_require_reapproval(
     authz: ZAAuthorization, payload: AuthorizationCreate, default_ttl_days: int,
     actor_id: str | None, actor_role: str | None, approval_exempt_roles: list[str],
-) -> None:
+    admin_approval: bool = True,
+) -> str | None:
     """Fold legacy scalars + arrays into the many-to-many arrays (keeping the legacy
     scalar columns populated — first element — for back-compat readers), and reset
     the approval lifecycle in the SAME function rather than a separate one a caller
@@ -311,7 +318,13 @@ def _apply_and_require_reapproval(
     non-GET write up to "admin" regardless of the caller's true role (support
     has full CRUD on the authorizations segment), so checking the vouched
     header here would let a support account's request ride along with an
-    "admin"-exempt policy the superadmin never intended to cover support."""
+    "admin"-exempt policy the superadmin never intended to cover support.
+
+    admin_approval=False is SEYALRUN_ADMIN_APPROVAL=off: a rule an admin or
+    superadmin (by REAL role, as above) creates or edits is active at once. Keyed on
+    the actor being an admin, not on the endpoint, so a request from anyone else
+    (support, or a user asking for access) still waits for an admin. Returns the
+    audit note when the switch, and nothing else, is what made the rule active."""
     users = _merge(payload.user_ids, payload.user_id)
     ugroups = _merge(payload.user_group_ids, payload.user_group_id)
     hosts = _merge(payload.host_ids, payload.host_id)
@@ -338,7 +351,8 @@ def _apply_and_require_reapproval(
     # access gap auditors flag — default one in rather than leaving it open-ended.
     authz.date_expired = payload.date_expired or (datetime.now(timezone.utc) + timedelta(days=default_ttl_days))
 
-    if actor_role in approval_exempt_roles:
+    waived = actor_role not in approval_exempt_roles and not admin_approval and is_admin_role(actor_role)
+    if actor_role in approval_exempt_roles or waived:
         authz.status = "active"
         authz.enabled = True
         authz.requested_by = actor_id
@@ -350,6 +364,7 @@ def _apply_and_require_reapproval(
         authz.requested_by = actor_id
         authz.approved_by = None
         authz.approved_at = None
+    return NOT_REQUIRED if waived else None
 
 
 @router.post("", response_model=AuthorizationOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
@@ -366,7 +381,8 @@ async def create_authorization(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user identity required")
     default_ttl_days, approval_exempt_roles = await _platform_approval_settings(session)
     authz = ZAAuthorization()
-    _apply_and_require_reapproval(authz, payload, default_ttl_days, actor_id, actor_role, approval_exempt_roles)
+    waived = _apply_and_require_reapproval(authz, payload, default_ttl_days, actor_id, actor_role, approval_exempt_roles,
+                                           _admin_approval_required())
     session.add(authz)
     await session.commit()
     await session.refresh(authz)
@@ -374,7 +390,7 @@ async def create_authorization(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="authorization.create",
         resource_type="authorization", resource_id=authz.id,
-        details={"name": authz.name, "auto_approved": authz.status == "active"},
+        details={"name": authz.name, "auto_approved": authz.status == "active", **({"approval": waived} if waived else {})},
         result="success",
     )
     if authz.status == "pending_approval":
@@ -401,7 +417,8 @@ async def update_authorization(
     # Any edit re-opens approval — otherwise a trivially-approved grant could be
     # silently widened afterward with no second reviewer ever seeing the real change.
     default_ttl_days, approval_exempt_roles = await _platform_approval_settings(session)
-    _apply_and_require_reapproval(authz, payload, default_ttl_days, actor_id, actor_role, approval_exempt_roles)
+    waived = _apply_and_require_reapproval(authz, payload, default_ttl_days, actor_id, actor_role, approval_exempt_roles,
+                                           _admin_approval_required())
 
     await session.commit()
     await session.refresh(authz)
@@ -409,7 +426,7 @@ async def update_authorization(
     await log_action(
         session, user_id=actor_id, username=actor_name or "", action="authorization.update",
         resource_type="authorization", resource_id=authz.id,
-        details={"auto_approved": authz.status == "active"},
+        details={"auto_approved": authz.status == "active", **({"approval": waived} if waived else {})},
         result="success",
     )
     if authz.status == "pending_approval":

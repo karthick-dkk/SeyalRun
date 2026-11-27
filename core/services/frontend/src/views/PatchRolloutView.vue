@@ -41,7 +41,7 @@
             <dt>Feed version</dt><dd class="mono">{{ r.feed_version || '—' }}</dd>
             <dt>Window</dt><dd>{{ windowText }}</dd>
             <dt>Requested by</dt><dd>{{ r.created_by_name || '—' }} <span class="muted">{{ when(r.created_at) }}</span></dd>
-            <dt>Approved by</dt><dd>{{ r.approved_by_name || '—' }} <span v-if="r.approved_at" class="muted">{{ when(r.approved_at) }}</span></dd>
+            <dt>Approved by</dt><dd>{{ r.approved_by_name || '—' }} <span v-if="r.approved_at" class="muted">{{ when(r.approved_at) }}</span><span v-if="r.approval && r.approval.startsWith('not required')" class="muted"> · second-admin approval {{ r.approval }}</span></dd>
             <dt>Started</dt><dd>{{ when(r.started_at) }}</dd>
             <dt>Finished</dt><dd>{{ when(r.finished_at) }}</dd>
             <dt v-if="r.soak_until">Soak until</dt><dd v-if="r.soak_until">{{ when(r.soak_until) }}</dd>

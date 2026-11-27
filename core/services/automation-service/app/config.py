@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     job_exec_timeout_seconds: int = 3600
     max_output_lines: int = 500
 
+    # off | on — whether a run an admin asked for (or a schedule/trigger admins
+    # configured) waits for a second admin at all (libs/adminapproval, app/_approval.py).
+    seyalrun_admin_approval: str = "off"
+
     # SSH host-key verification. Empty = no verification (logs a warning). Set to a
     # known_hosts file path to enforce strict host-key checking on outbound SSH
     # (mitigates MITM). See ops docs; full TOFU auto-pinning is a follow-up.
