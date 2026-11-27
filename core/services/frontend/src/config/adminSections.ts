@@ -63,6 +63,9 @@ export const SECTIONS: Section[] = [
   { slug: 'roles',            area: 'admin.roles',              label: 'Roles',             icon: ICONS.shield,      group: 'Access',      shell: 'admin' },
   { slug: 'authorizations',   area: 'admin.authorizations',     label: 'Authorizations',    icon: ICONS.lock,        group: 'Access',      shell: 'admin' },
   { slug: 'credentials',      area: 'admin.credentials',        label: 'Credentials',       icon: ICONS.key,         group: 'Inventory',   shell: 'admin' },
+  // Nested host groups + who may SEE each node. Gated on the authorizations area
+  // because viewers are managed on the identity "authorizations" segment.
+  { slug: 'host-tree',        area: 'admin.authorizations',     label: 'Host Tree',         icon: ICONS.list,        group: 'Inventory',   shell: 'admin' },
   { slug: 'zones',            area: 'admin.zones',              label: 'Zones',             icon: ICONS.globe,       group: 'Inventory',   shell: 'admin' },
   { slug: 'trigger-bindings', area: 'admin.zabbix-integration', label: 'Trigger Bindings',  icon: ICONS.bolt,        group: 'Automation',  shell: 'admin' },
 

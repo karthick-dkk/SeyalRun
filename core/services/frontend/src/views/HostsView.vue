@@ -68,6 +68,8 @@
                 <span v-else class="hv-none">—</span>
               </td>
               <td class="col-actions hv-actions">
+                <button v-if="canRequest(host)" class="hv-btn hv-btn-request" title="You can see this host but cannot log in — ask for access"
+                  @click="requestHost = { id: host.id, name: host.name }">Request access</button>
                 <button class="hv-btn hv-btn-terminal" title="Open SSH Terminal" @click="openTerminal(host)"><svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg></button>
                 <button
                   class="hv-btn hv-btn-test"
@@ -84,6 +86,10 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Self-service access requests: what the caller asked for, with Cancel. -->
+    <MyAccessRequests v-if="!auth.isKiosk" ref="myRequests" :host-names="hostNameMap" />
+    <RequestAccessDialog :host="requestHost" @close="requestHost = null" @submitted="onRequested" />
 
     <!-- Edit Host Modal (admin only) -->
     <div v-if="editModal.visible" class="modal-overlay" @click.self="editModal.visible = false">
@@ -116,6 +122,8 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppShell from '@/components/layout/AppShell.vue'
+import MyAccessRequests from '@/components/access/MyAccessRequests.vue'
+import RequestAccessDialog from '@/components/access/RequestAccessDialog.vue'
 import api, { terminalUrl, markInternalConnect } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
@@ -143,6 +151,22 @@ const pingPending = reactive(new Set<string>())
 
 const gwResults = reactive<Record<string, boolean | null>>({})
 const gwPending = reactive(new Set<string>())
+
+// Hosts the caller can open a session on (terminal-service /ssh/hosts — the same
+// test session create applies). null = unknown (the call failed), in which case no
+// "Request access" button is offered rather than one on every row.
+const connectable = ref<Set<string> | null>(null)
+const requestHost = ref<{ id: string; name: string } | null>(null)
+const myRequests = ref<InstanceType<typeof MyAccessRequests> | null>(null)
+const hostNameMap = computed<Record<string, string>>(() => Object.fromEntries(hosts.value.map((h: any) => [h.id, h.name])))
+
+function canRequest(host: any): boolean {
+  return !auth.isKiosk && connectable.value !== null && !connectable.value.has(host.id)
+}
+function onRequested() {
+  requestHost.value = null
+  myRequests.value?.load()
+}
 
 const expandedHost = ref<string | null>(null)
 const hostSessions = reactive<Record<string, any[]>>({})
@@ -262,12 +286,14 @@ async function loadAll() {
     // still get their host list — so those three degrade to an empty array on failure
     // instead of rejecting the whole batch and blanking the page.
     const hostsR = await api.get('/hosts')
-    const [zonesR, credsR, authzR, groupsR] = await Promise.all([
+    const [zonesR, credsR, authzR, groupsR, loginR] = await Promise.all([
       api.get('/zones').catch(() => ({ data: [] })),
       api.get('/credentials').catch(() => ({ data: [] })),
       api.get('/authorizations').catch(() => ({ data: [] })),
       api.get('/host-groups').catch(() => ({ data: [] })),
+      api.get('/ssh/hosts').catch(() => null),
     ])
+    connectable.value = loginR && Array.isArray(loginR.data) ? new Set(loginR.data.map((h: any) => h.id)) : null
     hostGroups.value = groupsR.data
     hosts.value = hostsR.data
     zones.value = zonesR.data
@@ -630,6 +656,8 @@ onMounted(() => { loadAll() })
 .hv-btn-terminal:hover { border-color: var(--accent2); color: var(--accent2); }
 .hv-btn-test:hover     { border-color: var(--accent); color: var(--accent); }
 .hv-btn-edit:hover     { border-color: var(--warn); color: var(--warn); }
+.hv-btn-request        { color: var(--accent2); border-color: var(--accent2); }
+.hv-btn-request:hover  { background: rgba(59,130,246,0.12); color: var(--accent2); border-color: var(--accent2); }
 .hv-btn-test.is-ok, .hv-gw-ping.is-ok   { color: var(--accent); border-color: var(--accent); }
 .hv-btn-test.is-fail, .hv-gw-ping.is-fail { color: var(--danger); border-color: var(--danger); }
 .hv-btn-test.is-spin, .hv-gw-ping.is-spin { opacity: 0.5; }
