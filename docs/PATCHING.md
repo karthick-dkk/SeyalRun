@@ -107,4 +107,8 @@ hash, feed version, job runs and every check.
 
 - zypper does not tell which updates are security updates: use scope "all" or "packages" there.
 - Updates are planned from the metadata the host last fetched; the patch step refreshes first.
+- A host whose last scan could not list its updates is left out of a plan, with that reason.
+  Rescan it. The Posture page shows its update counts as "?".
+- Reboot detection on RHEL-family hosts uses `needs-restarting -r`, or the dnf plugin of the same
+  name when the command is not installed (minimal EL9). Without either, only the kernel is compared.
 - MCP tools can read rollouts. They cannot create, approve or change one.

@@ -139,8 +139,8 @@
                 <td><span class="nm">{{ h.hostname }}</span></td>
                 <td>{{ distroLabel(h) }}</td>
                 <td class="mono">{{ h.kernel || '—' }}</td>
-                <td class="r num">{{ h.pending_updates ?? '—' }}</td>
-                <td class="r num"><span :style="h.security_updates ? 'color:var(--bad);font-weight:600' : ''">{{ h.security_updates ?? '—' }}</span></td>
+                <td class="r num" :title="updatesKnown(h) ? '' : 'The last scan could not list updates'">{{ updatesKnown(h) ? (h.pending_updates ?? '—') : '?' }}</td>
+                <td class="r num"><span :style="updatesKnown(h) && h.security_updates ? 'color:var(--bad);font-weight:600' : ''">{{ updatesKnown(h) ? (h.security_updates ?? '—') : '?' }}</span></td>
                 <td><span v-if="h.reboot_required" class="b warn">Reboot required</span><span v-else class="muted">—</span></td>
                 <td class="muted">{{ h.collected_at ? ago(h.collected_at) : 'Never' }}</td>
                 <td><span class="b" :class="statusKind(h.status)" :title="h.last_error || ''">{{ statusLabel(h.status) }}</span></td>
@@ -182,7 +182,7 @@
             <dt>Kernel</dt><dd class="mono">{{ detail.kernel || '—' }}</dd>
             <dt>Architecture</dt><dd>{{ detail.arch || '—' }}</dd>
             <dt>Installed</dt><dd>{{ detail.packages_installed ?? '—' }} packages</dd>
-            <dt>Pending</dt><dd>{{ detail.pending_updates ?? '—' }} updates · {{ detail.security_updates ?? '—' }} security</dd>
+            <dt>Pending</dt><dd v-if="updatesKnown(detail)">{{ detail.pending_updates ?? '—' }} updates · {{ detail.security_updates ?? '—' }} security</dd><dd v-else>Unknown: the last scan could not list updates. Rescan the host.</dd>
             <dt>Reboot</dt><dd>{{ detail.reboot_required ? 'Required' : 'Not required' }}</dd>
             <dt>Collected</dt><dd>{{ detail.collected_at ? new Date(detail.collected_at).toLocaleString() : 'Never' }}</dd>
             <dt>Status</dt><dd><span class="b" :class="statusKind(detail.status)">{{ statusLabel(detail.status) }}</span></dd>
@@ -302,7 +302,7 @@ import HostPackageOps from '@/components/patching/HostPackageOps.vue'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
-interface PostureHost { host_id: string; hostname: string; os_family?: string; distro?: string; distro_version?: string; kernel?: string; arch?: string; packages_installed?: number; pending_updates?: number; security_updates?: number; reboot_required?: boolean; collected_at?: string | null; status: 'ok' | 'stale' | 'failed' | 'never'; last_error?: string | null }
+interface PostureHost { host_id: string; hostname: string; os_family?: string; distro?: string; distro_version?: string; kernel?: string; arch?: string; packages_installed?: number; pending_updates?: number; pending_updates_known?: boolean; security_updates?: number; reboot_required?: boolean; collected_at?: string | null; status: 'ok' | 'stale' | 'failed' | 'never'; last_error?: string | null }
 interface Feed { id: string; version: string; generated_at?: string; imported_at?: string; imported_by?: string; signed_by_key?: string; active: boolean; sources: { name: string; entries: number }[] }
 
 const auth = useAuthStore()
@@ -478,6 +478,8 @@ const filteredHosts = computed(() => {
   const s = q.value.trim().toLowerCase()
   return s ? hosts.value.filter((h) => `${h.hostname} ${h.distro} ${h.distro_version}`.toLowerCase().includes(s)) : hosts.value
 })
+// Older API versions do not send the flag: a missing one counts as known.
+const updatesKnown = (h: any) => !h || !h.collected_at || h.pending_updates_known !== false
 const distroLabel = (h: any) => [h.distro, h.distro_version].filter(Boolean).join(' ') || h.os_family || '—'
 const statusKind = (s: string) => ({ ok: 'ok', stale: 'warn', failed: 'bad', never: 'off' } as Record<string, string>)[s] || 'off'
 const statusLabel = (s: string) => ({ ok: 'Fresh', stale: 'Stale', failed: 'Failed', never: 'Never collected' } as Record<string, string>)[s] || s

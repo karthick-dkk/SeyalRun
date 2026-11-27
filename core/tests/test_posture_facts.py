@@ -163,3 +163,81 @@ def test_real_script_round_trips_through_the_parser(facts):
         assert all(p["name"] and p["version"] for p in f["installed"])
     else:
         assert any("unsupported package manager" in w for w in f["warnings"])
+
+
+def test_failed_update_listing_is_unknown_not_up_to_date(facts):
+    """A host whose check-update failed has an empty update list. That must read as
+    "unknown", or the rollout planner reports it as fully patched."""
+    text = "\n".join(ln for ln in ROCKY.splitlines() if not ln.startswith(("C\t", "Q\t")))
+    text = text.replace("Z\tend", "E\tdnf check-update failed (exit 1): pending updates unknown\nZ\tend")
+    f = facts.parse_facts(facts.extract_payload(_job_output(text)))
+    assert f["pending"] == [] and f["pending_known"] is False
+    assert facts.parse_facts(facts.extract_payload(_job_output(ROCKY)))["pending_known"] is True
+    # A warning that is not about the update list leaves it known.
+    assert facts.updates_known(["zypper does not say which package updates are security updates"])
+    assert not facts.updates_known(["x", "no apt front-end found: pending updates unknown"])
+    assert facts.updates_known(None) and facts.updates_known([])
+
+
+_FAKE_RPM = """#!/bin/bash
+case "$*" in
+  *kernel-core*) printf 'N\\tkernel-core\\t0.0.1-fake.el9.x86_64\\t1700000000\\n' ;;
+esac
+exit 0
+"""
+_FAKE_DNF = """#!/bin/bash
+case "$*" in
+  *"needs-restarting --help"*) [ -n "$NR_PLUGIN" ] && exit 0; echo "No such command: needs-restarting" >&2; exit 1 ;;
+  *"needs-restarting -r"*) [ -n "$NR_PLUGIN" ] && exit "$NR_RC"; echo "No such command: needs-restarting" >&2; exit 1 ;;
+  *check-update*) exit "${CU_RC:-0}" ;;
+esac
+exit 0
+"""
+
+
+def _fake_el9(tmp_path, **env):
+    """The real script on a fake minimal EL9: rpm and dnf are stubs, and no
+    needs-restarting command is on PATH."""
+    import os
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for tool in ("bash", "gzip", "base64", "grep", "cat", "head", "uname", "hostname", "sed", "tr"):
+        real = shutil.which(tool)
+        if real:
+            (bindir / tool).symlink_to(real)
+    for name, body in (("rpm", _FAKE_RPM), ("dnf", _FAKE_DNF)):
+        (bindir / name).write_text(body)
+        (bindir / name).chmod(0o755)
+    # The script pins its own PATH; this copy differs only in that line, so the stubs are found.
+    real = (ROOT / SCRIPT).read_text()
+    pin = "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
+    assert real.count(pin) == 1
+    script = tmp_path / "posture_facts.sh"
+    script.write_text(real.replace(pin, f"PATH={bindir}\n"))
+    proc = subprocess.run([str(bindir / "bash"), str(script)], capture_output=True, text=True, timeout=120,
+                          env={"PATH": str(bindir), **env}, cwd=tmp_path)
+    assert proc.returncode == 0, proc.stderr
+    return [f"[host:{HOST}] {ln}" for ln in proc.stdout.splitlines()]
+
+
+@pytest.mark.skipif(not all(shutil.which(t) for t in ("bash", "gzip", "base64", "grep", "uname")), reason="needs bash tools")
+@pytest.mark.parametrize("plugin,rc,reboot,method", [
+    ("1", "0", False, "needs-restarting"),    # glibc/systemd not updated: the plugin says no reboot
+    ("1", "1", True, "needs-restarting"),     # the plugin says reboot, whatever the kernel says
+    ("", "1", True, "kernel-compare"),        # no plugin: "no such command" (exit 1) is not "reboot"
+])
+def test_minimal_el9_uses_the_dnf_needs_restarting_plugin(facts, tmp_path, plugin, rc, reboot, method):
+    f = facts.parse_facts(facts.extract_payload(_fake_el9(tmp_path, NR_PLUGIN=plugin, NR_RC=rc)))
+    assert f["pkg_manager"] == "rpm"
+    assert (f["reboot_required"], f["reboot_method"]) == (reboot, method)
+    assert not any("needs-restarting" in w for w in f["warnings"])
+
+
+@pytest.mark.skipif(not all(shutil.which(t) for t in ("bash", "gzip", "base64", "grep", "uname")), reason="needs bash tools")
+def test_real_script_marks_a_failed_check_update_unknown(facts, tmp_path):
+    f = facts.parse_facts(facts.extract_payload(_fake_el9(tmp_path, CU_RC="1")))
+    assert f["pending_known"] is False
+    assert any("dnf check-update failed (exit 1)" in w for w in f["warnings"])
+    ok = tmp_path / "ok"
+    ok.mkdir()
+    assert facts.parse_facts(facts.extract_payload(_fake_el9(ok, CU_RC="100")))["pending_known"] is True

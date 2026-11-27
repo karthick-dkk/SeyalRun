@@ -721,3 +721,23 @@ def test_everyone_accountable_is_named_on_every_run_of_a_rollout(env, monkeypatc
         assert {op for op, *_ in w.args} >= {"upgrade", "drain-1", "undrain-1", "repo_apply"}
         assert all({"alice", "hook-editor"} <= set(acc or []) for *_, acc in w.args)
     run_case(env, monkeypatch, body)
+
+
+def test_host_whose_updates_are_unknown_is_not_planned(env, monkeypatch):
+    """A scan whose update listing failed leaves an empty list. Planning must say the
+    updates are unknown, not "nothing to patch", and must leave that host out."""
+    from sqlalchemy import delete
+
+    async def body(w, api, drive, engine, models, scanning):
+        async with scanning.SessionLocal() as s:
+            row = await s.get(models.PostureHost, H[0])
+            row.warnings = ["dnf check-update failed (exit 1): pending updates unknown"]
+            await s.execute(delete(models.PosturePendingUpdate).where(models.PosturePendingUpdate.host_id == H[0]))
+            await s.commit()
+        r = await api("POST", "/patches", code=400, name="r", host_ids=[H[0]], ignore_window=True, config={"soak_minutes": 0})
+        assert "could not list its updates" in r["detail"] and "nothing to patch" not in r["detail"], r
+        r = await api("POST", "/patches", code=201, name="r", host_ids=[H[0], H[1]], ignore_window=True, config={"soak_minutes": 0})
+        assert r["hosts"] == 1, "only the host with a known update list is planned"
+        hosts = {h["host_id"]: h for h in await api("GET", "/hosts")}
+        assert hosts[H[0]]["pending_updates_known"] is False and hosts[H[1]]["pending_updates_known"] is True
+    run_case(env, monkeypatch, body)

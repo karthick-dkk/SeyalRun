@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import audit, clients, rollout_core as core, rollout_engine as engine, scanning
+from .. import audit, clients, facts, rollout_core as core, rollout_engine as engine, scanning
 from ..config import get_settings
 from ..database import get_session
 from ..deps import Caller, get_caller, require_admin, require_fleet_admin
@@ -470,6 +470,9 @@ async def _build_plan(session: AsyncSession, payload: RolloutIn, caller: Caller)
         if row is None or row.collected_at is None:
             skipped.append((hid, name, "no facts collected yet"))
             continue
+        if not facts.updates_known(row.warnings):
+            skipped.append((hid, name, "the last scan could not list its updates; rescan the host"))
+            continue
         pend = (await session.execute(select(PosturePendingUpdate).where(PosturePendingUpdate.host_id == hid))).scalars().all()
         inst = (await session.execute(select(PostureInstalledPackage).where(PostureInstalledPackage.host_id == hid))).scalars().all()
         if payload.finding_ids:
@@ -494,7 +497,7 @@ async def _build_plan(session: AsyncSession, payload: RolloutIn, caller: Caller)
                       "findings": [{"id": f.id, "cve": f.cve_id, "package": f.package, "installed": f.installed_version,
                                     "fixed": f.fixed_version} for f in found if f.package in covered]})
     if not hosts:
-        raise _bad("nothing to patch: " + "; ".join(f"{n}: {w}" for _, n, w in skipped[:5]))
+        raise _bad("no host to patch: " + "; ".join(f"{n}: {w}" for _, n, w in skipped[:5]))
     plan = {"config": cfg, "window": window, "hosts": hosts, "waves": core.plan_waves(hosts, cfg),
             "drain_hook": await _hook_ref(cfg["drain_template_id"], "drain", accountable),
             "undrain_hook": await _hook_ref(cfg["undrain_template_id"], "undrain", accountable)}
