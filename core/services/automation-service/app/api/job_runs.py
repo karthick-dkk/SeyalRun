@@ -243,7 +243,8 @@ async def approve_run(
                             detail="approval could not be recorded in the audit log; the run was not started")
 
     run.status = "pending"
-    run.params = {**(run.params or {}), APPROVED_BY_PARAM: user_id}
+    # Approved by a person, so never also "not required"; whatever claims so is dropped.
+    run.params = {**{k: v for k, v in (run.params or {}).items() if k != WAIVER_PARAM}, APPROVED_BY_PARAM: user_id}
     await session.commit()
 
     executors = getattr(request.app.state, "executors", {})

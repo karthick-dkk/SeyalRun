@@ -37,7 +37,7 @@ def _local_now(sched, now):
 from sqlalchemy import and_, or_, select
 
 from ._host_ops import NO_RERUN_ACTIONS
-from ._approval import PRODUCTION, WAIVER_PARAM, people_waiver
+from ._approval import PRODUCTION, WAIVER_PARAM, people_waiver, without_internal
 from ._attribution import ACCOUNTABLE_PARAM, accountable_ids
 from ._params import template_code_params
 from ._production_gate import any_production_hosts
@@ -146,6 +146,9 @@ async def _tick(executors: dict, settings) -> None:
 
             run_id = str(uuid.uuid4())
             params = {**tmpl.default_params, **sched.params_override, **template_code_params(tmpl)}
+            # "_" keys are this service's own markers (WAIVER_PARAM is trusted by the
+            # audit): none may come from stored template or schedule data.
+            params = without_internal(params)
             # Who set this schedule up / last changed it may not approve the run it
             # produces (F-2). Written last so params_override cannot clear it.
             params[ACCOUNTABLE_PARAM] = accountable_ids(sched.created_by, *(sched.editor_ids or []))

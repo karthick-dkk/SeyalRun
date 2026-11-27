@@ -177,3 +177,36 @@ def test_approve_and_reject_are_untouched_in_both_modes():
     approve = src.split("async def approve_authorization", 1)[1].split("@router", 1)[0]
     assert "seyalrun_admin_approval" not in approve and "_admin_approval_required" not in approve
     assert "the requester cannot approve their own authorization" in approve
+
+
+# ── identity-service: who counts as an admin for automation-service ──────────
+
+def test_roles_endpoint_reports_a_deactivated_user_as_inactive(monkeypatch):
+    """automation-service's switch check requires is_active=True: a deactivated admin's
+    roles still say "admin", so without the flag their schedules would skip approval."""
+    import asyncio
+    import sys
+    import types
+
+    src = (SERVICES / "identity-service/app/api/internal.py").read_text()
+    fn = next(n for n in ast.parse(src).body if isinstance(n, ast.AsyncFunctionDef) and n.name == "internal_user_roles")
+    fn.decorator_list, fn.args.defaults, fn.returns = [], [], None
+    for a in fn.args.args:
+        a.annotation = None
+
+    async def effective_roles(session, uid):
+        return ["admin"]
+    for name, mod in (("identpkg", types.ModuleType("identpkg")), ("identpkg.api", types.ModuleType("identpkg.api")),
+                      ("identpkg.rbacresolve", NS(effective_roles=effective_roles))):
+        monkeypatch.setitem(sys.modules, name, mod)
+    users = {"on": NS(is_active=True), "off": NS(is_active=False)}
+
+    class Session:
+        async def get(self, model, uid):
+            return users.get(uid)
+    g = {"ZAUser": object, "__package__": "identpkg.api", "__name__": "identpkg.api.internal"}
+    exec(compile(ast.Module([fn], []), "internal", "exec"), g)
+    call = g["internal_user_roles"]
+    assert asyncio.run(call("on", Session())) == {"roles": ["admin"], "known": True, "is_active": True}
+    assert asyncio.run(call("off", Session())) == {"roles": ["admin"], "known": True, "is_active": False}
+    assert asyncio.run(call("ghost", Session()))["is_active"] is False

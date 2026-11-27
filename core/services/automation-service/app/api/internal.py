@@ -22,6 +22,7 @@ from app._approval import (
     deciders,
     people_waiver,
     users_are_admins,
+    without_internal,
 )
 from app._attribution import ACCOUNTABLE_PARAM, accountable_ids
 from app._concurrency import LIVE_STATUSES
@@ -86,7 +87,7 @@ async def create_run_internal(
         caller_params = filter_caller_params(tmpl, payload.params)
     except ParamNotAllowedError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    params = {**tmpl.default_params, **caller_params, **template_code_params(tmpl)}
+    params = {**without_internal(tmpl.default_params), **caller_params, **template_code_params(tmpl)}
     params[ACCOUNTABLE_PARAM] = accountable_ids(*payload.accountable_user_ids)
 
     # PCI DSS Phase D — production is gated regardless of trigger mechanism; a
@@ -466,7 +467,7 @@ async def create_hook_run(payload: HookRunCreate, request: Request, session: Asy
             gated = True
         else:
             skipped.append(TEMPLATE)
-    params = {**(tmpl.default_params or {}), **template_code_params(tmpl), "run_local": False,
+    params = {**without_internal(tmpl.default_params), **template_code_params(tmpl), "run_local": False,
               "_target_host_ids": [payload.host_id], "_credential_id": tmpl.credential_id, "_host_credentials": {},
               "_max_parallel": 1, "_run_id": run_id, HOOK_TEMPLATE_PARAM: payload.expect_updated_at,
               ACCOUNTABLE_PARAM: accountable_ids(

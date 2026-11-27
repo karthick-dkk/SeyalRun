@@ -23,7 +23,7 @@ class ChainExecutor(ActionExecutor):
         pass  # chain_steps lives on the template row, not caller params
 
     async def execute(self, request: RunRequest, publish_line: Callable) -> RunResult:
-        from app._approval import PRODUCTION, TEMPLATE, WAIVER_PARAM, deciders, people_waiver
+        from app._approval import PRODUCTION, TEMPLATE, WAIVER_PARAM, deciders, people_waiver, without_internal
         from app._attribution import ACCOUNTABLE_PARAM
         from app._params import template_code_params
         from app._production_gate import any_production_hosts
@@ -137,7 +137,7 @@ class ChainExecutor(ActionExecutor):
             step_run_id = str(uuid.uuid4())
             target_host_ids = list(step_tmpl.target_host_ids or [])
             stored_params = {
-                **step_tmpl.default_params,
+                **without_internal(step_tmpl.default_params),
                 "_target_host_ids": target_host_ids,
                 "_target_host_group_id": step_tmpl.target_host_group_id,
                 "_credential_mode": "default",

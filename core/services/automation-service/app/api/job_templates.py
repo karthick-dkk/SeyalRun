@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app._approval import PRODUCTION, TEMPLATE, WAIVER_PARAM, caller_waiver
+from app._approval import PRODUCTION, TEMPLATE, WAIVER_PARAM, caller_waiver, without_internal
 from app._attribution import with_editor
 from app._host_ops import NO_RERUN_ACTIONS
 from app._concurrency import live_run_id
@@ -276,7 +276,7 @@ async def run_template(
         caller_params = filter_caller_params(tmpl, payload.params)
     except ParamNotAllowedError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    params = {**tmpl.default_params, **caller_params}
+    params = {**without_internal(tmpl.default_params), **caller_params}
 
     # Runtime Variables (survey_schema.fields): validate each declared field's supplied
     # value against its own rule — a string field's regex, or a dropdown's fixed option

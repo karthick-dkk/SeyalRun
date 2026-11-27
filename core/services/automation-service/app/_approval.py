@@ -31,6 +31,14 @@ PRODUCTION = "production host"
 TEMPLATE = "template requires approval"
 
 
+def without_internal(params: dict | None) -> dict:
+    """Stored or caller-supplied params (a template's default_params, a schedule's
+    params_override) minus every ``_``-prefixed key. Those are set by this service
+    only, and WAIVER_PARAM in particular is read back into the audit as "approval not
+    required": a copy that arrived from stored data would be a forged one."""
+    return {k: v for k, v in (params or {}).items() if not str(k).startswith("_")}
+
+
 def admin_approval_required() -> bool:
     return approval_required(get_settings().seyalrun_admin_approval)
 
@@ -56,9 +64,9 @@ def deciders(triggered_by: str | None, accountable: list[str] | None) -> list[st
 
 
 async def fetch_roles(user_ids: list[str], transport: httpx.AsyncBaseTransport | None = None) -> dict[str, list[str] | None]:
-    """{user id: the user's current effective roles, or None for an unknown user or
-    a refused lookup}. Raises httpx.HTTPError / ValueError when identity-service
-    cannot be asked or answers nonsense."""
+    """{user id: the user's current effective roles, or None for an unknown or
+    deactivated user, or a refused or ambiguous answer}. Raises httpx.HTTPError /
+    ValueError when identity-service cannot be asked or answers nonsense."""
     settings = get_settings()
     headers = {"X-Service-Token": mint("automation-service", "identity-service", settings.service_jwt_secret)}
     out: dict[str, list[str] | None] = {}
@@ -66,7 +74,10 @@ async def fetch_roles(user_ids: list[str], transport: httpx.AsyncBaseTransport |
         for uid in user_ids:
             r = await client.get(f"/api/v1/internal/users/{uid}/roles", headers=headers)
             body = r.json() if r.status_code == 200 else {}
-            out[uid] = list(body.get("roles") or []) if body.get("known") else None
+            # Only an explicit known=True AND is_active=True counts: a deactivated
+            # admin, or an identity-service too old to say, is not shown to be an admin.
+            ok = isinstance(body, dict) and body.get("known") is True and body.get("is_active") is True
+            out[uid] = list(body.get("roles") or []) if ok else None
     return out
 
 

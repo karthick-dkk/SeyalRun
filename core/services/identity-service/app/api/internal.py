@@ -558,8 +558,10 @@ async def internal_user_roles(user_id: str, session: AsyncSession = Depends(get_
     from ..rbacresolve import effective_roles
     user = await session.get(ZAUser, user_id)
     if user is None:
-        return {"roles": [], "known": False}
-    return {"roles": await effective_roles(session, user_id), "known": True}
+        return {"roles": [], "known": False, "is_active": False}
+    # is_active: a deactivated admin's roles still read "admin"; automation-service's
+    # SEYALRUN_ADMIN_APPROVAL check must not count them as one (it requires True).
+    return {"roles": await effective_roles(session, user_id), "known": True, "is_active": bool(user.is_active)}
 
 
 @router.get("/settings/integration")

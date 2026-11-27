@@ -45,7 +45,7 @@ def svc():
         yield SimpleNamespace(**{n: importlib.import_module(f"app.{m}") for n, m in {
             "internal": "api.internal", "runs": "api.job_runs", "templates": "api.job_templates", "posture": "_posture",
             "runner": "runner", "models": "models", "db": "database", "audit": "audit", "chain": "plugins.executors.chain",
-            "approval": "_approval", "config": "config", "scheduler": "scheduler",
+            "approval": "_approval", "config": "config", "scheduler": "scheduler", "schedules": "api.schedules",
         }.items()})
     finally:
         for k in [k for k in sys.modules if k == "app" or k.startswith("app.")]:
@@ -91,7 +91,7 @@ def run_case(svc, monkeypatch, body):
         app = FastAPI()
         app.state.executors = {k: SimpleNamespace(name=k, validate=lambda p: None) for k in
                                ("package_ops", "host_reboot", "posture_facts", "bash_script", "chain")}
-        for r in (svc.internal.router, svc.runs.router, svc.templates.router):
+        for r in (svc.internal.router, svc.runs.router, svc.templates.router, svc.schedules.router):
             app.include_router(r, prefix="/api/v1")
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
             async def call(method, path, *, uid="alice", role="admin", code=None, **body):
@@ -466,23 +466,36 @@ def test_chain_refuses_a_step_that_requires_approval(svc, monkeypatch, when):
 # user, an unknown id, or anyone while identity-service cannot answer) still does.
 
 NOT_REQUIRED = "not required (SEYALRUN_ADMIN_APPROVAL=off)"
-ROLES = {"alice": ["admin"], "bob": ["admin"], "sam": ["support", "superadmin"], "sue": ["support"], "ursula": ["user"]}
+# id: (effective roles, is_active). dora is an admin who has been deactivated.
+USERS = {"alice": (["admin"], True), "bob": (["admin"], True), "sam": (["support", "superadmin"], True),
+         "sue": (["support"], True), "ursula": (["user"], True), "dora": (["admin"], False)}
+
+
+def identity(down=False):
+    """identity-service's GET /internal/users/{id}/roles, as it answers now."""
+    import httpx
+
+    def handler(req):
+        if down:
+            raise httpx.ConnectError("identity-service down")
+        assert req.headers.get("X-Service-Token")
+        uid = req.url.path.split("/")[-2]
+        if uid not in USERS:
+            return httpx.Response(200, json={"roles": [], "known": False, "is_active": False})
+        roles, active = USERS[uid]
+        return httpx.Response(200, json={"roles": roles, "known": True, "is_active": active})
+    return httpx.MockTransport(handler)
 
 
 def switch(svc, monkeypatch, value, *, down=False):
-    """Set the service's own setting (as .env would) and fake identity-service's role lookup."""
-    import httpx
-
+    """Set the service's own setting (as .env would); the real role lookup talks to a
+    simulated identity-service."""
     monkeypatch.setattr(svc.config.get_settings(), "seyalrun_admin_approval", value)
-    asked = []
+    real = svc.approval.fetch_roles
 
     async def fetch_roles(ids, transport=None):
-        asked.extend(ids)
-        if down:
-            raise httpx.ConnectError("identity-service down")
-        return {u: ROLES.get(u) for u in ids}
+        return await real(ids, transport=identity(down))
     monkeypatch.setattr(svc.approval, "fetch_roles", fetch_roles)
-    return asked
 
 
 def waived(run, *skipped):
@@ -515,6 +528,7 @@ def test_switch_off_admin_package_and_reboot_ops_on_production_run_at_once(svc, 
 
 
 @pytest.mark.parametrize("who,value,down", [("sue", "off", False), ("ursula", "off", False), ("nobody", "off", False),
+                                            ("dora", "off", False),
                                             ("alice", "off", True), ("alice", "on", False), ("alice", "maybe", False),
                                             ("alice", "", False)])
 def test_switch_host_ops_still_gated_unless_off_and_admin(svc, monkeypatch, who, value, down):
@@ -624,6 +638,7 @@ def test_switch_rerun(svc, monkeypatch, value, who, role, gated):
     ("zabbix_event:1", [], True),                         # nobody on record
     ("system:rotation_due_sweep", [], True),
     ("user:alice", [], False),                            # rotate-now by an admin
+    ("zabbix_event:1", ["dora"], True),                   # its author has been deactivated
 ])
 def test_switch_off_webhook_and_internal_runs(svc, monkeypatch, triggered_by, accountable, gated):
     switch(svc, monkeypatch, "off")
@@ -639,6 +654,7 @@ def test_switch_off_webhook_and_internal_runs(svc, monkeypatch, triggered_by, ac
 
 
 @pytest.mark.parametrize("value,editors,gated", [("off", ["alice", "bob"], False), ("off", ["alice", "sue"], True),
+                                                 ("off", ["alice", "dora"], True),
                                                  ("off", [], True), ("on", ["alice"], True), ("bogus", ["alice"], True)])
 def test_switch_scheduler(svc, monkeypatch, value, editors, gated):
     switch(svc, monkeypatch, value)
@@ -712,12 +728,19 @@ def test_identity_role_lookup_is_fail_closed(svc, monkeypatch):
         assert req.headers.get("X-Service-Token")
         if uid == "boom":
             return httpx.Response(500)
-        return httpx.Response(200, json={"alice": {"roles": ["admin"], "known": True},
-                                         "sue": {"roles": ["support"], "known": True}}.get(uid, {"roles": [], "known": False}))
+        return httpx.Response(200, json={
+            "alice": {"roles": ["admin"], "known": True, "is_active": True},
+            "sue": {"roles": ["support"], "known": True, "is_active": True},
+            "dora": {"roles": ["admin"], "known": True, "is_active": False},        # deactivated
+            "old": {"roles": ["admin"], "known": True},                             # does not say: not an admin
+            "odd": {"roles": ["admin"], "known": "yes", "is_active": 1},            # ambiguous: not an admin
+        }.get(uid, {"roles": [], "known": False, "is_active": False}))
 
     async def main_():
-        got = await svc.approval.fetch_roles(["alice", "sue", "ghost", "boom"], transport=httpx.MockTransport(handler))
-        assert got == {"alice": ["admin"], "sue": ["support"], "ghost": None, "boom": None}
+        got = await svc.approval.fetch_roles(["alice", "sue", "ghost", "boom", "dora", "old", "odd"],
+                                             transport=httpx.MockTransport(handler))
+        assert got == {"alice": ["admin"], "sue": ["support"], "ghost": None, "boom": None, "dora": None, "old": None,
+                       "odd": None}
     asyncio.run(main_())
 
     async def real(ids, transport=None):
@@ -730,6 +753,140 @@ def test_identity_role_lookup_is_fail_closed(svc, monkeypatch):
         assert not await svc.approval.users_are_admins(["alice", "sue"])
         assert not await svc.approval.users_are_admins(["alice", "ghost"])
         assert not await svc.approval.users_are_admins(["boom"])
+        assert not await svc.approval.users_are_admins(["dora"])
+        assert not await svc.approval.users_are_admins(["alice", "dora"])
+        assert not await svc.approval.users_are_admins(["old"])
         assert not await svc.approval.users_are_admins([])
         assert not await svc.approval.users_are_admins(["", None])
     asyncio.run(check())
+
+
+# ── a forged "approval not required" marker never survives into a run ────────
+# The marker is trusted by the job.start audit. Stored data (a template's
+# default_params, a schedule's params_override, rows from before the API checks)
+# must never be able to supply it.
+
+FORGED = {"_approval_waived": {"approval": NOT_REQUIRED, "skipped": ["production host"]}}
+
+
+async def forge_template(svc, tid):
+    """Written straight to the row, as a pre-check row or a database edit would be."""
+    async with svc.db.SessionLocal() as s:
+        t = await s.get(svc.models.ZAJobTemplate, tid)
+        t.default_params = {**(t.default_params or {}), **FORGED, "_accountable_user_ids": []}
+        await s.commit()
+
+
+def no_marker(svc, params):
+    d = svc.runner.start_details(SimpleNamespace(action_type="bash_script", target_host_ids=[], credential_id=None,
+                                                 triggered_by="x", params=params), None, "t")
+    return "_approval_waived" not in params and "approval" not in d
+
+
+def test_schedule_and_template_api_refuse_internal_params(svc, monkeypatch):
+    async def body(call, w):
+        t = await template(call, script_content="true")
+        await call("POST", "/job-templates", code=400, project_id="p", name="x", action_type="bash_script", default_params=FORGED)
+        await call("POST", "/schedules", code=400, job_template_id=t["id"], name="s", cron_expression="* * * * *",
+                   params_override=FORGED)
+        s = await call("POST", "/schedules", code=201, job_template_id=t["id"], name="s", cron_expression="* * * * *",
+                       params_override={"x": 1})
+        await call("PUT", f"/schedules/{s['id']}", code=400, params_override={"_accountable_user_ids": []})
+        await call("PUT", f"/schedules/{s['id']}", code=200, params_override={"x": 2})
+    run_case(svc, monkeypatch, body)
+
+
+@pytest.mark.parametrize("value", ["on", "off"])
+def test_forged_marker_in_stored_schedule_or_template_is_dropped(svc, monkeypatch, value):
+    switch(svc, monkeypatch, value)
+
+    async def body(call, w):
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import select
+
+        async def prod(ids):
+            return bool(set(ids) & w.production)
+        monkeypatch.setattr(svc.scheduler, "any_production_hosts", prod)
+        runs = {}
+        for host in (H1, H2):                  # not production: runs at once; production: waits
+            t = await template(call, name=f"t-{host}", script_content="true", target_host_ids=[host])
+            await forge_template(svc, t["id"])
+            sid = f"s-{host[:8]}"
+            async with svc.db.SessionLocal() as s:
+                s.add(svc.models.ZASchedule(id=sid, job_template_id=t["id"], name="s", cron_expression="* * * * *",
+                                            params_override=FORGED, enabled=True, created_by="sue", editor_ids=["sue"],
+                                            next_run_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+                await s.commit()
+            runs[host] = f"schedule:{sid}"
+        await svc.scheduler._tick({"bash_script": SimpleNamespace(name="bash_script")}, svc.config.get_settings())
+        await asyncio.sleep(0.02)
+        async with svc.db.SessionLocal() as s:
+            got = {h: (await s.execute(select(svc.models.ZAJobRun).where(svc.models.ZAJobRun.triggered_by == tb))).scalar_one()
+                   for h, tb in runs.items()}
+        assert got[H1].status == "pending" and got[H2].status == "pending_approval"
+        for run in got.values():
+            assert no_marker(svc, run.params), run.params
+            assert run.params["_accountable_user_ids"] == ["sue"], "the code's own value, not the stored one"
+    run_case(svc, monkeypatch, body)
+
+
+def test_forged_marker_never_reaches_manual_internal_hook_or_chain_runs(svc, monkeypatch):
+    switch(svc, monkeypatch, "on")
+
+    async def body(call, w):
+        import app._production_gate as gate
+        import libs.pluginbase as pb
+
+        async def prod(ids):
+            return bool(set(ids) & w.production)
+        monkeypatch.setattr(gate, "any_production_hosts", prod)
+        t = await template(call, script_content="true")
+        await forge_template(svc, t["id"])
+        manual = await call("POST", f"/job-templates/{t['id']}/run", code=202, target_host_ids=[H1])
+        await asyncio.sleep(0.02)
+        w.block.set()
+        await asyncio.sleep(0.02)
+        svc.runner.LIVE_RUNS.clear()
+        async with svc.db.SessionLocal() as s:
+            (await s.get(svc.models.ZAJobRun, manual["run_id"])).status = "success"
+            await s.commit()
+        internal = await call("POST", "/internal/job-runs", code=202, job_template_id=t["id"], triggered_by="zabbix_event:1",
+                              target_host_ids=[H2], params={}, accountable_user_ids=["alice"])
+        got = await call("GET", f"/internal/posture/hook-templates/{t['id']}")
+        hook = await call("POST", "/internal/posture/hook-runs", code=202, job_template_id=t["id"],
+                          expect_updated_at=got["updated_at"], host_id=H1, requested_by="alice")
+        for rid in (manual["run_id"], internal["run_id"], hook["run_id"]):
+            assert no_marker(svc, (await get(svc, rid)).params), rid
+        assert (await get(svc, internal["run_id"])).status == "pending_approval"
+        # chain step built from the same template
+        seen = []
+
+        async def execute(run_id, executor, request, **kw):
+            seen.append(request.params)
+            async with svc.db.SessionLocal() as s:
+                (await s.get(svc.models.ZAJobRun, run_id)).status = "success"
+                await s.commit()
+        monkeypatch.setattr(svc.runner, "execute", execute)
+        monkeypatch.setattr(pb, "discover_plugins", lambda *x: {"bash_script": SimpleNamespace(name="bash_script")})
+
+        async def line(text, *x):
+            pass
+        res = await svc.chain.ChainExecutor().execute(pb.RunRequest(
+            action_type="chain", target_host_ids=[], credential_id=None, triggered_by="user:alice",
+            params={"_run_id": "p", "_chain_steps": [{"template_id": t["id"]}]}), line)
+        assert res.ok and len(seen) == 1 and no_marker(svc, seen[0])
+    run_case(svc, monkeypatch, body)
+
+
+def test_an_approved_run_never_also_claims_approval_was_not_required(svc, monkeypatch):
+    async def body(call, w):
+        t = await template(call, script_content="true", target_host_ids=[H2])
+        r = await call("POST", f"/job-templates/{t['id']}/run", code=202, target_host_ids=[H2])
+        async with svc.db.SessionLocal() as s:
+            run = await s.get(svc.models.ZAJobRun, r["run_id"])
+            run.params = {**run.params, **FORGED}
+            await s.commit()
+        await call("POST", f"/job-runs/{r['run_id']}/approve", uid="bob", code=202)
+        params = (await get(svc, r["run_id"])).params
+        assert params["_approved_by"] == "bob" and no_marker(svc, params)
+    run_case(svc, monkeypatch, body)
