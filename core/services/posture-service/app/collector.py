@@ -101,7 +101,9 @@ async def ingest(host_id: str, run_id: str, run: dict) -> None:
             row.security_updates = parsed["security_updates"]
             row.reboot_required = parsed["reboot_required"]
             row.reboot_method = parsed["reboot_method"][:64]
-            row.warnings = parsed["warnings"][:20]
+            # Kept within 20, but never at the cost of the line that says the update list is unknown.
+            ws = parsed["warnings"]
+            row.warnings = ([w for w in ws if facts.UPDATES_UNKNOWN in w] + [w for w in ws if facts.UPDATES_UNKNOWN not in w])[:20]
             row.collected_at = _now()
             row.last_result = "ok"
             row.last_error = None

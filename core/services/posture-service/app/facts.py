@@ -22,6 +22,13 @@ import zlib
 BEGIN = "SEYALRUN-FACTS-BEGIN"
 END = "SEYALRUN-FACTS-END"
 MAX_PAYLOAD_BYTES = 64 * 1024 * 1024   # decompressed; a host with 20k packages is ~2 MB
+# posture_facts.sh ends every warning about a failed update listing with this. Such a
+# host has an empty update list that means "unknown", not "up to date".
+UPDATES_UNKNOWN = "pending updates unknown"
+
+
+def updates_known(warnings: list | None) -> bool:
+    return not any(UPDATES_UNKNOWN in str(w) for w in warnings or [])
 
 _HOST_PREFIX = re.compile(r"^\[host:[^\]]*\] ?")
 _APT_LIST = re.compile(
@@ -256,6 +263,7 @@ def parse_facts(text: str) -> dict:
         "reboot_required": reboot,
         "reboot_method": method,
         "warnings": warnings,
+        "pending_known": updates_known(warnings),
     }
 
 

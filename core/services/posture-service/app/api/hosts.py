@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import clients, collector
+from .. import clients, collector, facts
 from ..config import get_settings
 from ..database import get_session
 from ..deps import Caller, get_caller, require_admin
@@ -72,6 +72,9 @@ def host_out(inv: dict, row: PostureHost | None, stale_hours: int) -> dict:
         "collect_state": r.collect_state if r else "idle",
         "last_job_run_id": r.last_job_run_id if r else None,
         "warnings": list(r.warnings or []) if r else [],
+        # pending_updates stays a number for existing readers; false here means the last
+        # scan could not list updates, so 0 is not "up to date".
+        "pending_updates_known": bool(r and r.collected_at and facts.updates_known(r.warnings)),
     }
 
 

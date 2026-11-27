@@ -102,8 +102,18 @@ collect() {
     else
       printf 'E\tno dnf/yum found: pending updates unknown\n'
     fi
+    # A minimal EL9 has no needs-restarting command (dnf-utils), only the dnf plugin.
+    # Without either, only the kernel is compared, which misses a glibc or systemd
+    # update. The plugin is probed first: "no such command" also exits 1, which
+    # would otherwise read as "reboot required".
+    _nr=""
     if command -v needs-restarting >/dev/null 2>&1; then
-      _t 60 needs-restarting -r >/dev/null 2>&1; _rc=$?
+      _nr=needs-restarting
+    elif [ "$_pm" = dnf ] && _t 60 dnf -q needs-restarting --help >/dev/null 2>&1 </dev/null; then
+      _nr="dnf -q needs-restarting"
+    fi
+    if [ -n "$_nr" ]; then
+      _t 60 $_nr -r >/dev/null 2>&1 </dev/null; _rc=$?
       case "$_rc" in
         0) printf 'B\t0\tneeds-restarting\n' ;;
         1) printf 'B\t1\tneeds-restarting\n' ;;
