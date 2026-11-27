@@ -44,6 +44,7 @@
         <CredentialsAdmin v-else-if="section === 'credentials'" />
         <ZonesAdmin v-else-if="section === 'zones'" />
         <TriggerBindingsAdmin v-else-if="section === 'trigger-bindings'" />
+        <HostTreeAdmin v-else-if="section === 'host-tree'" />
       </div>
     </div>
     </div>
@@ -60,6 +61,7 @@ import AuthorizationsAdmin from './admin/AuthorizationsAdmin.vue'
 import CredentialsAdmin from './admin/CredentialsAdmin.vue'
 import ZonesAdmin from './admin/ZonesAdmin.vue'
 import TriggerBindingsAdmin from './admin/TriggerBindingsAdmin.vue'
+import HostTreeAdmin from './admin/HostTreeAdmin.vue'
 import { useAuthStore } from '@/stores/auth'
 import { groupsFor, ICONS } from '@/config/adminSections'
 

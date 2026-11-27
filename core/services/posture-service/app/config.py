@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from libs.adminapproval import approval_required
 from libs.secrets import require_secrets
 from pydantic_settings import BaseSettings
 
@@ -53,6 +54,9 @@ class Settings(BaseSettings):
     # M4 rollouts. Two-person approval applies to every rollout unless this is
     # "production", which limits it to rollouts touching a production host.
     posture_patch_approval: str = "always"
+    # off | on — whether an admin's own rollout, package operation or facts run
+    # waits for a second admin at all (libs/adminapproval). Unknown means on.
+    seyalrun_admin_approval: str = "off"
     posture_rollout_tick_seconds: int = 5
     # A step that has not finished by then fails its host (and halts the wave).
     posture_step_timeout_minutes: int = 120
@@ -68,3 +72,8 @@ def get_settings() -> Settings:
     settings = Settings()
     require_secrets(settings, "db_password", "service_jwt_secret")
     return settings
+
+
+def admin_approval_required() -> bool:
+    """SEYALRUN_ADMIN_APPROVAL: False when an admin's own request needs no second admin."""
+    return approval_required(get_settings().seyalrun_admin_approval)

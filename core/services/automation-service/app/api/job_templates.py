@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app._approval import PRODUCTION, TEMPLATE, WAIVER_PARAM, caller_waiver, without_internal
 from app._attribution import with_editor
 from app._host_ops import NO_RERUN_ACTIONS
 from app._concurrency import live_run_id
@@ -275,7 +276,7 @@ async def run_template(
         caller_params = filter_caller_params(tmpl, payload.params)
     except ParamNotAllowedError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    params = {**tmpl.default_params, **caller_params}
+    params = {**without_internal(tmpl.default_params), **caller_params}
 
     # Runtime Variables (survey_schema.fields): validate each declared field's supplied
     # value against its own rule — a string field's regex, or a dropdown's fixed option
@@ -364,6 +365,13 @@ async def run_template(
         "_chain_steps": tmpl.chain_steps if tmpl.action_type == "chain" else None,
         "_run_id": run_id,
     }
+    # SEYALRUN_ADMIN_APPROVAL=off: an admin's own run needs no second admin. A
+    # non-admin's run is gated exactly as before.
+    waived = caller_waiver(request, [*([TEMPLATE] if tmpl.requires_approval else []),
+                                     *([PRODUCTION] if force_approval else [])])
+    needs_approval = bool(tmpl.requires_approval or force_approval) and not waived
+    if waived:
+        stored_params[WAIVER_PARAM] = waived
     # Refuse rather than queue. Queueing would hide the double-trigger and run it
     # later against hosts whose state has moved on; a 409 tells the caller what is
     # already happening and lets them decide.
@@ -383,14 +391,14 @@ async def run_template(
         # approver-role user calls POST /job-runs/{id}/approve (see job_runs.py).
         # force_approval (any target host tagged is_production) overrides the
         # template's own setting the same way — production is always gated.
-        status="pending_approval" if (tmpl.requires_approval or force_approval) else "pending",
+        status="pending_approval" if needs_approval else "pending",
         params=stored_params,
         output_lines=[],
     )
     session.add(run)
     await session.commit()
 
-    if tmpl.requires_approval or force_approval:
+    if needs_approval:
         return {"run_id": run_id, "status": "pending_approval"}
 
     executors = getattr(request.app.state, "executors", {})

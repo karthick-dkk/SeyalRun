@@ -14,13 +14,14 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from libs.adminapproval import NOT_REQUIRED
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import audit, clients, facts, rollout_core as core, rollout_engine as engine, scanning
-from ..config import get_settings
+from ..config import admin_approval_required, get_settings
 from ..database import get_session
 from ..deps import Caller, get_caller, require_admin, require_fleet_admin
 from ..models import (
@@ -47,6 +48,8 @@ _KEY = re.compile(r"-----BEGIN PGP PUBLIC KEY BLOCK-----[A-Za-z0-9+/=\s:.,()@<>_
 _SUITE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,79}\Z")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,199}\Z")
 MAX_ROLLOUT_HOSTS = 1000
+# A reboot from the host page waits this long for the host to come back (as a rollout does by default).
+REBOOT_WAIT_SECONDS = 900
 FAMILY = {"dpkg": "deb", "rpm": "rpm"}
 
 
@@ -228,6 +231,45 @@ async def package_op(host_id: str, payload: PackageOpIn, request: Request, calle
     return _op_out(op)
 
 
+class RebootIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
+
+
+@router.post("/hosts/{host_id}/reboot", status_code=202)
+async def reboot_host(host_id: str, payload: RebootIn, request: Request, caller: Caller = Depends(require_admin),
+                      session: AsyncSession = Depends(get_session)):
+    """Reboot one host now. Tracked as a package operation (op "reboot") so it shows with the
+    host's other operations; production hosts follow the same approval rules."""
+    inv = await _visible_inventory_host(caller, host_id)
+    if clients.os_family(inv.get("os_type")) != "linux" or inv.get("enabled") is False:
+        raise _bad("only enabled Linux hosts are supported")
+    busy = (await session.execute(select(RolloutHost.id).where(
+        RolloutHost.active_host_id == host_id, RolloutHost.status == "running"))).scalar_one_or_none()
+    if busy:
+        raise _bad("a patch rollout is working on this host", 409)
+    queued = (await session.execute(select(PackageOp.id).where(
+        PackageOp.host_id == host_id, PackageOp.op == "reboot",
+        PackageOp.status.in_(("queued", "running", "awaiting_approval"))))).scalar_one_or_none()
+    if queued:
+        raise _bad("a reboot of this host is already queued", 409)
+    args = {"health_urls": [], "wait_seconds": REBOOT_WAIT_SECONDS}
+    op = PackageOp(id=str(uuid.uuid4()), host_id=host_id, op="reboot", args=args, status="queued",
+                   result={"accountable": [], "reason": payload.reason.strip()},
+                   requested_by=caller.user_id, requested_by_name=caller.username)
+    await _audit_critical(request, caller, "posture.host.reboot", "host", host_id,
+                          {"op_id": op.id, "reason": payload.reason.strip()[:500]})
+    try:
+        run = await clients.host_op_run(action=engine.op_action(op.op), op=op.op, args=args, host_id=host_id,
+                                        token=f"op-{op.id}", requested_by=caller.user_id, approval=None, accountable=[])
+    except clients.UpstreamError as exc:
+        raise _bad(exc.detail, exc.status if exc.status in (400, 409) else 502) from exc
+    op.job_run_id = run["run_id"]
+    op.status = "awaiting_approval" if run.get("status") == "pending_approval" else "queued"
+    session.add(op)
+    await session.commit()
+    return _op_out(op)
+
+
 @router.get("/package-ops")
 async def list_package_ops(host_id: str | None = None, limit: int = Query(default=50, ge=1, le=200),
                            caller: Caller = Depends(get_caller), session: AsyncSession = Depends(get_session)):
@@ -392,7 +434,8 @@ def _rollout_out(r: PatchRollout, counts: dict[str, int] | None = None, allowed:
             "waves": len(r.plan.get("waves") or []), "hosts": len(mine), "packages": sum(len(h["packages"]) for h in mine),
             "window": r.plan.get("window"), "soak_until": _iso(r.soak_until), "feed_version": r.feed_version,
             "created_by": r.created_by, "created_by_name": r.created_by_name, "approved_by": r.approved_by,
-            "approved_by_name": r.approved_by_name, "approved_at": _iso(r.approved_at), "created_at": _iso(r.created_at),
+            "approved_by_name": r.approved_by_name, "approved_at": _iso(r.approved_at), "approval": engine.approval_note(r),
+            "created_at": _iso(r.created_at),
             "started_at": _iso(r.started_at), "finished_at": _iso(r.finished_at), "counts": counts or {}}
 
 
@@ -413,7 +456,9 @@ async def _hook_ref(template_id: str | None, what: str, accountable: list[str]) 
         t = await clients.hook_template(template_id)
     except clients.UpstreamError as exc:
         raise _bad(f"{what} template: {exc.detail}") from exc
-    if not t["enabled"] or t["requires_approval"]:
+    # A hook cannot wait for its own approval in the middle of a rollout. With
+    # SEYALRUN_ADMIN_APPROVAL=off an admin's rollout (the only kind) needs none.
+    if not t["enabled"] or (t["requires_approval"] and admin_approval_required()):
         raise _bad(f"{what} template {t['name']!r} must be enabled and must not need its own approval")
     accountable += t.get("editor_ids") or []
     return {"id": t["id"], "name": t["name"], "updated_at": t["updated_at"]}
@@ -509,20 +554,32 @@ async def create_rollout(payload: RolloutIn, request: Request, caller: Caller = 
                          session: AsyncSession = Depends(get_session)):
     plan, accountable, skipped = await _build_plan(session, payload, caller)
     needs = get_settings().posture_patch_approval != "production" or any(h["production"] for h in plan["hosts"])
+    # SEYALRUN_ADMIN_APPROVAL=off: an admin's rollout is approved as it is created,
+    # bound to this plan hash. approved_by is the creator, which the approve endpoint
+    # never allows, so it reads as "not required" (engine.approval_note), never as
+    # an independent approver.
+    waived = needs and caller.is_admin and not admin_approval_required()
+    if waived:
+        needs = False
     snap = await scanning.active_snapshot(session)
     r = PatchRollout(id=str(uuid.uuid4()), name=payload.name, baseline_id=payload.baseline_id, plan=plan,
                      plan_hash=core.plan_hash(plan), status="pending_approval" if needs else "approved", status_reason="",
                      waiting="", created_by=caller.user_id, created_by_name=caller.username, accountable_ids=accountable,
-                     approved_by_name="", feed_version=snap.version if snap else "", current_wave=0)
+                     approved_by=caller.user_id if waived else None, approved_by_name=caller.username if waived else "",
+                     approved_at=engine.now() if waived else None,
+                     feed_version=snap.version if snap else "", current_wave=0)
     wave_of = {hid: i for i, w in enumerate(plan["waves"]) for hid in w}
     await _audit_critical(request, caller, "posture.patch.create", "patch_rollout", r.id,
-                          {"name": r.name, "hosts": len(plan["hosts"]), "plan_hash": r.plan_hash, "needs_approval": needs})
+                          {"name": r.name, "hosts": len(plan["hosts"]), "plan_hash": r.plan_hash, "needs_approval": needs,
+                           **({"approval": NOT_REQUIRED} if waived else {})})
     session.add(r)
     for h in plan["hosts"]:
         session.add(RolloutHost(id=str(uuid.uuid4()), rollout_id=r.id, host_id=h["host_id"], active_host_id=h["host_id"],
                                 hostname=h["hostname"][:255], wave=wave_of[h["host_id"]], status="pending", step="",
                                 attempt=1, error="", drained=False, changed=False, runs={}, data={}, checks=[]))
     engine.add_event(session, r.id, "created", by=caller.username)
+    if waived:
+        engine.add_event(session, r.id, "approved", by=caller.username, detail=f"{NOT_REQUIRED}; plan {r.plan_hash[:12]}")
     for hid, _, why in skipped:     # host-scoped: readers who may not see a host do not see its event
         engine.add_event(session, r.id, "host_left_out", host_id=hid, by=caller.username, detail=why)
     await _commit_unique(session, "a live rollout for one of these hosts")
@@ -770,10 +827,11 @@ async def evidence(rollout_id: str, format: str = Query(default="json", pattern=
                              "reboot_run": (h.runs or {}).get("reboot", {}).get("run_id") or ""})
     head = {"rollout": r.name, "rollout_id": r.id, "status": r.status, "plan_hash": r.plan_hash, "feed_version": r.feed_version,
             "requested_by": r.created_by_name, "approved_by": r.approved_by_name, "approved_at": _iso(r.approved_at),
-            "started_at": _iso(r.started_at), "finished_at": _iso(r.finished_at)}
+            "approval": engine.approval_note(r), "started_at": _iso(r.started_at), "finished_at": _iso(r.finished_at)}
     if format == "csv":
         buf = io.StringIO()
-        cols = ["rollout", "requested_by", "approved_by", "approved_at", "plan_hash", "feed_version", *(rows[0] if rows else [])]
+        cols = ["rollout", "requested_by", "approved_by", "approved_at", "approval", "plan_hash", "feed_version",
+                *(rows[0] if rows else [])]
         w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for row in rows:

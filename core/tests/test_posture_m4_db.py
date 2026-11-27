@@ -57,6 +57,7 @@ class World:
         self.args: list[tuple] = []
         self.undrain_broken = False
         self.posts = 0
+        self.actions: list[tuple] = []           # (automation action, op) per host-op request
 
     def _finish(self, rid, lines, rc=0):
         self.runs[rid] = {"status": "success" if rc == 0 else "failed", "exit_code": rc, "output_lines": lines, "live": False}
@@ -65,6 +66,7 @@ class World:
         rid = str(uuid.uuid4())
         self.calls.append((op, host_id, token, approval))
         self.args.append((op, host_id, args, accountable))
+        self.actions.append((action, op))
         if op in self.forget:
             self.forget.discard(op)
             self.tokens.setdefault(token, {})
@@ -740,4 +742,106 @@ def test_host_whose_updates_are_unknown_is_not_planned(env, monkeypatch):
         assert r["hosts"] == 1, "only the host with a known update list is planned"
         hosts = {h["host_id"]: h for h in await api("GET", "/hosts")}
         assert hosts[H[0]]["pending_updates_known"] is False and hosts[H[1]]["pending_updates_known"] is True
+    run_case(env, monkeypatch, body)
+
+
+def test_reboot_from_the_host_page(env, monkeypatch):
+    """Reboot one host now: an admin with a reason, tracked with the host's package operations,
+    run by the reboot executor (not package_ops), and followed by a facts refresh."""
+    async def body(w, api, drive, engine, models, scanning):
+        h = H[0]
+        await api("POST", f"/hosts/{h}/reboot", code=422, reason="x")
+        await api("POST", f"/hosts/{h}/reboot", code=403, role="user", reason="kernel update")
+        r = await api("POST", f"/hosts/{h}/reboot", code=202, reason="kernel update")
+        assert r["op"] == "reboot" and r["status"] in ("queued", "running")
+        await api("POST", f"/hosts/{h}/reboot", code=409, reason="again")
+        assert ("host_reboot", "reboot") in w.actions and ("package_ops", "reboot") not in w.actions
+        boot = w.boot[h]
+        for _ in range(10):
+            await engine.tick()
+            ops = await api("GET", f"/package-ops?host_id={h}")
+            if ops[0]["status"] not in ("queued", "running", "awaiting_approval"):
+                break
+        op = next(o for o in ops if o["id"] == r["id"])
+        assert op["status"] == "ok" and op["error"] in (None, ""), op
+        assert op["result"]["reason"] == "kernel update"
+        assert w.boot[h] == boot, "the reboot ran once, before the first tick"
+        # done, so another reboot may be asked for
+        await api("POST", f"/hosts/{h}/reboot", code=202, reason="second time")
+    run_case(env, monkeypatch, body)
+
+
+# ── SEYALRUN_ADMIN_APPROVAL=off ──────────────────────────────────────────────
+
+NOT_REQUIRED = "not required (SEYALRUN_ADMIN_APPROVAL=off)"
+
+
+def test_switch_off_admin_rollout_is_approved_at_creation_and_runs(env, monkeypatch):
+    monkeypatch.setenv("SEYALRUN_ADMIN_APPROVAL", "off")
+
+    async def body(w, api, drive, engine, models, scanning):
+        r = await api("POST", "/patches", code=201, name="r", group_ids=["g1"], ignore_window=True, config=CFG)
+        # Approved by nobody but its creator, bound to the plan, and saying so.
+        assert r["status"] == "approved" and r["approved_by"] == r["created_by"] == "alice"
+        assert r["approved_at"] and r["approval"] == NOT_REQUIRED
+        create = next(a for a in w.audit if a["action"] == "posture.patch.create")
+        assert create["critical"] and create["details"]["approval"] == NOT_REQUIRED
+        assert create["details"]["needs_approval"] is False and create["details"]["plan_hash"] == r["plan_hash"]
+        assert not any(c[0] == "notify" for c in w.calls), "nothing is waiting for approval"
+        await api("POST", f"/patches/{r['id']}/approve", uid="bob", code=409, plan_hash=r["plan_hash"])
+        d = await drive(r["id"])
+        assert d["status"] == "completed" and d["counts"] == {"done": 6}, d["counts"]
+        assert d["approval"] == NOT_REQUIRED
+        ev = [e for e in d["events"] if e["event"] == "approved"]
+        assert len(ev) == 1 and ev[0]["by"] == "alice" and NOT_REQUIRED in ev[0]["detail"] and r["plan_hash"][:12] in ev[0]["detail"]
+        # The creator's sign-off is never handed to automation-service as a second person's approval.
+        runs = [c for c in w.calls if c[0] != "notify"]
+        assert runs and all(a is None for *_, a in runs)
+        evidence = await api("GET", f"/patches/{r['id']}/evidence")
+        assert evidence["approved_by"] == "alice" and evidence["approval"] == NOT_REQUIRED
+        csvr = await api("GET", f"/patches/{r['id']}/evidence?format=csv")
+        assert NOT_REQUIRED in csvr.text and "approval" in csvr.text.splitlines()[0]
+    run_case(env, monkeypatch, body)
+
+
+@pytest.mark.parametrize("value", ["on", "maybe", ""])
+def test_switch_on_or_unknown_rollout_waits_for_a_second_admin(env, monkeypatch, value):
+    monkeypatch.setenv("SEYALRUN_ADMIN_APPROVAL", value)
+
+    async def body(w, api, drive, engine, models, scanning):
+        r = await api("POST", "/patches", code=201, name="r", group_ids=["g1"], ignore_window=True, config=CFG)
+        assert r["status"] == "pending_approval" and r["approved_by"] is None and r["approval"] == ""
+        await engine.tick()
+        assert all(c[0] == "notify" for c in w.calls), "nothing runs before approval"
+        await api("POST", f"/patches/{r['id']}/approve", uid="alice", code=403, plan_hash=r["plan_hash"])
+        a = await api("POST", f"/patches/{r['id']}/approve", uid="bob", plan_hash=r["plan_hash"])
+        assert a["approved_by"] == "bob" and a["approval"] == "approved by a second admin"
+    run_case(env, monkeypatch, body)
+
+
+def test_switch_off_keeps_existing_pending_rollouts_working(env, monkeypatch):
+    async def body(w, api, drive, engine, models, scanning):
+        pending = await api("POST", "/patches", code=201, name="p", host_ids=[H[2]], ignore_window=True, config=CFG)
+        assert pending["status"] == "pending_approval"
+        monkeypatch.setenv("SEYALRUN_ADMIN_APPROVAL", "off")
+        _pkg("config").get_settings.cache_clear()
+        await api("POST", f"/patches/{pending['id']}/approve", uid="alice", code=403, plan_hash=pending["plan_hash"])
+        a = await api("POST", f"/patches/{pending['id']}/approve", uid="bob", plan_hash=pending["plan_hash"])
+        assert a["status"] == "approved" and a["approval"] == "approved by a second admin"
+        other = await api("POST", "/patches", code=201, name="q", host_ids=[H[3]], ignore_window=True, config=CFG)
+        await api("POST", f"/patches/{other['id']}/reject", uid="alice", code=409, reason="already approved")
+    run_case(env, monkeypatch, body)
+
+
+@pytest.mark.parametrize("value,ok", [("off", True), ("on", False)])
+def test_hook_that_needs_its_own_approval_is_planned_only_when_off(env, monkeypatch, value, ok):
+    monkeypatch.setenv("SEYALRUN_ADMIN_APPROVAL", value)
+
+    async def body(w, api, drive, engine, models, scanning):
+        async def gated(tid):
+            return {**await w.hook_template(tid), "requires_approval": True}
+        monkeypatch.setattr(_pkg("clients"), "hook_template", gated)
+        r = await api("POST", "/patches", code=201 if ok else 400, name="r", group_ids=["g1"], ignore_window=True, config=CFG)
+        if not ok:
+            assert "must not need its own approval" in r["detail"]
     run_case(env, monkeypatch, body)

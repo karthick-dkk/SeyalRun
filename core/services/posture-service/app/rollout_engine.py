@@ -20,6 +20,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
 import httpx
+from libs.adminapproval import NOT_REQUIRED
 from sqlalchemy import select
 
 from . import audit, clients, collector, rollout_core as core
@@ -78,8 +79,24 @@ def add_event(session, rollout_id: str, event: str, *, host_id: str | None = Non
     session.add(RolloutEvent(rollout_id=rollout_id, host_id=host_id, event=event, by=by[:200], detail=detail[:4000]))
 
 
+def approved_without_second_admin(r: PatchRollout) -> bool:
+    """Approved as it was created because SEYALRUN_ADMIN_APPROVAL was off. The
+    approve endpoint never lets the creator approve, so this is the only way
+    approved_by can equal created_by."""
+    return bool(r.approved_by) and r.approved_by == r.created_by
+
+
+def approval_note(r: PatchRollout) -> str:
+    """How the rollout was approved, for the API and the evidence export."""
+    if approved_without_second_admin(r):
+        return NOT_REQUIRED
+    return "approved by a second admin" if r.approved_by else ""
+
+
 def approval_of(r: PatchRollout) -> dict | None:
-    if not r.approved_by:
+    # Not a second person's approval, so never offered as one: automation-service
+    # decides a production host's run on its own SEYALRUN_ADMIN_APPROVAL setting.
+    if not r.approved_by or approved_without_second_admin(r):
         return None
     return {"reference": f"rollout:{r.id}", "approved_by": r.approved_by,
             "accountable_user_ids": list(r.accountable_ids or [])}
@@ -680,6 +697,11 @@ async def advance_rollout(rollout_id: str) -> None:
 
 # ── package operations outside a rollout ─────────────────────────────────────
 
+def op_action(op: str) -> str:
+    """automation-service action for a host operation: reboots have their own executor."""
+    return "host_reboot" if op == "reboot" else "package_ops"
+
+
 async def poll_package_ops() -> None:
     async with SessionLocal() as session:
         ids = (await session.execute(select(PackageOp.id).where(
@@ -708,7 +730,7 @@ async def _poll_package_op(op_id: str) -> None:
         if (orphaned or status in ("error", "timeout")) and tries < MAX_TRIES:
             # The follower died, not the operation: same token, the host re-attaches.
             try:
-                new = await clients.host_op_run(action="package_ops", op=op.op, args=op.args, host_id=op.host_id,
+                new = await clients.host_op_run(action=op_action(op.op), op=op.op, args=op.args, host_id=op.host_id,
                                                 token=f"op-{op.id}", requested_by=op.requested_by, approval=None,
                                                 accountable=(op.result or {}).get("accountable") or [])
             except clients.UpstreamError as exc:
@@ -726,12 +748,16 @@ async def _poll_package_op(op_id: str) -> None:
             await session.commit()
             return
         op.finished_at = now()
-        try:
-            ch = core.parse_changes((run or {}).get("output_lines") or [])
-            op.result = {"exit_code": run.get("exit_code"), "changes": core.pair_changes(ch), "held": ch["held"],
-                         "plan": ch["plan"][:2000]}
-        except core.PayloadError as exc:
-            op.result, op.error = {"exit_code": (run or {}).get("exit_code")}, str(exc)
+        if op.op == "reboot":
+            # A reboot prints no package changes; its reason stays with the result.
+            op.result = {"exit_code": (run or {}).get("exit_code"), "reason": (op.result or {}).get("reason", "")}
+        else:
+            try:
+                ch = core.parse_changes((run or {}).get("output_lines") or [])
+                op.result = {"exit_code": run.get("exit_code"), "changes": core.pair_changes(ch), "held": ch["held"],
+                             "plan": ch["plan"][:2000]}
+            except core.PayloadError as exc:
+                op.result, op.error = {"exit_code": (run or {}).get("exit_code")}, str(exc)
         if run is not None and status == "success" and not op.error:
             op.status = "ok"
         else:

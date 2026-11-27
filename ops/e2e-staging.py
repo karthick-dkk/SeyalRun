@@ -62,6 +62,9 @@ import urllib.request
 
 BASE = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else ""
 ADMIN_PW = os.environ.get("SEYALRUN_ADMIN_PASSWORD", "")
+# The deployment's SEYALRUN_ADMIN_APPROVAL (verify-staging.sh reads it from the remote .env).
+# Same rule as the services: "off" (also when unset) or "on"; anything else counts as "on".
+ADMIN_APPROVAL_ON = os.environ.get("SEYALRUN_ADMIN_APPROVAL", "off").strip().lower() != "off"
 if not BASE or not ADMIN_PW:
     sys.exit("usage: SEYALRUN_ADMIN_PASSWORD=... e2e-staging.py https://host:port")
 
@@ -142,18 +145,30 @@ def main(A):
         return
     cleanup.append((f"/api/v1/job-templates/{t['id']}", "A"))
 
-    s, r = call("POST", f"/api/v1/job-templates/{t['id']}/run", A, {})
-    if not check("gated run waits for approval", s in (200, 202) and r.get("status") == "pending_approval", f"{s} {r}"):
+    # A non-admin's gated run waits for an admin in both modes of SEYALRUN_ADMIN_APPROVAL.
+    sup_role = next(r["id"] for r in roles if r["name"] == "support")
+    sname, spw = "e2e-support-" + secrets.token_hex(3), "E2e-" + secrets.token_urlsafe(12)
+    s, su = call("POST", "/api/v1/users", A, {"username": sname, "password": spw, "role_ids": [sup_role]})
+    if not check("create support user", s in (200, 201), f"{s} {su}"):
+        return
+    cleanup.append((f"/api/v1/users/{su['id']}", "A"))
+    S = login(sname, spw)
+    s, d = call("POST", "/api/v1/auth/change-password", S, {"current_password": spw, "new_password": spw + "x!"})
+    if s == 200:
+        S = (d or {}).get("access_token") or login(sname, spw + "x!")
+
+    s, r = call("POST", f"/api/v1/job-templates/{t['id']}/run", S, {})
+    if not check("support's gated run waits for approval", s in (200, 202) and r.get("status") == "pending_approval", f"{s} {r}"):
         return
     run_id = r["run_id"]
 
-    s, d = call("POST", f"/api/v1/job-runs/{run_id}/approve", A)
+    s, d = call("POST", f"/api/v1/job-runs/{run_id}/approve", S)
     check("F-2 requester cannot approve own run (403)", s == 403, f"{s} {d}")
     _, d = call("GET", f"/api/v1/job-runs/{run_id}", A)
     check("F-2 refused self-approval leaves run pending", d.get("status") == "pending_approval", d.get("status"))
 
     s, d = call("POST", f"/api/v1/job-runs/{run_id}/approve", B)
-    check("F-2 second admin approves (202)", s == 202, f"{s} {d}")
+    check("F-2 an admin approves (202)", s == 202, f"{s} {d}")
     for _ in range(45):
         _, d = call("GET", f"/api/v1/job-runs/{run_id}", A)
         if d.get("status") in ("success", "failed", "error", "cancelled"):
@@ -162,18 +177,36 @@ def main(A):
     check("approved run executes to success", d.get("status") == "success",
           f"{d.get('status')} {(d.get('output_lines') or [])[-3:]}")
 
-    s, r2 = call("POST", f"/api/v1/job-templates/{t['id']}/run", A, {})
-    s, d = call("POST", f"/api/v1/job-runs/{r2['run_id']}/reject", A, {"reason": "e2e withdraw"})
+    s, r2 = call("POST", f"/api/v1/job-templates/{t['id']}/run", S, {})
+    s, d = call("POST", f"/api/v1/job-runs/{r2['run_id']}/reject", S, {"reason": "e2e withdraw"})
     check("F-2 requester can withdraw own run", s == 200 and (d or {}).get("status") == "rejected", f"{s} {d}")
+
+    # An admin's own gated run: waits when SEYALRUN_ADMIN_APPROVAL=on, runs at once when off.
+    s, r3 = call("POST", f"/api/v1/job-templates/{t['id']}/run", A, {})
+    if ADMIN_APPROVAL_ON:
+        check("switch on: admin's gated run waits for approval", s in (200, 202) and r3.get("status") == "pending_approval", f"{s} {r3}")
+        call("POST", f"/api/v1/job-runs/{r3['run_id']}/reject", A, {"reason": "e2e withdraw"})
+    else:
+        check("switch off: admin's gated run starts without approval", s in (200, 202) and r3.get("status") != "pending_approval", f"{s} {r3}")
+        for _ in range(45):
+            _, d3 = call("GET", f"/api/v1/job-runs/{r3['run_id']}", A)
+            if d3.get("status") in ("success", "failed", "error", "cancelled"):
+                break
+            time.sleep(1)
+        check("switch off: admin's run executes to success", d3.get("status") == "success", d3.get("status"))
 
     time.sleep(2)  # audit forwarding is asynchronous
     ap = audit(A, "job.approve", run_id)
     check("job.approve audited to the approver", len(ap) == 1 and ap[0].get("user_id") == u2["id"], ap)
     st = audit(A, "job.start", run_id)
-    check("R-18 job.start audited with bare requester id", len(st) == 1 and st[0].get("user_id") == admin_id, st)
+    check("R-18 job.start audited with bare requester id", len(st) == 1 and st[0].get("user_id") == su["id"], st)
     check("R-18 job.finish audited", len(audit(A, "job.finish", run_id)) == 1)
     rj = audit(A, "job.reject", r2["run_id"])
-    check("job.reject audited to the requester", len(rj) == 1 and rj[0].get("user_id") == admin_id, rj)
+    check("job.reject audited to the requester", len(rj) == 1 and rj[0].get("user_id") == su["id"], rj)
+    if not ADMIN_APPROVAL_ON:
+        st3 = audit(A, "job.start", r3["run_id"])
+        check("switch off: job.start says approval was not required",
+              len(st3) == 1 and st3[0].get("user_id") == admin_id and "not required (SEYALRUN_ADMIN_APPROVAL=off)" in json.dumps(st3[0]), st3)
 
     # F-12 — through the MCP endpoint, with a PAT scoped to exactly what it needs.
     s, pat = call("POST", "/api/v1/api-tokens", A, {"name": "e2e-mcp", "scopes": ["notifications:read", "notifications:ack"]})

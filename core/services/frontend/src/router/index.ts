@@ -172,6 +172,16 @@ const router = createRouter({
       component: () => import('@/views/PostureView.vue'),
     },
     {
+      path: '/posture/hosts',
+      name: 'posture-hosts',
+      component: () => import('@/views/PostureHostsView.vue'),
+    },
+    {
+      path: '/posture/hosts/:id',
+      name: 'posture-host',
+      component: () => import('@/views/PostureHostView.vue'),
+    },
+    {
       path: '/patching',
       name: 'patching',
       component: () => import('@/views/PatchingView.vue'),
@@ -214,6 +224,8 @@ function areaFor(to: any): string | null {
     // purpose. Without this override, areaFor() derives 'admin.trigger-bindings',
     // which nothing grants, so the guard bounces everyone to Dashboard.
     if (section === 'trigger-bindings') return 'admin.zabbix-integration'
+    // Host Tree manages viewers on the identity 'authorizations' segment — same gate.
+    if (section === 'host-tree') return 'admin.authorizations'
     return section ? `admin.${section}` : null
   }
   if (p.startsWith('/settings/')) {

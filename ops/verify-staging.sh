@@ -348,7 +348,9 @@ if [[ -n "${SEYALRUN_ADMIN_PASSWORD:-}" ]]; then
       edge_cert=$(mktemp); rssh "cat ${REMOTE_DIR}/tls/cert.pem" > "$edge_cert" 2>/dev/null
       # POSTURE_E2E_BUNDLE / POSTURE_E2E_HOST_IDS (see e2e-staging.py) pass through
       # from the caller's environment to enable the feed-import and live-facts checks.
-      e2e_out=$(SEYALRUN_ADMIN_PASSWORD="$SEYALRUN_ADMIN_PASSWORD" SEYALRUN_CA_FILE="$(test -s "$edge_cert" && echo "$edge_cert")" \
+      # The e2e expectations for an admin's own gated run follow the deployment's switch.
+      admin_approval=$(rssh "grep '^SEYALRUN_ADMIN_APPROVAL=' ${REMOTE_DIR}/.env 2>/dev/null | tail -1 | cut -d= -f2" 2>/dev/null)
+      e2e_out=$(SEYALRUN_ADMIN_PASSWORD="$SEYALRUN_ADMIN_PASSWORD" SEYALRUN_ADMIN_APPROVAL="${admin_approval:-off}" SEYALRUN_CA_FILE="$(test -s "$edge_cert" && echo "$edge_cert")" \
                 POSTURE_E2E_BUNDLE="${POSTURE_E2E_BUNDLE:-}" POSTURE_E2E_HOST_IDS="${POSTURE_E2E_HOST_IDS:-}" \
                 python3 "$(dirname "${BASH_SOURCE[0]}")/e2e-staging.py" "${EDGE_HTTPS}" 2>&1)
       rm -f "$edge_cert"

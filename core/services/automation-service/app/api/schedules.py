@@ -16,6 +16,14 @@ from app.models import ZASchedule
 router = APIRouter(dependencies=[Depends(require_service_token)])
 
 
+def _check_override(params_override: dict | None) -> None:
+    """"_" params are set by this service (approval markers, accountability, targets):
+    a schedule may not store one, exactly as a template may not (job_templates.py)."""
+    bad = sorted(k for k in (params_override or {}) if str(k).startswith("_"))
+    if bad:
+        raise HTTPException(status_code=400, detail="reserved parameter name(s): " + ", ".join(bad)[:200])
+
+
 class ScheduleCreate(BaseModel):
     job_template_id: str
     name: str
@@ -52,6 +60,7 @@ async def create_schedule(
         raise HTTPException(status_code=403, detail="automation write access required")
     if not croniter.is_valid(payload.cron_expression):
         raise HTTPException(status_code=400, detail="invalid cron_expression")
+    _check_override(payload.params_override)
     now = datetime.now(timezone.utc)
     ci = croniter(payload.cron_expression, now)
     sched = ZASchedule(**payload.model_dump(), next_run_at=ci.get_next(datetime),
@@ -85,6 +94,7 @@ async def update_schedule(
         raise HTTPException(status_code=404)
     if payload.cron_expression and not croniter.is_valid(payload.cron_expression):
         raise HTTPException(status_code=400, detail="invalid cron_expression")
+    _check_override(payload.params_override)
     for k, v in payload.model_dump(exclude_none=True).items():
         setattr(s, k, v)
     s.editor_ids = with_editor(s.editor_ids, user_id)
