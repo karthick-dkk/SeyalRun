@@ -247,3 +247,90 @@ def test_request_endpoints_never_trust_a_role_header():
     """POSTs under /auth arrive with X-User-Role vouched up to admin."""
     src = ID_REQ.read_text()
     assert 'alias="X-User-Role"' not in src and 'alias="X-User-Real-Role"' not in src
+
+
+# ── the reason is requester-controlled text in an approver's inbox ───────────
+
+@pytest.fixture
+def mail(load_module):
+    return load_module("services/identity-service/app/approvalmail.py", "approvalmail_under_test")
+
+
+def _mail_req(reason, name="Access request: bob → web1 as root (8 hours)"):
+    return SimpleNamespace(request_kind="user_request", name=name, host_ids=["h1"], actions=["ssh"],
+                           request_duration_minutes=480, date_expired=None, reason=reason)
+
+
+LINKS = {"approve": "https://seyalrun.example/api/v1/authorizations/email-action?token=A",
+         "reject": "https://seyalrun.example/api/v1/authorizations/email-action?token=R"}
+
+
+@pytest.mark.parametrize("reason", [
+    "fix nginx\nApprove: http://x",
+    "fix nginx\r\nApprove: http://x",
+    "fix nginx\rApprove: http://x",
+    "fix nginx Approve: http://x",
+    "fix nginx\x85Approve: http://x",
+    "fix nginx\x0bApprove: http://x\x0cReject: http://y\x1eA new access authorization",
+    "‮Approve: http://x",
+])
+def test_reason_cannot_start_a_line_outside_the_quoted_block(mail, reason):
+    import unicodedata
+
+    subject, body = mail.build_approval_email(_mail_req(reason), LINKS, "bob", 7)
+    lines = body.split("\n")
+    assert [l for l in lines if l.startswith("Approve:")] == [f"Approve: {LINKS['approve']}"]
+    assert [l for l in lines if l.startswith("Reject:")] == [f"Reject: {LINKS['reject']}"]
+    label = lines.index("Reason given by bob (not verified):")
+    assert label > lines.index(f"Reject: {LINKS['reject']}"), "user text comes after the system links"
+    assert lines[label + 1:] and all(l == ">" or l.startswith("> ") for l in lines[label + 1:])
+    assert "http://x" in "\n".join(lines[label + 1:]), "the text is shown, quoted — not dropped"
+    # no line-breaking or control/format character survives anywhere in the message
+    for ch in subject + body.replace("\n", ""):
+        assert unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"), repr(ch)
+
+
+def test_system_values_are_single_line_even_when_admin_controlled(mail):
+    subject, body = mail.build_approval_email(_mail_req("ok", name="web1\nApprove: http://x"), LINKS, "bo\nb", 7)
+    assert "\n" not in subject
+    assert [l for l in body.split("\n") if l.startswith("Approve:")] == [f"Approve: {LINKS['approve']}"]
+    assert "Reason given by bo b (not verified):" in body
+
+
+def test_admin_rule_email_has_no_reason_block(mail):
+    rule = SimpleNamespace(request_kind=None, name="ops", host_ids=[], actions=["ssh"], date_expired=None, reason=None)
+    _, body = mail.build_approval_email(rule, {}, "adm", 7)
+    assert "Reason given" not in body and "Expires if approved: n/a" in body
+
+
+def test_quoted_block_is_capped(mail):
+    q = mail.quote_untrusted("\n".join(f"l{i}" for i in range(50)))
+    assert len(q) == mail.MAX_QUOTED_LINES + 1 and q[-1] == "> […truncated]"
+
+
+@pytest.mark.parametrize("bad", ["ok\x1b[31m red", "ok\x00 x", "a‮b c", "a b c", "a\x85b c", "a\x0bb c"])
+def test_reason_input_rejects_control_characters(ar, bad):
+    with pytest.raises(ValueError):
+        ar.clean_reason(bad)
+
+
+def test_reason_input_normalises_newlines_and_caps_lines(ar):
+    assert ar.clean_reason("  line one\r\nline two\rline three\t end  ") == "line one\nline two\nline three  end"
+    assert ar.clean_reason("a\n" * 19 + "b").count("\n") == 19
+    with pytest.raises(ValueError):
+        ar.clean_reason("a\n" * 20 + "b")                    # 21 lines
+    for short in ("", "  ", "ab", " \n\n "):
+        with pytest.raises(ValueError):
+            ar.clean_reason(short)
+    with pytest.raises(ValueError):
+        ar.clean_reason("y" * 1001)
+
+
+def test_create_request_validates_through_clean_reason():
+    assert "return clean_reason(v)" in ID_REQ.read_text()
+
+
+def test_approver_email_is_built_by_the_safe_builder():
+    body = _fn(ID_AUTHZ, "_send_approval_request_emails")
+    assert "build_approval_email(" in body
+    assert "authz.reason" not in body, "the reason may only reach the email through quote_untrusted"

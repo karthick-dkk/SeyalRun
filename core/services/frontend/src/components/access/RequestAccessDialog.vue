@@ -33,7 +33,7 @@
             <div class="form-group">
               <label class="form-label" for="ra-reason">Reason <span class="text-muted-sm">({{ form.reason.trim().length }}/1000)</span></label>
               <textarea id="ra-reason" v-model="form.reason" class="input" rows="4" minlength="3" maxlength="1000" required
-                placeholder="What do you need to do on this host, and why?" />
+                placeholder="What do you need to do on this host, and why? (plain text, up to 20 lines)" />
             </div>
           </template>
         </template>
@@ -106,7 +106,9 @@ async function submit() {
     emit('submitted')
   } catch (e: any) {
     const d = e?.response?.data?.detail
-    error.value = typeof d === 'string' ? d : 'The request could not be sent.'
+    // 422s carry a list of field errors; show the first message (e.g. the reason rules).
+    const first = Array.isArray(d) ? String(d[0]?.msg || '').replace(/^Value error, /, '') : ''
+    error.value = typeof d === 'string' ? d : (first || 'The request could not be sent.')
   } finally {
     saving.value = false
   }

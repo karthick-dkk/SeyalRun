@@ -43,6 +43,33 @@ DURATIONS: dict[str, tuple[int, str]] = {
 REQUEST_ACTIONS = ["ssh"]
 
 REASON_MIN, REASON_MAX = 3, 1000
+REASON_MAX_LINES = 20
+
+
+def clean_reason(value: str) -> str:
+    """Validate and normalise a request reason. Raises ValueError.
+
+    The reason is free text shown to approvers (console and email), so it is
+    held to printable text: line breaks are allowed — a reason can need a few
+    lines — but normalised (\\r\\n and \\r become \\n, at most REASON_MAX_LINES
+    lines), tabs become spaces, and every other control or format character
+    (escape sequences, NUL, bidi overrides, zero-width marks, U+2028/2029,
+    \\x85, \\v, \\f ...) is refused rather than silently kept. The email builder
+    (app/approvalmail.py) quotes it again regardless — this is the first layer.
+    """
+    import unicodedata
+
+    v = (value or "").replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
+    for ch in v:
+        if ch != "\n" and unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp", "Co", "Cs", "Cn"):
+            raise ValueError(f"reason contains a control or invisible character (U+{ord(ch):04X})")
+    lines = [line.rstrip() for line in v.strip().split("\n")]
+    if len(lines) > REASON_MAX_LINES:
+        raise ValueError(f"reason may have at most {REASON_MAX_LINES} lines")
+    v = "\n".join(lines).strip()
+    if not REASON_MIN <= len(v) <= REASON_MAX:
+        raise ValueError(f"reason must be {REASON_MIN}-{REASON_MAX} characters")
+    return v
 
 
 def beneficiaries(authz) -> set[str]:

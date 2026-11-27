@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.servicetoken import mint
 
-from ..accessrequest import DURATIONS, REASON_MAX, REASON_MIN, REQUEST_ACTIONS, USER_REQUEST, display_status
+from ..accessrequest import DURATIONS, REQUEST_ACTIONS, USER_REQUEST, clean_reason, display_status
 from ..audit import log_action
 from ..config import get_settings
 from ..database import get_session
@@ -54,10 +54,9 @@ class AccessRequestCreate(BaseModel):
     @field_validator("reason")
     @classmethod
     def _reason(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not REASON_MIN <= len(v) <= REASON_MAX:
-            raise ValueError(f"reason must be {REASON_MIN}-{REASON_MAX} characters")
-        return v
+        # Printable text and line breaks only (app/accessrequest.py) — the reason
+        # is shown to approvers, in the console and by email.
+        return clean_reason(v)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

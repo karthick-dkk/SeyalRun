@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..accessrequest import USER_REQUEST, guard_decision, start_window
+from ..approvalmail import build_approval_email
 from ..audit import log_action
 from ..database import get_session
 from ..deps import require_admin, require_service_token
@@ -105,37 +106,17 @@ async def _send_approval_request_emails(session: AsyncSession, authz: ZAAuthoriz
         # touches `session`, so this is safe. Serially, N recipients meant N full
         # SMTP TCP+TLS+AUTH handshakes back-to-back inside this request handler.
         mail_cfg = await get_mail_settings(session)
+        requester = await session.get(ZAUser, authz.requested_by) if authz.requested_by else None
+        requester_name = requester.username if requester else ""
 
         async def _send_one(user) -> None:
-            links = links_by_user[user.id]
-            lines = [
-                "A new access authorization is pending your approval:",
-                "",
-                f"  Name: {authz.name}",
-                f"  Hosts: {', '.join(authz.host_ids or []) or '(none)'}",
-                f"  Actions: {', '.join(authz.actions or []) or '(none)'}",
-                f"  Expires if approved: {authz.date_expired.isoformat() if authz.date_expired else 'n/a'}",
-                "",
-            ]
-            if authz.request_kind == USER_REQUEST:
-                # A user's access request: its window starts at approval, so the
-                # expiry line above would mislead — say the duration and the reason.
-                lines[-2:] = [
-                    f"  Duration if approved: {authz.request_duration_minutes or 0} minutes from approval",
-                    f"  Reason: {authz.reason or ''}",
-                    "",
-                ]
-            if links.get("approve") and links.get("reject"):
-                lines += [f"Approve: {links['approve']}", f"Reject: {links['reject']}", ""]
-            else:
-                lines += [
-                    "Set 'App Public URL' in Platform Settings to enable one-click approval "
-                    "links by email. In the meantime, review this request in the SeyalRun "
-                    "console under Authorizations.", "",
-                ]
-            lines.append(f"This link expires in {_EMAIL_TOKEN_LIFETIME_DAYS} days and can only be used once.")
+            # app/approvalmail.py: system lines are single-line and come first;
+            # requester-supplied text (an access request's reason) only ever
+            # appears after the links, in a labelled "> "-quoted block.
+            subject, body = build_approval_email(
+                authz, links_by_user[user.id], requester_name, _EMAIL_TOKEN_LIFETIME_DAYS)
             try:
-                await send_mail_with_settings(mail_cfg, user.email, f"Approval needed: {authz.name}", "\n".join(lines))
+                await send_mail_with_settings(mail_cfg, user.email, subject, body)
             except MailError as exc:
                 logger.warning("approval email send failed", extra={"authz_id": authz.id, "to": user.email, "error": str(exc)})
 

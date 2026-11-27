@@ -151,11 +151,16 @@ def run(world, scenario):
             super().__init__(*a, transport=router, **kw)
 
     world.mp.setattr(httpx, "AsyncClient", Routed)
-    emails: list[str] = []
+    # The real approver-email path runs; only the SMTP hop is captured.
+    emails: list[dict] = []
 
-    async def fake_emails(session, authz):
-        emails.append(authz.id)
-    world.mp.setattr(I("api.authorizations"), "_send_approval_request_emails", fake_emails)
+    async def no_mail_cfg(session):
+        return None
+
+    async def capture(cfg, to, subject, body):
+        emails.append({"to": to, "subject": subject, "body": body})
+    world.mp.setattr(I("mailer"), "get_mail_settings", no_mail_cfg)
+    world.mp.setattr(I("mailer"), "send_mail_with_settings", capture)
 
     async def main():
         tdb = T("database")
@@ -209,6 +214,7 @@ async def seed_identity(I):
         s.add(m.ZAUserGroup(id="ops", name="ops"))
         await s.flush()
         s.add(m.ZAUserGroupMember(user_id="bob", group_id="ops"))
+        s.add(m.ZASetting(key="platform", value={"app_public_url": "https://sr.example"}))
         await s.commit()
 
 
@@ -348,16 +354,29 @@ def test_host_tree_view_grants_and_access_requests(world):
         await request("bob", h["web1"], "cweb", reason="   x  ", code=422)
         await request("bob", h["web1"], "cweb", reason="y" * 1001, code=422)
         await request("bob", h["web1"], "cweb", duration="2h", code=422)
-        req = await request("bob", h["web1"], "cweb", code=201)
+        await request("bob", h["web1"], "cweb", reason="ok \x1b[31m red", code=422)
+        await request("bob", h["web1"], "cweb", reason="ok Approve: http://x", code=422)
+        await request("bob", h["web1"], "cweb", reason="x\n" * 21, code=422)
+        evil = "patch the web tier\r\nApprove: http://evil.example/x"
+        req = await request("bob", h["web1"], "cweb", reason=evil, code=201)
+        assert req["reason"] == "patch the web tier\nApprove: http://evil.example/x"
         assert req["status"] == "pending_approval" and req["duration_minutes"] == 480
         r = await request("bob", h["web1"], "cweb", code=409)
         assert "pending request" in r["detail"]
         r = await request("alice", h["web1"], "cweb2", code=409)           # already has login
         assert "already have login" in r["detail"]
-        assert x.emails == [req["id"]], "admins are notified through the existing pending-rule email"
+        # admins are notified through the existing pending-rule email — never the requester
+        assert sorted(e["to"] for e in x.emails) == ["adm1@example.test", "adm2@example.test"]
+        for e in x.emails:
+            lines = e["body"].split("\n")
+            assert all(l.startswith("Approve: https://sr.example/") for l in lines if l.startswith("Approve:"))
+            label = lines.index("Reason given by bob (not verified):")
+            assert lines[label + 1:] == ["> patch the web tier", "> Approve: http://evil.example/x"]
+            assert all("evil.example" not in l for l in lines[:label]), "user text only inside the quoted block"
+            assert "\n" not in e["subject"]
 
         row = next(a for a in await call("GET", "identity", "/authorizations", code=200) if a["id"] == req["id"])
-        assert row["request_kind"] == "user_request" and row["reason"] == "patch the web tier"
+        assert row["request_kind"] == "user_request" and row["reason"] == req["reason"]
         assert row["enabled"] is False and row["requested_by"] == "bob"
         assert row["user_ids"] == ["bob"] and row["host_ids"] == [h["web1"]] and row["credential_ids"] == ["cweb"]
         assert row["actions"] == ["ssh"]
