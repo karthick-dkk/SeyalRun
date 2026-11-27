@@ -159,6 +159,13 @@ async def _authorize(
     authz = await _identity_get("/internal/authz/resolve", settings, user_id=user_id, host_id=sess.host_id)
     actions: list[str] = authz.get("actions", [])
     elevated = role in ("admin", "superadmin") and elevation_active(elevated_until)
+    # "Empty actions = unrestricted" only holds when a rule actually matched. No
+    # rule at all also resolves to empty actions (and no credential) — e.g. a
+    # time-boxed access request that expired while its session was still open, or
+    # a rule revoked mid-session. That is no grant, not an unrestricted one.
+    granted = bool(actions) or bool(authz.get("credential_ids") or authz.get("credential_id"))
+    if not granted and not elevated:
+        raise await _deny("no active authorization for this host")
     if actions and action not in actions and not elevated:
         raise await _deny(f"{action} action not permitted for this host")
 

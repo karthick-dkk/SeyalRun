@@ -13,8 +13,9 @@ from .. import audit
 from ..config import get_settings
 from ..database import get_session
 from ..deps import require_admin, require_service_token
-from ..models import ZAHost, ZAHostGroup, ZAHostGroupMember
-from ..schemas import HostCreate, HostGroupCreate, HostGroupOut, HostOut
+from ..grouptree import descendants, parent_error
+from ..models import ZACredential, ZACredentialHostLink, ZAHost, ZAHostGroup, ZAHostGroupMember
+from ..schemas import HostAccountOut, HostCreate, HostGroupCreate, HostGroupOut, HostGroupUpdate, HostOut
 
 router = APIRouter(tags=["hosts"], dependencies=[Depends(require_service_token)])
 
@@ -135,13 +136,49 @@ async def internal_host_group_members(
     hosts that were in no granted group). This endpoint is what lets both ask
     instead of guess.
     """
-    ids = [g for g in (group_ids or "").split(",") if g.strip()]
+    ids = [g.strip() for g in (group_ids or "").split(",") if g.strip()]
     if not ids:
         return {"host_ids": []}
+    # Host tree: a grant on a group covers every group below it. The whole group
+    # table is read once and walked in memory (app/grouptree.py) — one query no
+    # matter how deep the tree, identical on PostgreSQL and MySQL — and the member
+    # lookup stays a single IN query. Every authorization caller (identity's
+    # authz/host-ids and authz/resolve, hence terminal login, SFTP, credential
+    # reveal, the gateway host filter and posture) reaches group membership
+    # through this endpoint, so expanding here is what makes them all agree.
+    expanded = descendants(await _group_parents(session), ids)
     result = await session.execute(
-        select(ZAHostGroupMember.host_id).where(ZAHostGroupMember.group_id.in_(ids))
+        select(ZAHostGroupMember.host_id).where(ZAHostGroupMember.group_id.in_(sorted(expanded)))
     )
     return {"host_ids": sorted({h for (h,) in result.all()})}
+
+
+@router.get("/internal/hosts/{host_id}/accounts")
+async def internal_host_accounts(host_id: str, session: AsyncSession = Depends(get_session)):
+    """The logins on one host, for the access-request picker in identity-service.
+
+    Identity, name and username ONLY — the response model has no field a secret
+    could ride in, and nothing here decrypts. Service-token gated (router
+    dependency); identity decides who may ask.
+    """
+    host = await session.get(ZAHost, host_id)
+    if host is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="host not found")
+    rows = await session.execute(
+        select(ZACredential.id, ZACredential.name, ZACredential.username)
+        .join(ZACredentialHostLink, ZACredentialHostLink.credential_id == ZACredential.id)
+        .where(ZACredentialHostLink.host_id == host_id)
+    )
+    accounts = [HostAccountOut(id=cid, name=name or username, username=username).model_dump()
+                for cid, name, username in rows.all()]
+    accounts.sort(key=lambda a: (a["username"].lower(), a["name"].lower()))
+    return {"host": {"id": host.id, "name": host.name}, "accounts": accounts}
+
+
+async def _group_parents(session: AsyncSession) -> dict[str, str | None]:
+    """{group_id: parent_id} for every group — one query."""
+    rows = await session.execute(select(ZAHostGroup.id, ZAHostGroup.parent_id))
+    return {gid: parent for gid, parent in rows.all()}
 
 
 @router.get("/internal/hosts/{host_id}")
@@ -306,16 +343,119 @@ async def list_host_groups(session: AsyncSession = Depends(get_session)):
     return result.scalars().all()
 
 
+@router.get("/host-groups/{group_id}", response_model=HostGroupOut)
+async def get_host_group(group_id: str, session: AsyncSession = Depends(get_session)):
+    group = await session.get(ZAHostGroup, group_id)
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="host group not found")
+    return group
+
+
 @router.post("/host-groups", response_model=HostGroupOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
-async def create_host_group(payload: HostGroupCreate, session: AsyncSession = Depends(get_session)):
+async def create_host_group(
+    payload: HostGroupCreate,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+):
     existing = await session.execute(select(ZAHostGroup).where(ZAHostGroup.name == payload.name))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="host group name already exists")
+    payload.parent_id = payload.parent_id or None
+    err = parent_error(await _group_parents(session), None, payload.parent_id)
+    if err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
     group = ZAHostGroup(**payload.model_dump())
     session.add(group)
     await session.commit()
     await session.refresh(group)
+    await audit.log_action(
+        user_id=actor_id, username=actor_name or "", action="host_group.create",
+        resource_type="host_group", resource_id=group.id,
+        details={"name": group.name, "parent_id": group.parent_id}, result="success",
+    )
     return group
+
+
+@router.put("/host-groups/{group_id}", response_model=HostGroupOut, dependencies=[Depends(require_admin)])
+async def update_host_group(
+    group_id: str,
+    payload: HostGroupUpdate,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+):
+    """Rename, describe, or move a group in the host tree.
+
+    Moving a group changes what every grant on its old and new ancestors covers,
+    so the move is validated against cycles and depth here (with create, the only
+    places a parent can be set) and audited with both parents."""
+    group = await session.get(ZAHostGroup, group_id)
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="host group not found")
+    fields = payload.model_fields_set
+    if "name" in fields and payload.name is not None and payload.name != group.name:
+        clash = await session.execute(
+            select(ZAHostGroup.id).where(ZAHostGroup.name == payload.name, ZAHostGroup.id != group_id)
+        )
+        if clash.first():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="host group name already exists")
+        group.name = payload.name
+    if "description" in fields and payload.description is not None:
+        group.description = payload.description
+    old_parent = group.parent_id
+    if "parent_id" in fields:
+        new_parent = payload.parent_id or None
+        err = parent_error(await _group_parents(session), group_id, new_parent)
+        if err:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
+        group.parent_id = new_parent
+    await session.commit()
+    await session.refresh(group)
+    await audit.log_action(
+        user_id=actor_id, username=actor_name or "", action="host_group.update",
+        resource_type="host_group", resource_id=group.id,
+        details={"name": group.name, "parent_id": group.parent_id, "previous_parent_id": old_parent},
+        result="success",
+    )
+    return group
+
+
+@router.delete("/host-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
+async def delete_host_group(
+    group_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor_id: str | None = Header(default=None, alias="X-User-Id"),
+    actor_name: str | None = Header(default=None, alias="X-User-Name"),
+):
+    group = await session.get(ZAHostGroup, group_id)
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="host group not found")
+    # Refused rather than re-parenting or cascading: either would silently change
+    # what grants on this group's ancestors cover, and deleting one group should
+    # not be how that gets decided for a whole subtree.
+    child = await session.execute(
+        select(ZAHostGroup.name).where(ZAHostGroup.parent_id == group_id).order_by(ZAHostGroup.name).limit(1)
+    )
+    first_child = child.scalar_one_or_none()
+    if first_child is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"host group '{group.name}' still has child groups (e.g. '{first_child}') — "
+                   "move or delete them first",
+        )
+    # Association object, not a secondary= table — membership rows go explicitly
+    # (same reason as delete_host).
+    members = await session.execute(select(ZAHostGroupMember).where(ZAHostGroupMember.group_id == group_id))
+    for member in members.scalars().all():
+        await session.delete(member)
+    name = group.name
+    await session.delete(group)
+    await session.commit()
+    await audit.log_action(
+        user_id=actor_id, username=actor_name or "", action="host_group.delete",
+        resource_type="host_group", resource_id=group_id, details={"name": name}, result="success",
+    )
 
 
 async def _resolve_zabbix_creds(settings) -> tuple[str, str]:

@@ -150,6 +150,11 @@ async def filtered_hosts(identity: dict) -> Response:
     Resolves the caller's authorized host_ids/host_group_ids from
     identity-service, fetches the full host list from inventory-service, and
     returns only the hosts the caller is authorized to see.
+
+    This is a VISIBILITY list, so it opts in to host-tree view membership
+    (include_view) — a user added to a tree node sees the hosts under it here.
+    Seeing a host is not access: session create, SFTP and credential reveal
+    resolve za_authorizations only and never ask for view grants.
     """
     settings = get_settings()
     identity_token = mint("api-gateway", "identity-service", settings.service_jwt_secret)
@@ -158,7 +163,7 @@ async def filtered_hosts(identity: dict) -> Response:
     try:
         authz_resp = await _client.get(
             f"{settings.identity_service_url}/api/v1/internal/authz/host-ids",
-            params={"user_id": identity["user_id"]},
+            params={"user_id": identity["user_id"], "include_view": "true"},
             headers={"X-Service-Token": identity_token},
             timeout=10.0,
         )
