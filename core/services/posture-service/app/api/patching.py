@@ -47,6 +47,8 @@ _KEY = re.compile(r"-----BEGIN PGP PUBLIC KEY BLOCK-----[A-Za-z0-9+/=\s:.,()@<>_
 _SUITE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,79}\Z")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,199}\Z")
 MAX_ROLLOUT_HOSTS = 1000
+# A reboot from the host page waits this long for the host to come back (as a rollout does by default).
+REBOOT_WAIT_SECONDS = 900
 FAMILY = {"dpkg": "deb", "rpm": "rpm"}
 
 
@@ -219,6 +221,45 @@ async def package_op(host_id: str, payload: PackageOpIn, request: Request, calle
     try:
         run = await clients.host_op_run(action="package_ops", op=op.op, args=args, host_id=host_id, token=f"op-{op.id}",
                                         requested_by=caller.user_id, approval=None, accountable=editors)
+    except clients.UpstreamError as exc:
+        raise _bad(exc.detail, exc.status if exc.status in (400, 409) else 502) from exc
+    op.job_run_id = run["run_id"]
+    op.status = "awaiting_approval" if run.get("status") == "pending_approval" else "queued"
+    session.add(op)
+    await session.commit()
+    return _op_out(op)
+
+
+class RebootIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
+
+
+@router.post("/hosts/{host_id}/reboot", status_code=202)
+async def reboot_host(host_id: str, payload: RebootIn, request: Request, caller: Caller = Depends(require_admin),
+                      session: AsyncSession = Depends(get_session)):
+    """Reboot one host now. Tracked as a package operation (op "reboot") so it shows with the
+    host's other operations; production hosts follow the same approval rules."""
+    inv = await _visible_inventory_host(caller, host_id)
+    if clients.os_family(inv.get("os_type")) != "linux" or inv.get("enabled") is False:
+        raise _bad("only enabled Linux hosts are supported")
+    busy = (await session.execute(select(RolloutHost.id).where(
+        RolloutHost.active_host_id == host_id, RolloutHost.status == "running"))).scalar_one_or_none()
+    if busy:
+        raise _bad("a patch rollout is working on this host", 409)
+    queued = (await session.execute(select(PackageOp.id).where(
+        PackageOp.host_id == host_id, PackageOp.op == "reboot",
+        PackageOp.status.in_(("queued", "running", "awaiting_approval"))))).scalar_one_or_none()
+    if queued:
+        raise _bad("a reboot of this host is already queued", 409)
+    args = {"health_urls": [], "wait_seconds": REBOOT_WAIT_SECONDS}
+    op = PackageOp(id=str(uuid.uuid4()), host_id=host_id, op="reboot", args=args, status="queued",
+                   result={"accountable": [], "reason": payload.reason.strip()},
+                   requested_by=caller.user_id, requested_by_name=caller.username)
+    await _audit_critical(request, caller, "posture.host.reboot", "host", host_id,
+                          {"op_id": op.id, "reason": payload.reason.strip()[:500]})
+    try:
+        run = await clients.host_op_run(action=engine.op_action(op.op), op=op.op, args=args, host_id=host_id,
+                                        token=f"op-{op.id}", requested_by=caller.user_id, approval=None, accountable=[])
     except clients.UpstreamError as exc:
         raise _bad(exc.detail, exc.status if exc.status in (400, 409) else 502) from exc
     op.job_run_id = run["run_id"]

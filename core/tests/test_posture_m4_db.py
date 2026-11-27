@@ -57,6 +57,7 @@ class World:
         self.args: list[tuple] = []
         self.undrain_broken = False
         self.posts = 0
+        self.actions: list[tuple] = []           # (automation action, op) per host-op request
 
     def _finish(self, rid, lines, rc=0):
         self.runs[rid] = {"status": "success" if rc == 0 else "failed", "exit_code": rc, "output_lines": lines, "live": False}
@@ -65,6 +66,7 @@ class World:
         rid = str(uuid.uuid4())
         self.calls.append((op, host_id, token, approval))
         self.args.append((op, host_id, args, accountable))
+        self.actions.append((action, op))
         if op in self.forget:
             self.forget.discard(op)
             self.tokens.setdefault(token, {})
@@ -740,4 +742,30 @@ def test_host_whose_updates_are_unknown_is_not_planned(env, monkeypatch):
         assert r["hosts"] == 1, "only the host with a known update list is planned"
         hosts = {h["host_id"]: h for h in await api("GET", "/hosts")}
         assert hosts[H[0]]["pending_updates_known"] is False and hosts[H[1]]["pending_updates_known"] is True
+    run_case(env, monkeypatch, body)
+
+
+def test_reboot_from_the_host_page(env, monkeypatch):
+    """Reboot one host now: an admin with a reason, tracked with the host's package operations,
+    run by the reboot executor (not package_ops), and followed by a facts refresh."""
+    async def body(w, api, drive, engine, models, scanning):
+        h = H[0]
+        await api("POST", f"/hosts/{h}/reboot", code=422, reason="x")
+        await api("POST", f"/hosts/{h}/reboot", code=403, role="user", reason="kernel update")
+        r = await api("POST", f"/hosts/{h}/reboot", code=202, reason="kernel update")
+        assert r["op"] == "reboot" and r["status"] in ("queued", "running")
+        await api("POST", f"/hosts/{h}/reboot", code=409, reason="again")
+        assert ("host_reboot", "reboot") in w.actions and ("package_ops", "reboot") not in w.actions
+        boot = w.boot[h]
+        for _ in range(10):
+            await engine.tick()
+            ops = await api("GET", f"/package-ops?host_id={h}")
+            if ops[0]["status"] not in ("queued", "running", "awaiting_approval"):
+                break
+        op = next(o for o in ops if o["id"] == r["id"])
+        assert op["status"] == "ok" and op["error"] in (None, ""), op
+        assert op["result"]["reason"] == "kernel update"
+        assert w.boot[h] == boot, "the reboot ran once, before the first tick"
+        # done, so another reboot may be asked for
+        await api("POST", f"/hosts/{h}/reboot", code=202, reason="second time")
     run_case(env, monkeypatch, body)

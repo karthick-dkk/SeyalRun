@@ -96,6 +96,7 @@ _AUDIT_ROUTES: list[tuple[str, re.Pattern, str, str]] = [
     ("POST", re.compile(r"^/api/v1/posture/scans/import/?$"), "posture.scan.import", "scan"),
     # M3/M4 patching.
     ("POST", re.compile(r"^/api/v1/posture/hosts/([^/]+)/packages/?$"), "posture.package.op", "host"),
+    ("POST", re.compile(r"^/api/v1/posture/hosts/([^/]+)/reboot/?$"), "posture.host.reboot", "host"),
     ("GET", re.compile(r"^/api/v1/posture/package-ops/?$"), "posture.package_ops.list", "package_op"),
     ("GET", re.compile(r"^/api/v1/posture/patch-repos/?$"), "posture.patch_repo.list", "patch_repo"),
     ("POST", re.compile(r"^/api/v1/posture/patch-repos/?$"), "posture.patch_repo.create", "patch_repo"),

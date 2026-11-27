@@ -172,6 +172,16 @@ const router = createRouter({
       component: () => import('@/views/PostureView.vue'),
     },
     {
+      path: '/posture/hosts',
+      name: 'posture-hosts',
+      component: () => import('@/views/PostureHostsView.vue'),
+    },
+    {
+      path: '/posture/hosts/:id',
+      name: 'posture-host',
+      component: () => import('@/views/PostureHostView.vue'),
+    },
+    {
       path: '/patching',
       name: 'patching',
       component: () => import('@/views/PatchingView.vue'),

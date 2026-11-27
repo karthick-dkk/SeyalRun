@@ -186,7 +186,8 @@ const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => {
       auth.can('hosts') && { key: 'hosts', label: 'Hosts', to: '/hosts', paths: P.hosts, match: ['/hosts'] },
       auth.can('assets') && { key: 'assets', label: 'Assets', to: '/assets', paths: P.assets, match: ['/assets'] },
       auth.can('sessions') && { key: 'sessions', label: 'Sessions', to: '/sessions', paths: P.sessions, match: ['/sessions'] },
-      auth.can('posture') && { key: 'posture', label: 'Posture', to: '/posture', paths: P.posture, match: ['/posture'] },
+      auth.can('posture') && { key: 'posture', label: 'Posture', to: '/posture', paths: P.posture, match: ['/posture'], exclude: ['/posture/hosts'] },
+      auth.can('posture') && { key: 'posture-hosts', label: 'Posture hosts', to: '/posture/hosts', paths: P.hosts, match: ['/posture/hosts'] },
       auth.can('posture') && { key: 'patching', label: 'Patching', to: '/patching', paths: P.patching, match: ['/patching'] },
     ]),
     g('Automation', [
@@ -220,6 +221,7 @@ const crumb = computed<[string, string]>(() => {
   if (p.startsWith('/hosts')) return ['Access', 'Hosts']
   if (p.startsWith('/assets')) return ['Access', 'Assets']
   if (p.startsWith('/sessions')) return ['Access', 'Sessions']
+  if (p.startsWith('/posture/hosts')) return ['Posture', 'Hosts']
   if (p.startsWith('/posture')) return ['Access', 'Posture']
   if (p.startsWith('/patching')) return ['Access', 'Patching']
   if (p.startsWith('/terminal')) return ['Access', 'Terminal']
