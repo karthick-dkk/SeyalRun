@@ -291,7 +291,11 @@ async def reject_run(
     if run.status != "pending_approval":
         raise HTTPException(status_code=400, detail="run is not pending approval")
     tmpl = await session.get(ZAJobTemplate, run.job_template_id)
-    if not _can_approve(role, tmpl.approver_role if tmpl else None):
+    # The requester may always withdraw their own run, whatever their role: it starts
+    # nothing. Anyone else needs the role that could have approved it. Only a positive
+    # match counts (a missing caller id or a machine trigger is not "own").
+    own = bool(user_id) and actor_user_id(run.triggered_by) == user_id
+    if not own and not _can_approve(role, tmpl.approver_role if tmpl else None):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient role to reject this run")
 
     params = dict(run.params or {})
