@@ -17,7 +17,7 @@ Hosts behind a jump gateway are not supported by these operations yet.
 
 ## Package operations on one host
 
-Posture → host → Package operation (admin). `plan` and `refresh` change no package. On a
+Posture hosts → host → Package operations (admin). `plan` and `refresh` change no package. On a
 production host every other operation waits for another person's approval, unless
 `SEYALRUN_ADMIN_APPROVAL=off` (the default): then an admin's operation runs at once and its
 `job.start` audit row says `approval: not required (SEYALRUN_ADMIN_APPROVAL=off)`. The same
@@ -28,6 +28,16 @@ the mirrors used may not approve the operation; package names are strictly valid
 upgrade that would need to remove a package is refused; a removal that would take a protected
 package (kernel, libc, sshd, sudo, the package manager…) with it is refused; a metadata refresh
 that failed or could not be verified stops the operation.
+
+## Reboot one host
+
+Posture hosts lists hosts with a **Reboot** button where the host reports that a reboot is
+required (filter "Reboot required"); the host's page has a Reboot button at any time (admin). A
+reason is required. The reboot runs as a package operation "reboot" on that host: SeyalRun
+restarts the host, waits up to 15 minutes for it to come back, then collects its facts again.
+It is refused while a rollout is working on the host or another reboot of it is queued, and on a
+production host it follows the same approval rule as other package operations. To reboot many
+hosts in waves inside a maintenance window, use a rollout with reboot "if required" or "always".
 
 ## Mirrors
 
